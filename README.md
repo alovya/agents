@@ -9,6 +9,7 @@ skills/
   notion_task/
     SKILL.md
 
+AGENTS.md
 notion_task_tracker/
   README.md
   DESIGN.md
@@ -35,6 +36,9 @@ This installs symlinks:
 ~/.codex/skills/notion_task
   -> ~/agents/skills/notion_task
 
+~/.codex/AGENTS.md
+  -> ~/agents/AGENTS.md
+
 ~/.codex/memories/notion_task_tracker
   -> ~/agents/notion_task_tracker
 ```
@@ -58,4 +62,3 @@ PYTHONPATH=$PWD /workspace/venv/bin/python -m pytest \
   notion_task_tracker/tests \
   notion_task_tracker/task_pages/tests
 ```
-

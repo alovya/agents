@@ -13,6 +13,10 @@ def main() -> None:
         destination_path=codex_home_path / "skills" / "notion_task",
     )
     _install_symlink(
+        source_path=repo_root_path / "AGENTS.md",
+        destination_path=codex_home_path / "AGENTS.md",
+    )
+    _install_symlink(
         source_path=repo_root_path / "notion_task_tracker",
         destination_path=codex_home_path / "memories" / "notion_task_tracker",
     )
@@ -51,4 +55,3 @@ def _next_backup_path(destination_path: Path) -> Path:
 
 if __name__ == "__main__":
     main()
-
