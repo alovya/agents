@@ -306,7 +306,7 @@ def _optional_text_property(query_result: dict[str, Any], property_name: str) ->
         return None
 
     if property_name == "url":
-        return f"https://www.notion.so/{canonical_notion_page_id(str(value).rsplit('/', 1)[-1])}"
+        return f"https://www.notion.so/{notion_page_id_from_url(str(value))}"
 
     return str(value)
 

@@ -1,7 +1,7 @@
 """Compile write intents into serialisable Notion REST requests.
 
-TODO: Use this planner only once Notion REST API token creation is available.
-The live tracker uses MCP writes directly. Do not translate between the REST and MCP paths.
+TODO: Delete or rewrite this older enhanced-Markdown planner once the standard REST client is reliable.
+The live REST path is notion_rest_client.py.
 """
 
 from __future__ import annotations

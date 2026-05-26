@@ -1,6 +1,6 @@
 # Notion Task Tracker
 
-This package turns small agent-written JSON commands into Notion writes. The agent supplies intent; the tracker owns graph projection, page shape, rendering, write ordering, and exact Notion MCP calls. Task metadata now comes from `Alovya's task database`; task page bodies contain timeline logs only, and the ongoing and completed task landing pages are derived views.
+This package turns small agent-written JSON commands into Notion writes. The agent supplies intent; the tracker owns graph projection, page shape, rendering, write ordering, and exact Notion REST requests. Task metadata now comes from `Alovya's task database`; task page bodies contain timeline logs only, and the ongoing and completed task landing pages are derived views.
 
 Fixed page names live in `common.py`:
 
@@ -18,7 +18,7 @@ Notion page ids live in tracker state because Notion assigns them. The task data
 3. Run the tracker CLI with `--command-path`.
 4. The CLI fetches only task pages needed by that command, updates their local metadata projection, applies the command, writes to Notion, and saves tracker state after successful writes.
 5. Read `command_result.json` for completed operation keys and warnings.
-6. Treat a CLI failure as a failed write. Do not manually send Notion MCP calls unless debugging with the user.
+6. Treat a CLI failure as a failed write. Do not manually send Notion writes unless debugging with the user.
 
 Run command JSON from the local virtual environment:
 
@@ -30,7 +30,7 @@ cd /home/alovyachowdhury/.codex/memories
   --output-path command_result.json
 ```
 
-MCP execution needs `codex mcp login Notion` to be authenticated.
+REST execution needs `NOTION_API_KEY` to contain the `ntn_` Notion integration token. MCP remains available as an explicit fallback with `--notion-transport mcp`.
 
 `command_result.json` contains:
 
@@ -40,7 +40,7 @@ MCP execution needs `codex mcp login Notion` to be authenticated.
 4. `tracker_state_path`: canonical tracker-state path written after Notion writes succeeded.
 5. `warnings`: non-fatal reconciliation warnings.
 
-The live path uses the Notion MCP client. The REST planner and REST client are a separate future path; the MCP path does not translate through REST requests, and the REST path does not translate through MCP calls.
+The live path uses the Notion REST client by default. The MCP client remains in-tree as a temporary fallback; delete it once REST is reliable for task creation, logging, completion, reconciliation, and landing-page rendering.
 
 ## Fetch And Reconcile From Notion
 
@@ -244,7 +244,7 @@ This replaces the local existing-page mention list with exactly the page mention
 - `create_top_level_task`: create a top-level task database row and use Notion's assigned `Ticket ID`.
 - `create_child_task`: create a child task database row under an existing parent, initialise the child Timeline log with a parent link, and append a parent timeline entry linking to the child.
 - `create_sibling_task`: create a task database row under the same parent as an existing task, or top-level when the existing task has no parent. If the sibling has a parent, initialise the new page with a parent link and append a parent timeline entry linking to the new page.
-- `record_page_id`: record a page id returned by `notion-create-pages`.
+- `record_page_id`: record a page id returned by a page creation write.
 - `refresh_task_pages`: update task database properties and the derived task landing pages.
 - `append_miscellaneous_note`: add lines to a dated miscellaneous subpage.
 - `refresh_miscellaneous_pages`: regenerate the miscellaneous root and dated pages.
@@ -254,18 +254,18 @@ This replaces the local existing-page mention list with exactly the page mention
 
 ## Package Shape
 
-The package is Python metadata and Notion write-planning code. Live fetch/write execution uses the authenticated Notion MCP client. REST request planning and the REST client are kept for the future REST-token path.
+The package is Python metadata and Notion write execution code. Live fetch/write execution uses the authenticated Notion REST client by default. The MCP client is a temporary fallback while REST reliability is proven.
 
 - `__main__.py`: CLI for command JSON and direct task database reconciliation.
 - `commands.py`: command dispatcher from JSON to tracker-state updates and Notion writes.
 - `notion_client.py`: reconciliation and Notion write execution orchestrator.
-- `notion_mcp_client.py`: Notion MCP transport client for live fetch/write execution.
-- `notion_rest_client.py`: Notion REST transport client for the future REST-token path.
+- `notion_rest_client.py`: Notion REST transport client for live fetch/write execution.
+- `notion_mcp_client.py`: temporary Notion MCP fallback transport.
 - `task_pages/`: task database projection, task graph metadata, and rendering.
 - `miscellaneous_pages.py`: dated miscellaneous notes.
 - `synthesis_pages.py`: flat synthesis root mentions and synthesis subpages with sources.
-- `notion_mcp_calls.py`: compiler from write intents to exact MCP tool calls.
-- `notion_rest_requests.py`: compiler from write intents to exact REST requests for the future REST-token path.
+- `notion_mcp_calls.py`: compiler from write intents to the internal write calls still used by the command dispatcher.
+- `notion_rest_requests.py`: older serialisable REST request planner; do not use it for live execution.
 - `notion_enhanced_markdown.py`: renderer from internal blocks to Notion enhanced Markdown.
 - `common.py`: shared page references, write intents, fixed page titles, and block helpers.
 

@@ -22,16 +22,16 @@ Before any command that creates or updates task, miscellaneous, or synthesis met
 1. Express the user action as command JSON.
 2. Run the tracker CLI as documented in README, with network access outside the sandbox.
 3. Let the CLI fetch only the task pages needed by the command, refresh their local metadata projection, apply the command, write to Notion, and save tracker state.
-4. Treat CLI errors as failed writes. Do not manually send Notion MCP calls unless debugging with the user.
+4. Treat CLI errors as failed writes. Do not manually send Notion writes unless debugging with the user.
 5. If page creation still needs a captured page id, stop and report the blocker instead of guessing.
 
-If the Notion MCP client is unavailable or unauthenticated, stop and report that the session is read-only.
+If `NOTION_API_KEY` is missing, stop and report that REST execution needs the `ntn_` Notion integration token. Use `--notion-transport mcp` only as a temporary fallback while REST reliability is being proven.
 
 Footgun: never set `allow_deleting_content` automatically. If Notion rejects replacement due to physical child content, stop and explain the blocker.
 
 ## Runtime And Auth
 
-Live Notion tracker commands must be run outside the network-restricted Codex sandbox. The sandbox may fail DNS resolution for `mcp.notion.com`, which can appear as a hang during MCP session initialisation before any Notion tool call runs.
+Live Notion tracker commands must be run outside the network-restricted Codex sandbox. The default path calls the Notion REST API with `NOTION_API_KEY`.
 
 Use the venv Python and request command escalation for live Notion commands:
 
@@ -40,13 +40,13 @@ PYTHONPATH=/home/alovyachowdhury/.codex/memories \
   /workspace/venv/bin/python -m notion_task_tracker ...
 ```
 
-If the tracker reaches `https://mcp.notion.com/mcp` but returns `401 Unauthorized`, refresh auth with:
+If the explicit MCP fallback reaches `https://mcp.notion.com/mcp` but returns `401 Unauthorized`, refresh auth with:
 
 ```bash
 codex mcp login Notion
 ```
 
-Do not diagnose `401 Unauthorized` as a Notion page-permission problem until re-auth has been tried. Page-permission failures happen after a tool call reaches Notion; DNS and session-initialisation failures happen before page access is tested.
+For REST, diagnose `401 Unauthorized` as a missing or invalid `NOTION_API_KEY`. Page-permission failures usually return `403`.
 
 ## Command Forms
 
@@ -75,7 +75,7 @@ Normal task commands do not query the full saved database view. They use targete
 5. Use a heading of `<mention-date start="YYYY-MM-DD"/>`.
 6. Use `append_task_timeline_log`.
 7. The tracker preserves handwritten Notion timeline content: before writing, it fetches the task page and records existing date headings under `Timeline log`. If the page has no usable `Timeline log` section with at least one date, the tracker initialises the body as `Timeline log`, today's date, then any existing body content underneath. New date sections are prepended under `Timeline log`; existing date headings receive new lines under the existing heading.
-8. Use proper code blocks for dense technical content instead of long inline-code-heavy bullets. Put commands, paths, tensor/input lists, shapes, mappings, stack traces, and multi-line snippets in fenced code blocks so the log remains readable. Keep short symbol names inline only when they are part of a sentence.
+8. Treat `timeline_entry.lines` as bullet-only text because the tracker renders each line as a Notion list item. Do not put fenced code blocks or multi-line Markdown inside a line; Notion will render an empty bullet followed by a malformed nested block. For command transcripts, write one command per line as inline code, or split dense content into short bullet-safe sentences. Use real code blocks only if the tracker command schema explicitly supports structured code blocks outside `lines`.
 9. Do not force numbering into timeline lines. The tracker renders `lines` as bullets. Use plain bullet-style sentences unless the user explicitly asks for ordered steps, and avoid Markdown ordered-list prefixes like `1.` or `2.` because Notion may reinterpret the formatting.
 
 `notion_task log <number> sub:<subheading> [notes]` writes the new lines under a Notion toggle inside today's date entry. Put `<subheading>` in `timeline_entry.subheading`; do not fold it into the first log line.
@@ -161,7 +161,7 @@ The agent supplies only semantic input:
 - miscellaneous note summary and lines;
 - synthesis title, sources, summary, and content.
 
-The task database owns ticket-number assignment and parent-child relations. The tracker owns graph projection, priority rollup, page structure, Markdown rendering, page mentions, colours, MCP tool names, MCP arguments, call ordering, page-id blockers, and tracker-state shape.
+The task database owns ticket-number assignment and parent-child relations. The tracker owns graph projection, priority rollup, page structure, rendering, page mentions, colours, REST request ordering, page-id blockers, and tracker-state shape.
 
 ## Work Workflow
 

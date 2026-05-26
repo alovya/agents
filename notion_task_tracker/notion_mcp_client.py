@@ -91,7 +91,7 @@ class NotionMcpClient:
             return tool_result
 
     async def _raise_if_tool_is_not_available(self, session: Any, tool_name: str) -> None:
-        # TODO: Remove this MCP tool-name validation when the tracker writes through Notion REST instead of MCP.
+        # TODO: Delete this with the MCP fallback once REST is reliable enough to be the only transport.
         if self._available_tool_names is None:
             self._available_tool_names = await _available_tool_names_from_session(
                 session=session,

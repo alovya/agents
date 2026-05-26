@@ -6,7 +6,7 @@ This package preserves three Notion page families:
 2. A dated miscellaneous-notes inbox.
 3. A flat synthesis-notes index with reusable synthesis subpages.
 
-The tracker is deterministic. Agents provide semantic input; Python owns graph projection, priority rollup, rendering, MCP tool names, MCP arguments, and call ordering.
+The tracker is deterministic. Agents provide semantic input; Python owns graph projection, priority rollup, rendering, REST requests, and write ordering.
 
 ## Task Pages
 
@@ -187,8 +187,8 @@ The tracker owns:
 3. Priority rollup.
 4. Fixed page structure.
 5. Page mentions and colours.
-6. Enhanced Markdown rendering.
-7. MCP tool names and arguments.
+6. Notion block rendering.
+7. REST request construction.
 8. Page-id blockers and call ordering.
 9. Tracker-state shape.
 
@@ -196,21 +196,22 @@ Agents should use command JSON through the CLI. Do not hand-build Notion calls w
 
 ## Notion Boundary
 
-Live fetches and writes use the authenticated Notion MCP client. Commands generate exact Notion MCP calls internally so the business logic stays deterministic and inspectable.
+Live fetches and writes use the authenticated Notion REST client. Commands generate deterministic Notion writes internally so the business logic stays inspectable.
 
 Normal writes compile to:
 
 ```text
-notion-create-pages
-notion-update-page with replace_content
-notion-update-page with update_properties
+create data-source page
+update page properties
+append block children
+archive and replace generated page children
 ```
 
-After miscellaneous or synthesis `notion-create-pages`, the CLI records the returned page id and runs the needed refresh command. Task creation captures the new database row and assigned `Ticket ID` during live command execution.
+After miscellaneous or synthesis page creation, the CLI records the returned page id and runs the needed refresh command. Task creation captures the new database row and assigned `Ticket ID` during live command execution.
 
-Footgun: never set `allow_deleting_content` automatically. If Notion rejects replacement because physical child pages are present, stop and resolve the page layout.
+The MCP client remains as a temporary fallback. Delete it once REST is reliable for task creation, logging, completion, reconciliation, and landing-page rendering.
 
-The REST request planner and REST client are kept for the future REST-token path. They do not feed the MCP path, and the MCP path does not feed them. Do not grow the local enhanced-Markdown renderer into a general Notion SDK.
+Footgun: page replacement moves existing top-level blocks to trash before appending regenerated blocks. Use it only for tracker-owned landing, miscellaneous, or synthesis pages.
 
 ## Runtime
 

@@ -13,6 +13,7 @@ from typing import Any
 from notion_task_tracker.commands import CommandResult, apply_command_to_tracker_state
 from notion_task_tracker.notion_mcp_calls import NotionMcpCallPlan, NotionMcpToolCall
 from notion_task_tracker.notion_mcp_client import NotionMcpClient
+from notion_task_tracker.notion_rest_client import NotionRestClient
 from notion_task_tracker.task_pages import TaskDependencyGraph, TimelineEntry
 from notion_task_tracker.task_pages.task_database import (
     TASK_DATABASE_PARENT_PROPERTY,
@@ -48,12 +49,14 @@ def reconcile_task_dependency_graph_from_notion(
     tracker_state_path: str | Path = DEFAULT_TRACKER_STATE_PATH,
     output_path: str | Path = DEFAULT_OUTPUT_PATH,
     backup_path: str | Path | None = None,
+    notion_transport: str = "rest",
 ) -> NotionTaskReconcileSummary:
     return asyncio.run(_reconcile_task_dependency_graph_from_notion(
         credentials_path=credentials_path,
         tracker_state_path=tracker_state_path,
         output_path=output_path,
         backup_path=backup_path,
+        notion_transport=notion_transport,
     ))
 
 
@@ -63,6 +66,7 @@ def execute_command_file(
     output_path: str | Path = DEFAULT_OUTPUT_PATH,
     credentials_path: str | Path = DEFAULT_CREDENTIALS_PATH,
     backup_path: str | Path | None = None,
+    notion_transport: str = "rest",
 ) -> "NotionCommandExecutionSummary":
     return asyncio.run(_execute_command_file(
         command_path=command_path,
@@ -70,6 +74,7 @@ def execute_command_file(
         output_path=output_path,
         credentials_path=credentials_path,
         backup_path=backup_path,
+        notion_transport=notion_transport,
     ))
 
 
@@ -79,6 +84,7 @@ async def _execute_command_file(
     output_path: str | Path,
     credentials_path: str | Path,
     backup_path: str | Path | None,
+    notion_transport: str,
 ) -> "NotionCommandExecutionSummary":
     source_command_path = Path(command_path)
     source_tracker_state_path = Path(tracker_state_path)
@@ -89,7 +95,7 @@ async def _execute_command_file(
     tracker_state = _read_json(source_tracker_state_path)
     _write_json(destination_backup_path, tracker_state)
 
-    notion_client = _notion_client_from_credentials_path(Path(credentials_path))
+    notion_client = _notion_client_from_credentials_path(Path(credentials_path), notion_transport)
     preflight_result = await _reconcile_tracker_state_for_command_targets(
         command=command,
         tracker_state=tracker_state,
@@ -141,6 +147,7 @@ async def _reconcile_task_dependency_graph_from_notion(
     tracker_state_path: str | Path,
     output_path: str | Path,
     backup_path: str | Path | None,
+    notion_transport: str,
 ) -> NotionTaskReconcileSummary:
     source_tracker_state_path = Path(tracker_state_path)
     destination_output_path = Path(output_path)
@@ -149,7 +156,7 @@ async def _reconcile_task_dependency_graph_from_notion(
     tracker_state = _read_json(source_tracker_state_path)
     _write_json(destination_backup_path, tracker_state)
 
-    notion_client = _notion_client_from_credentials_path(Path(credentials_path))
+    notion_client = _notion_client_from_credentials_path(Path(credentials_path), notion_transport)
     reconcile_result = await _reconcile_tracker_state_from_notion_pages(tracker_state, notion_client)
 
     return await _repair_and_write_reconciled_tracker_state(
@@ -1002,9 +1009,15 @@ def _call_plan_from_json(call: dict[str, Any]) -> NotionMcpCallPlan:
     return NotionMcpCallPlan.from_snapshot(call)
 
 
-def _notion_client_from_credentials_path(credentials_path: Path) -> "_NotionClient":
-    # TODO: Replace MCP execution with the Notion REST client once REST token creation is available.
-    return NotionMcpClient.from_credentials_path(credentials_path)
+def _notion_client_from_credentials_path(credentials_path: Path, notion_transport: str = "rest") -> "_NotionClient":
+    if notion_transport == "rest":
+        return NotionRestClient.from_credentials_path(credentials_path)
+
+    if notion_transport == "mcp":
+        # TODO: Delete the MCP transport once REST has proved reliable for task creation, logging, completion, reconciliation, and landing-page rendering.
+        return NotionMcpClient.from_credentials_path(credentials_path)
+
+    raise ValueError(f"Unsupported Notion transport {notion_transport!r}")
 
 
 class _NotionClient:

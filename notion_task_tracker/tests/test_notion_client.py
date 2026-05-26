@@ -11,6 +11,7 @@ from notion_task_tracker.notion_client import (
     _execute_call_plan_with_notion_client,
     _execute_database_task_creation_command,
     _execute_command_result_writes,
+    _notion_client_from_credentials_path,
     _repair_and_write_reconciled_tracker_state,
     _raise_if_call_plan_has_blocked_operations,
     _repair_operation_keys_for_reconciled_task_pages,
@@ -20,6 +21,8 @@ from notion_task_tracker.notion_client import (
     _tracker_state_ready_for_task_timeline_write,
     _tracker_state_with_fetched_task_timeline_dates,
 )
+from notion_task_tracker.notion_mcp_client import NotionMcpClient
+from notion_task_tracker.notion_rest_client import NotionRestClient
 from notion_task_tracker.task_pages import Priority, TaskDependencyGraph, TaskPageMetadata, TaskStatus
 from notion_task_tracker.task_pages.task_database import default_task_database_tracker_state
 
@@ -31,6 +34,35 @@ def test_rest_call_planner_does_not_import_notion_mcp_runtime():
     assert "from mcp" not in runtime_source
     assert "import mcp" not in runtime_source
     assert "streamable_http" not in runtime_source
+
+
+def test_notion_client_from_credentials_path_defaults_to_rest(monkeypatch, tmp_path):
+    credentials_path = tmp_path / ".credentials.json"
+    credentials_path.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("NOTION_API_KEY", "ntn_test")
+
+    notion_client = _notion_client_from_credentials_path(credentials_path)
+
+    assert isinstance(notion_client, NotionRestClient)
+
+
+def test_notion_client_from_credentials_path_keeps_mcp_fallback(tmp_path):
+    credentials_path = tmp_path / ".credentials.json"
+    credentials_path.write_text(
+        json.dumps(
+            {
+                "Notion|workspace": {
+                    "access_token": "mcp-token",
+                    "server_url": "https://mcp.notion.test/mcp",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    notion_client = _notion_client_from_credentials_path(credentials_path, "mcp")
+
+    assert isinstance(notion_client, NotionMcpClient)
 
 
 def test_repair_and_write_reconciled_tracker_state_pushes_repairs_for_changed_task(

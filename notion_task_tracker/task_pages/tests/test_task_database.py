@@ -102,6 +102,27 @@ class TestTaskDependencyGraphFromDatabaseQueryResults:
         assert list(work_graph.tasks) == ["ALOVYA-70"]
         assert work_graph.tasks["ALOVYA-70"].title == "New database-native task"
 
+    def test_accepts_slugged_notion_urls(self):
+        work_graph = task_dependency_graph_from_database_query_results(
+            query_results=[
+                {
+                    "Ticket page": "Root task",
+                    "Ticket ID": "1",
+                    "Priority": "P1",
+                    "Status": "Active",
+                    "Parent": "[]",
+                    "url": "https://www.notion.so/Root-task-22222222222222222222222222222222",
+                },
+            ],
+            landing_page=PagePointer(
+                local_page_key="landing_page",
+                title=LANDING_PAGE_TITLE,
+                notion_page_id="landing-page-id",
+            ),
+        )
+
+        assert work_graph.tasks["ALOVYA-1"].notion_page_id == "22222222222222222222222222222222"
+
     def test_reads_completed_struckthrough_title_as_plain_task_title(self):
         work_graph = task_dependency_graph_from_database_query_results(
             query_results=[
