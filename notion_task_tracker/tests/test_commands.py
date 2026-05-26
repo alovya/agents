@@ -5,7 +5,7 @@ from notion_task_tracker.task_pages import Priority, TaskPageMetadata, TaskStatu
 
 
 class TestApplyCommandToTrackerState:
-    def test_append_task_timeline_log_updates_tracker_state_and_produces_exact_update_calls(self):
+    def test_append_task_timeline_log_updates_tracker_state_and_produces_write_intent(self):
         command_result = apply_command_to_tracker_state(
             command={
                 "command": "append_task_timeline_log",
@@ -27,18 +27,14 @@ class TestApplyCommandToTrackerState:
                 "blocks": [],
             }
         ]
-        assert [call.tool_name for call in command_result.call_plan.calls] == ["notion-update-page"]
-        assert command_result.call_plan.calls[0].arguments["command"] == "update_content"
-        assert command_result.call_plan.calls[0].arguments["content_updates"][0] == {
-            "old_str": "## Timeline log",
-            "new_str": "\n".join(
-                [
-                    "## Timeline log",
-                    '### <mention-date start="2026-05-24"/>',
-                    "- Found the remaining blocker.",
-                ]
-            ),
-        }
+        assert [write_intent.operation_key for write_intent in command_result.write_intents] == [
+            "update_timeline_log:task:ALOVYA-1:2026-05-24"
+        ]
+        assert command_result.write_intents[0].operation_name == "update_timeline_log"
+        assert command_result.write_intents[0].arguments["blocks"] == [
+            {"type": "heading_3", "text": '<mention-date start="2026-05-24"/>'},
+            {"type": "bulleted_list_item", "depth": 0, "text": "Found the remaining blocker."},
+        ]
 
     def test_append_task_timeline_log_inserts_after_existing_date_heading(self):
         tracker_state = _combined_tracker_state()
@@ -63,17 +59,12 @@ class TestApplyCommandToTrackerState:
             tracker_state=tracker_state,
         )
 
-        assert command_result.call_plan.blocked_operations == []
-        assert command_result.call_plan.calls[0].arguments["command"] == "update_content"
-        assert command_result.call_plan.calls[0].arguments["content_updates"][0] == {
-            "old_str": '### <mention-date start="2026-05-24"/>',
-            "new_str": "\n".join(
-                [
-                    '### <mention-date start="2026-05-24"/>',
-                    "- New agent line.",
-                ]
-            ),
-        }
+        assert command_result.write_intents[0].arguments["existing_timeline_heading"] == (
+            '<mention-date start="2026-05-24"/>'
+        )
+        assert command_result.write_intents[0].arguments["append_blocks"] == [
+            {"type": "bulleted_list_item", "depth": 0, "text": "New agent line."}
+        ]
 
     def test_append_task_timeline_log_preserves_manual_existing_date_heading(self):
         tracker_state = _combined_tracker_state()
@@ -99,7 +90,7 @@ class TestApplyCommandToTrackerState:
         )
 
         assert command_result.tracker_state["tasks"]["ALOVYA-1"]["timeline_entries"][0]["heading"] == "2026-05-24"
-        assert command_result.call_plan.calls[0].arguments["content_updates"][0]["old_str"] == "### 2026-05-24"
+        assert command_result.write_intents[0].arguments["existing_timeline_heading"] == "2026-05-24"
 
     def test_append_task_timeline_log_with_subheading_inserts_toggle(self):
         tracker_state = _combined_tracker_state()
@@ -126,20 +117,21 @@ class TestApplyCommandToTrackerState:
             tracker_state=tracker_state,
         )
 
-        assert command_result.call_plan.calls[0].arguments["content_updates"][0] == {
-            "old_str": '### <mention-date start="2026-05-24"/>',
-            "new_str": "\n".join(
-                [
-                    '### <mention-date start="2026-05-24"/>',
-                    "<details>",
-                    "<summary>Design notes</summary>",
-                    "\t- Moved task metadata into the database.",
-                    "</details>",
-                ]
-            ),
-        }
+        assert command_result.write_intents[0].arguments["append_blocks"] == [
+            {
+                "type": "toggle",
+                "text": "Design notes",
+                "children": [
+                    {
+                        "type": "bulleted_list_item",
+                        "depth": 0,
+                        "text": "Moved task metadata into the database.",
+                    }
+                ],
+            }
+        ]
 
-    def test_complete_task_updates_status_and_produces_exact_update_calls(self):
+    def test_complete_task_updates_status_and_produces_write_intents(self):
         tracker_state = _combined_tracker_state()
         tracker_state["completed_landing_page"]["notion_page_id"] = "33333333333333333333333333333333"
         command_result = apply_command_to_tracker_state(
@@ -164,26 +156,26 @@ class TestApplyCommandToTrackerState:
                 "blocks": [],
             }
         ]
-        assert [call.operation_key for call in command_result.call_plan.calls] == [
+        assert [write_intent.operation_key for write_intent in command_result.write_intents] == [
             "update_properties:task:ALOVYA-1",
             "replace:landing_page",
             "replace:completed_landing_page",
             "update_timeline_log:task:ALOVYA-1:2026-05-24",
         ]
-        assert command_result.call_plan.blocked_operations == []
-        calls_by_key = {
-            call.operation_key: call
-            for call in command_result.call_plan.calls
+        write_intents_by_key = {
+            write_intent.operation_key: write_intent
+            for write_intent in command_result.write_intents
         }
-        assert calls_by_key["update_properties:task:ALOVYA-1"].arguments["page_id"] == (
-            "22222222222222222222222222222222"
+        assert write_intents_by_key["update_properties:task:ALOVYA-1"].target_page_key == "task:ALOVYA-1"
+        assert write_intents_by_key["update_properties:task:ALOVYA-1"].arguments["properties"]["Status"] == "Complete"
+        assert write_intents_by_key["replace:landing_page"].operation_name == "replace_page_children"
+        assert write_intents_by_key["replace:completed_landing_page"].arguments["blocks"][0] == {
+            "type": "heading_2",
+            "text": "Completed",
+        }
+        assert write_intents_by_key["update_timeline_log:task:ALOVYA-1:2026-05-24"].operation_name == (
+            "update_timeline_log"
         )
-        assert calls_by_key["update_properties:task:ALOVYA-1"].arguments["properties"]["Status"] == "Complete"
-        assert calls_by_key["replace:landing_page"].arguments["command"] == "replace_content"
-        assert calls_by_key["replace:completed_landing_page"].arguments["command"] == "replace_content"
-        assert calls_by_key["update_timeline_log:task:ALOVYA-1:2026-05-24"].arguments["command"] == "update_content"
-        assert "## Completed" not in calls_by_key["replace:landing_page"].arguments["new_str"]
-        assert "## Completed" in calls_by_key["replace:completed_landing_page"].arguments["new_str"]
 
     def test_append_miscellaneous_note_command_updates_combined_tracker_state(self):
         command_result = apply_command_to_tracker_state(
@@ -199,7 +191,8 @@ class TestApplyCommandToTrackerState:
         assert command_result.tracker_state["miscellaneous_notes"]["dated_pages"]["2026-05-24"]["entries"][0]["lines"] == [
             "Recent context."
         ]
-        assert command_result.call_plan.calls[0].tool_name == "notion-create-pages"
+        assert command_result.write_intents[0].operation_name == "append_miscellaneous_context"
+        assert command_result.write_intents[0].target_page_key == "miscellaneous:2026-05-24"
 
     def test_create_synthesis_page_command_updates_combined_tracker_state(self):
         command_result = apply_command_to_tracker_state(
@@ -224,9 +217,12 @@ class TestApplyCommandToTrackerState:
         assert command_result.tracker_state["synthesis_notes"]["pages"]["onnx_qdq"]["sources"][0]["page_key"] == (
             "task:ALOVYA-1"
         )
-        assert command_result.call_plan.calls[0].tool_name == "notion-create-pages"
-        assert command_result.call_plan.calls[0].captures_page_key == "synthesis:onnx_qdq"
-        assert "## Sources" in command_result.call_plan.calls[0].arguments["pages"][0]["content"]
+        assert command_result.write_intents[0].operation_name == "create_synthesis_page"
+        assert command_result.write_intents[0].arguments["page"]["local_page_key"] == "synthesis:onnx_qdq"
+        assert command_result.write_intents[0].arguments["blocks"][0] == {
+            "type": "heading_2",
+            "text": "Sources",
+        }
 
     def test_reconcile_synthesis_root_page_mentions_updates_tracker_state_without_rest_writes(self):
         tracker_state = _combined_tracker_state()
@@ -258,8 +254,7 @@ class TestApplyCommandToTrackerState:
                 "root_block_type": "page_mention",
             },
         }
-        assert command_result.call_plan.calls == []
-        assert command_result.call_plan.blocked_operations == []
+        assert command_result.write_intents == []
 
     def test_record_page_id_command_updates_combined_synthesis_tracker_state(self):
         tracker_state = _combined_tracker_state()

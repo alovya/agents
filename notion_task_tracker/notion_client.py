@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from notion_task_tracker.commands import CommandResult, apply_command_to_tracker_state
-from notion_task_tracker.notion_mcp_calls import NotionMcpCallPlan, NotionMcpToolCall
+from notion_task_tracker.notion_mcp_calls import NotionMcpCallPlan, NotionMcpCallPlanner, NotionMcpToolCall
 from notion_task_tracker.notion_mcp_client import NotionMcpClient
 from notion_task_tracker.notion_rest_client import NotionRestClient
 from notion_task_tracker.task_pages import TaskDependencyGraph, TimelineEntry
@@ -176,7 +176,7 @@ async def _reconcile_tracker_state_for_command_targets(
 ) -> CommandResult:
     task_ids_to_refresh = _task_ids_to_refresh_before_command(command, tracker_state)
     if not task_ids_to_refresh:
-        return CommandResult(tracker_state=tracker_state, call_plan=NotionMcpCallPlan(), warnings=[])
+        return CommandResult(tracker_state=tracker_state, warnings=[])
 
     work_graph = TaskDependencyGraph.from_snapshot(tracker_state)
     refreshed_task_ids = set()
@@ -199,7 +199,6 @@ async def _reconcile_tracker_state_for_command_targets(
     work_graph.recalculate_display_priorities()
     return CommandResult(
         tracker_state=_replace_task_graph_in_tracker_state(tracker_state, work_graph),
-        call_plan=NotionMcpCallPlan(),
         warnings=[],
     )
 
@@ -228,8 +227,7 @@ async def _repair_and_write_reconciled_tracker_state(
         task_count=len(repaired_tracker_state["tasks"]),
         task_graph_changes=task_graph_changes,
         warnings=reconcile_result.warnings or [],
-        repair_call_count=len(repair_result.call_plan.calls),
-        repair_blocker_count=len(repair_result.call_plan.blocked_operations),
+        repair_operation_count=len(repair_result.write_intents),
     )
     _write_json(destination_output_path, reconcile_summary.to_json_summary())
     return reconcile_summary
@@ -504,18 +502,22 @@ async def _execute_command_result_writes(
     command_result: CommandResult,
     notion_client: "_NotionClient",
 ) -> tuple[dict[str, Any], list[str]]:
+    if not command_result.write_intents:
+        return command_result.tracker_state, []
+
     if _should_execute_write_intents_with_rest(command_result, notion_client):
         completed_operation_keys, captured_page_ids = await _execute_write_intents_with_notion_rest_client(
             command_result,
             notion_client,
         )
-    else:
-        completed_operation_keys, captured_page_ids = await _execute_available_calls_with_notion_client(
-            command_result.call_plan,
-            notion_client,
-        )
+        return _record_captured_page_ids(command_result.tracker_state, captured_page_ids), completed_operation_keys
+
+    completed_operation_keys, captured_page_ids, blocked_operation_count = await _execute_write_intents_with_notion_mcp_client(
+        command_result,
+        notion_client,
+    )
     tracker_state_with_page_ids = _record_captured_page_ids(command_result.tracker_state, captured_page_ids)
-    if not command_result.call_plan.blocked_operations:
+    if blocked_operation_count == 0:
         return tracker_state_with_page_ids, completed_operation_keys
 
     refresh_result = apply_command_to_tracker_state(
@@ -551,6 +553,23 @@ async def _execute_write_intents_with_notion_rest_client(
     return completed_operation_keys, captured_page_ids
 
 
+async def _execute_write_intents_with_notion_mcp_client(
+    command_result: CommandResult,
+    notion_client: "_NotionClient",
+) -> tuple[list[str], dict[str, str], int]:
+    if command_result.page_registry is None:
+        raise ValueError("MCP write execution requires a page registry")
+
+    call_plan = NotionMcpCallPlanner(command_result.page_registry).compile_write_intents(command_result.write_intents)
+    completed_operation_keys, captured_page_ids = await _execute_available_calls_with_notion_client(
+        call_plan,
+        notion_client,
+    )
+    if call_plan.blocked_operations and not captured_page_ids:
+        _raise_if_call_plan_has_blocked_operations(call_plan)
+    return completed_operation_keys, captured_page_ids, len(call_plan.blocked_operations)
+
+
 def _raise_if_call_plan_has_blocked_operations(call_plan: NotionMcpCallPlan) -> None:
     if not call_plan.blocked_operations:
         return
@@ -567,18 +586,6 @@ def _raise_if_call_plan_has_blocked_operations(call_plan: NotionMcpCallPlan) -> 
             sort_keys=True,
         )
     )
-
-
-async def _execute_call_plan_with_notion_client(
-    call_plan: NotionMcpCallPlan,
-    notion_client: "_NotionClient",
-) -> list[str]:
-    _raise_if_call_plan_has_blocked_operations(call_plan)
-    completed_operation_keys, _captured_page_ids = await _execute_available_calls_with_notion_client(
-        call_plan,
-        notion_client,
-    )
-    return completed_operation_keys
 
 
 async def _execute_available_calls_with_notion_client(
@@ -839,8 +846,7 @@ class NotionTaskReconcileSummary:
     task_count: int
     task_graph_changes: list[dict[str, Any]]
     warnings: list[dict[str, str]]
-    repair_call_count: int
-    repair_blocker_count: int
+    repair_operation_count: int
 
     def to_json_summary(self) -> dict[str, Any]:
         return {
@@ -851,8 +857,7 @@ class NotionTaskReconcileSummary:
             "task_count": self.task_count,
             "task_graph_changes": self.task_graph_changes,
             "warnings": self.warnings,
-            "repair_call_count": self.repair_call_count,
-            "repair_blocker_count": self.repair_blocker_count,
+            "repair_operation_count": self.repair_operation_count,
         }
 
 
@@ -900,7 +905,6 @@ async def _reconcile_tracker_state_from_task_database(
     )
     return CommandResult(
         tracker_state=_replace_task_graph_in_tracker_state(tracker_state, work_graph),
-        call_plan=NotionMcpCallPlan(),
         warnings=[],
     )
 
@@ -1030,7 +1034,8 @@ def _maybe_repair_reconciled_task_pages(
     )
     return CommandResult(
         tracker_state=repair_result.tracker_state,
-        call_plan=repair_result.call_plan,
+        write_intents=repair_result.write_intents,
+        page_registry=repair_result.page_registry,
         warnings=reconcile_result.warnings,
     )
 
@@ -1081,13 +1086,6 @@ def _parent_task_ids_from_change(task_graph_change: dict[str, Any]) -> list[str]
         for task_id in [parent_change.get("before"), parent_change.get("after")]
         if task_id is not None
     ]
-
-
-def _call_plan_from_json(call: dict[str, Any]) -> NotionMcpCallPlan:
-    if "call_plan" in call:
-        return NotionMcpCallPlan.from_snapshot(call["call_plan"])
-
-    return NotionMcpCallPlan.from_snapshot(call)
 
 
 def _notion_client_from_credentials_path(credentials_path: Path, notion_transport: str = "rest") -> "_NotionClient":

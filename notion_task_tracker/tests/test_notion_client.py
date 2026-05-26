@@ -4,11 +4,15 @@ from pathlib import Path
 import pytest
 
 from notion_task_tracker.commands import CommandResult
-from notion_task_tracker.common import COMPLETED_LANDING_PAGE_TITLE, LANDING_PAGE_TITLE
+from notion_task_tracker.common import (
+    COMPLETED_LANDING_PAGE_TITLE,
+    LANDING_PAGE_TITLE,
+    NotionPageReference,
+    NotionPageRegistry,
+    NotionWriteIntent,
+)
 from notion_task_tracker.notion_mcp_calls import NotionMcpCallPlan, NotionMcpToolCall
 from notion_task_tracker.notion_client import (
-    _call_plan_from_json,
-    _execute_call_plan_with_notion_client,
     _execute_database_task_creation_command,
     _execute_command_result_writes,
     _notion_client_from_credentials_path,
@@ -142,7 +146,6 @@ def test_repair_and_write_reconciled_tracker_state_pushes_repairs_for_changed_ta
             before_tracker_state=before_tracker_state,
             reconcile_result=CommandResult(
                 tracker_state=after_tracker_state,
-                call_plan=NotionMcpCallPlan(),
                 warnings=[{"kind": "manual_repair", "message": "Derived Notion views need repair"}],
             ),
             notion_client=notion_client,
@@ -169,8 +172,7 @@ def test_repair_and_write_reconciled_tracker_state_pushes_repairs_for_changed_ta
         "output_path": str(output_path),
         "tracker_state_path": str(tracker_state_path),
         "task_count": 1,
-        "repair_call_count": 2,
-        "repair_blocker_count": 0,
+        "repair_operation_count": 2,
         "task_graph_changes": [
             {
                 "task_id": "ALOVYA-1",
@@ -234,7 +236,6 @@ def test_repair_and_write_reconciled_tracker_state_skips_repairs_when_nothing_ch
             before_tracker_state=tracker_state,
             reconcile_result=CommandResult(
                 tracker_state=tracker_state,
-                call_plan=NotionMcpCallPlan(),
                 warnings=[],
             ),
             notion_client=notion_client,
@@ -245,33 +246,46 @@ def test_repair_and_write_reconciled_tracker_state_skips_repairs_when_nothing_ch
     assert output["completed_operations"] == []
     assert notion_client.calls == []
     assert reconcile_summary.to_json_summary()["task_graph_changes"] == []
-    assert reconcile_summary.to_json_summary()["repair_call_count"] == 0
-    assert reconcile_summary.to_json_summary()["repair_blocker_count"] == 0
+    assert reconcile_summary.to_json_summary()["repair_operation_count"] == 0
 
 
-def test_execute_call_plan_with_notion_client_requests_tools_in_order():
+def test_execute_command_result_writes_compiles_mcp_calls_downstream():
     notion_client = _FakeNotionMcpClient()
-    call_plan = _call_plan_from_json(
-        {
-            "calls": [
-                {
-                    "operation_key": "replace:landing_page",
-                    "tool_name": "notion-update-page",
-                    "arguments": {"page_id": "page-a", "command": "replace_content", "new_str": "A"},
-                    "captures_page_key": None,
-                },
-                {
-                    "operation_key": "update_properties:task:ALOVYA-1",
-                    "tool_name": "notion-update-page",
-                    "arguments": {"page_id": "page-b", "command": "update_properties", "properties": {}},
-                    "captures_page_key": None,
-                },
-            ],
-            "blocked_operations": [],
-        }
+    command_result = CommandResult(
+        tracker_state={},
+        write_intents=[
+            NotionWriteIntent(
+                operation_key="replace:landing_page",
+                operation_name="replace_page_children",
+                target_page_key="landing_page",
+                arguments={"blocks": [{"type": "paragraph", "text": "A"}]},
+            ),
+            NotionWriteIntent(
+                operation_key="update_properties:task:ALOVYA-1",
+                operation_name="update_page_properties",
+                target_page_key="task:ALOVYA-1",
+                arguments={"properties": {"Status": "Active"}},
+            ),
+        ],
+        page_registry=NotionPageRegistry(
+            pages={
+                "landing_page": NotionPageReference(
+                    local_page_key="landing_page",
+                    title="Landing",
+                    notion_page_id="11111111111111111111111111111111",
+                ),
+                "task:ALOVYA-1": NotionPageReference(
+                    local_page_key="task:ALOVYA-1",
+                    title="Task",
+                    notion_page_id="22222222222222222222222222222222",
+                ),
+            }
+        ),
     )
 
-    completed_operation_keys = asyncio.run(_execute_call_plan_with_notion_client(call_plan, notion_client))
+    _tracker_state, completed_operation_keys = asyncio.run(
+        _execute_command_result_writes(command_result, notion_client)
+    )
 
     assert [tool_call.operation_key for tool_call in notion_client.calls] == [
         "replace:landing_page",
@@ -685,7 +699,7 @@ def test_tracker_state_ready_for_task_timeline_write_keeps_usable_timeline_log()
 
 
 def test_raise_if_call_plan_has_blocked_operations_rejects_plan_before_writes():
-    call_plan = _call_plan_from_json(
+    call_plan = NotionMcpCallPlan.from_snapshot(
         {
             "calls": [],
             "blocked_operations": [
