@@ -17,9 +17,9 @@ from notion_task_tracker.tasks.actions.write_log import (
     repair_result_for_command_context,
     tracker_state_ready_for_command,
 )
-from notion_task_tracker.tasks.actions.create_task import (
-    execute_database_task_creation_command,
-    should_create_task_through_database,
+from notion_task_tracker.tasks.actions.create_task_page_in_database import (
+    command_creates_task_page_in_database,
+    execute_task_creation_command,
 )
 from notion_task_tracker.tasks.actions.update_task_dependencies import (
     maybe_repair_reconciled_task_pages,
@@ -93,8 +93,8 @@ async def _execute_command_file(
     )
     command_ready_tracker_state = command_ready_result.tracker_state
 
-    if should_create_task_through_database(command, command_ready_tracker_state):
-        command_tracker_state, command_operation_keys = await execute_database_task_creation_command(
+    if command_creates_task_page_in_database(command, command_ready_tracker_state):
+        command_tracker_state, command_operation_keys = await execute_task_creation_command(
             command=command,
             tracker_state=command_ready_tracker_state,
             notion_transport=transport,

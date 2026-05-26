@@ -28,7 +28,7 @@ from notion_task_tracker.common import (
 )
 
 
-from notion_task_tracker.tasks.pages.task_metadata import (
+from notion_task_tracker.tasks.task import (
     LANDING_HEADING_BY_PRIORITY,
     Priority,
     TASK_DATABASE_PRIORITY_PROPERTY,
@@ -36,12 +36,12 @@ from notion_task_tracker.tasks.pages.task_metadata import (
     TASK_DATABASE_TITLE_PROPERTY,
     TASK_PAGE_TIMELINE_LOG_HEADING,
     UPDATE_TIMELINE_LOG_OPERATION_NAME,
-    TaskPageMetadata,
+    Task,
     TaskStatus,
     TimelineEntry,
     _PRIORITY_RANK_BY_VALUE,
 )
-from notion_task_tracker.tasks.pages.rendering import (
+from notion_task_tracker.tasks.rendering import (
     _format_landing_task_text,
     _landing_color_for_task,
     _render_task_page_title,
@@ -66,7 +66,7 @@ class TaskDependencyGraph:
             title=COMPLETED_LANDING_PAGE_TITLE,
         )
     )
-    tasks: dict[str, TaskPageMetadata] = field(default_factory=dict)
+    tasks: dict[str, Task] = field(default_factory=dict)
 
     @classmethod
     def from_snapshot_path(cls, snapshot_path: str | Path) -> TaskDependencyGraph:
@@ -111,7 +111,7 @@ class TaskDependencyGraph:
     def page_registry(self) -> NotionPageRegistry:
         return NotionPageRegistry.from_page_pointers(self._pages_that_should_exist())
 
-    def add_task(self, task: TaskPageMetadata) -> None:
+    def add_task(self, task: Task) -> None:
         if task.task_id in self.tasks:
             raise NotionPlanningError(f"Task {task.task_id} already exists")
         self.tasks[task.task_id] = task
@@ -257,7 +257,7 @@ class TaskDependencyGraph:
             if task.notion_page_id is not None
         ]
 
-    def _plan_task_page_property_refresh(self, task: TaskPageMetadata) -> NotionWriteIntent:
+    def _plan_task_page_property_refresh(self, task: Task) -> NotionWriteIntent:
         return NotionWriteIntent(
             operation_key=f"update_properties:{task.local_page_key}",
             operation_name="update_page_properties",
@@ -273,7 +273,7 @@ class TaskDependencyGraph:
 
     def _plan_task_timeline_log_update(
         self,
-        task: TaskPageMetadata,
+        task: Task,
         existing_timeline_entry: TimelineEntry | None,
         appended_timeline_entry: TimelineEntry,
         timeline_entry: TimelineEntry,
@@ -385,7 +385,7 @@ class TaskDependencyGraph:
         self,
         task_id: str,
         depth: int,
-        task_should_be_visible: Callable[[TaskPageMetadata], bool],
+        task_should_be_visible: Callable[[Task], bool],
     ) -> list[dict[str, Any]]:
         task = self.tasks[task_id]
         displayed_priority = task.displayed_priority or task.configured_priority
@@ -467,7 +467,7 @@ class TaskDependencyGraph:
 
     def _landing_root_task_ids_matching(
         self,
-        task_should_be_visible: Callable[[TaskPageMetadata], bool],
+        task_should_be_visible: Callable[[Task], bool],
     ) -> list[str]:
         return [
             task.task_id
@@ -478,14 +478,14 @@ class TaskDependencyGraph:
 
     def _parent_is_not_visible_on_same_landing(
         self,
-        task: TaskPageMetadata,
-        task_should_be_visible: Callable[[TaskPageMetadata], bool],
+        task: Task,
+        task_should_be_visible: Callable[[Task], bool],
     ) -> bool:
         return task.parent_task_id is None or not task_should_be_visible(self.tasks[task.parent_task_id])
 
     def _top_level_task_ids_matching(
         self,
-        task_should_be_visible: Callable[[TaskPageMetadata], bool],
+        task_should_be_visible: Callable[[Task], bool],
     ) -> list[str]:
         return [
             task.task_id
@@ -493,7 +493,7 @@ class TaskDependencyGraph:
             if task.parent_task_id is None and task_should_be_visible(task)
         ]
 
-    def _calculate_priority_visible_on_task(self, task: TaskPageMetadata) -> Priority:
+    def _calculate_priority_visible_on_task(self, task: Task) -> Priority:
         priorities_visible_in_subtree = [task.configured_priority]
         for child_task_id in task.child_task_ids:
             child_task = self.tasks[child_task_id]
@@ -506,16 +506,16 @@ class TaskDependencyGraph:
             task.timeline_entries = _merged_timeline_entries_by_date(task.timeline_entries)
 
 
-def _task_should_start_ongoing_landing_tree(task: TaskPageMetadata) -> bool:
+def _task_should_start_ongoing_landing_tree(task: Task) -> bool:
     return task.status not in {TaskStatus.COMPLETE, TaskStatus.CANCELLED}
 
 
-def _task_should_appear_inside_ongoing_landing_tree(task: TaskPageMetadata) -> bool:
+def _task_should_appear_inside_ongoing_landing_tree(task: Task) -> bool:
     return True
 
 
 def _upsert_timeline_entry(
-    task: TaskPageMetadata,
+    task: Task,
     timeline_entry: TimelineEntry,
 ) -> TimelineEntry:
     task.timeline_entries = _merged_timeline_entries_by_date(task.timeline_entries)
@@ -585,7 +585,7 @@ def _task_id_sort_key(task_id: str) -> tuple[str, int, str]:
     return task_id, -1, task_id
 
 
-def _task_to_snapshot(task: TaskPageMetadata) -> dict[str, Any]:
+def _task_to_snapshot(task: Task) -> dict[str, Any]:
     return {
         "task_id": task.task_id,
         "title": task.title,
@@ -616,10 +616,10 @@ def _timeline_entry_to_snapshot(timeline_entry: TimelineEntry) -> dict[str, Any]
     }
 
 
-def _task_from_snapshot(snapshot: dict[str, Any]) -> TaskPageMetadata:
+def _task_from_snapshot(snapshot: dict[str, Any]) -> Task:
     displayed_priority = snapshot.get("displayed_priority")
 
-    return TaskPageMetadata(
+    return Task(
         task_id=snapshot["task_id"],
         title=snapshot["title"],
         configured_priority=Priority(snapshot["configured_priority"]),

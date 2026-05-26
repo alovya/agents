@@ -13,14 +13,14 @@ from notion_task_tracker.common import (
     canonical_notion_page_id,
     notion_page_id_from_url,
 )
-from notion_task_tracker.tasks.pages.task_dependency_graph import TaskDependencyGraph
-from notion_task_tracker.tasks.pages.task_metadata import (
+from notion_task_tracker.tasks.dependency_graph import TaskDependencyGraph
+from notion_task_tracker.tasks.task import (
     PROPERTIES_BLOCK_PATTERN,
     TASK_DATABASE_PRIORITY_PROPERTY,
     TASK_DATABASE_STATUS_PROPERTY,
     TASK_DATABASE_TITLE_PROPERTY,
     Priority,
-    TaskPageMetadata,
+    Task,
     TaskStatus,
 )
 
@@ -201,9 +201,9 @@ def _database_row_from_query_result(query_result: dict[str, Any]) -> TaskDatabas
 
 def _task_from_database_row(
     database_row: TaskDatabaseRow,
-    previous_task: TaskPageMetadata | None,
-) -> TaskPageMetadata:
-    return TaskPageMetadata(
+    previous_task: Task | None,
+) -> Task:
+    return Task(
         task_id=database_row.task_id,
         title=database_row.title,
         configured_priority=database_row.configured_priority,
@@ -311,7 +311,7 @@ def _optional_text_property(query_result: dict[str, Any], property_name: str) ->
     return str(value)
 
 
-def _previous_tasks_by_task_id(previous_work_graph: TaskDependencyGraph | None) -> dict[str, TaskPageMetadata]:
+def _previous_tasks_by_task_id(previous_work_graph: TaskDependencyGraph | None) -> dict[str, Task]:
     if previous_work_graph is None:
         return {}
 
@@ -325,7 +325,7 @@ def _previous_completed_landing_page(previous_work_graph: TaskDependencyGraph | 
     return previous_work_graph.completed_landing_page
 
 
-def _previous_tasks_by_page_id(previous_work_graph: TaskDependencyGraph | None) -> dict[str, TaskPageMetadata]:
+def _previous_tasks_by_page_id(previous_work_graph: TaskDependencyGraph | None) -> dict[str, Task]:
     if previous_work_graph is None:
         return {}
 

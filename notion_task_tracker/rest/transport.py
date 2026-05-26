@@ -11,7 +11,7 @@ from notion_task_tracker.notion_transport import (
     NotionWriteExecutionResult,
     query_task_database_rows_with_client,
 )
-from notion_task_tracker.tasks.pages.task_database import TASK_DATABASE_TITLE_PROPERTY
+from notion_task_tracker.tasks.database import TASK_DATABASE_TITLE_PROPERTY
 
 
 class NotionRestTransport:

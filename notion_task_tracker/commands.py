@@ -15,11 +15,11 @@ from notion_task_tracker.common import (
 )
 from notion_task_tracker.miscellaneous_pages import MiscellaneousNotesMetadata
 from notion_task_tracker.synthesis_pages import SynthesisNotesMetadata, SynthesisPageMetadata, SynthesisSource
-from notion_task_tracker.tasks.pages import (
+from notion_task_tracker.tasks.actions.complete_task import complete_task_from_command
+from notion_task_tracker.tasks.actions.build_timeline_entry_from_command import timeline_entry_from_command
+from notion_task_tracker.tasks import (
     TaskDependencyGraph,
-    TimelineEntry,
 )
-from notion_task_tracker.tasks.pages.task_metadata import MENTION_DATE_START_PATTERN
 
 
 @dataclass(frozen=True, init=False)
@@ -84,7 +84,7 @@ def apply_command_to_tracker_state(command: dict[str, Any], tracker_state: dict[
         return _apply_task_command(command, tracker_state, _append_task_timeline_log)
 
     if command_name == "complete_task":
-        return _apply_task_command(command, tracker_state, _complete_task)
+        return _apply_task_command(command, tracker_state, complete_task_from_command)
 
     if command_name == "refresh_task_pages":
         return _refresh_task_pages(command, tracker_state)
@@ -169,17 +169,7 @@ def _append_task_timeline_log(
 ):
     return work_graph.append_task_timeline_log(
         task_id=command["task_id"],
-        timeline_entry=_timeline_entry_from_command(command["timeline_entry"]),
-    )
-
-
-def _complete_task(
-    work_graph: TaskDependencyGraph,
-    command: dict[str, Any],
-):
-    return work_graph.complete_task(
-        task_id=command["task_id"],
-        timeline_entry=_timeline_entry_from_command(command["timeline_entry"]),
+        timeline_entry=timeline_entry_from_command(command["timeline_entry"]),
     )
 
 
@@ -355,25 +345,6 @@ def _filter_write_intents(
         for write_intent in write_intents
         if write_intent.operation_key in operation_key_set
     ]
-
-
-def _timeline_entry_from_command(command: dict[str, Any]) -> TimelineEntry:
-    entry_date = command["entry_date"]
-    return TimelineEntry(
-        entry_date=entry_date,
-        heading=_date_only_timeline_heading(command.get("heading", ""), entry_date),
-        lines=list(command.get("lines", [])),
-        blocks=list(command.get("blocks", [])),
-        subheading=command.get("subheading"),
-    )
-
-
-def _date_only_timeline_heading(raw_heading: str, entry_date: str) -> str:
-    date_match = MENTION_DATE_START_PATTERN.search(raw_heading)
-    if date_match is not None:
-        return f'<mention-date start="{date_match.group(1)}"/>'
-
-    return f'<mention-date start="{entry_date}"/>'
 
 
 def _synthesis_source_from_command(command: dict[str, Any]) -> SynthesisSource:

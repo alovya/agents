@@ -33,9 +33,9 @@ from notion_task_tracker.synthesis_pages import (
     SynthesisSource,
     parse_synthesis_root_page_mentions,
 )
-from notion_task_tracker.tasks.pages import (
+from notion_task_tracker.tasks import (
     Priority,
-    TaskPageMetadata,
+    Task,
     TaskStatus,
     TimelineEntry,
     TaskDependencyGraph,
@@ -63,7 +63,7 @@ __all__ = [
     "SynthesisPageMetadata",
     "SynthesisRootPageMention",
     "SynthesisSource",
-    "TaskPageMetadata",
+    "Task",
     "TaskStatus",
     "TimelineEntry",
     "TaskDependencyGraph",

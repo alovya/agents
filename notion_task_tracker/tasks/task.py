@@ -1,4 +1,4 @@
-"""Shared task page data shapes and constants."""
+"""Shared task data shapes and constants."""
 
 from __future__ import annotations
 
@@ -87,8 +87,8 @@ class TimelineEntry:
 
 
 @dataclass
-class TaskPageMetadata:
-    """Metadata for one task page."""
+class Task:
+    """Metadata for one task."""
 
     task_id: str
     title: str

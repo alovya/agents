@@ -7,8 +7,8 @@ from typing import Any
 
 from notion_task_tracker.commands import CommandResult, apply_command_to_tracker_state
 from notion_task_tracker.notion_transport import NotionTransport
-from notion_task_tracker.tasks.pages import TaskDependencyGraph
-from notion_task_tracker.tasks.pages.task_database import (
+from notion_task_tracker.tasks import TaskDependencyGraph
+from notion_task_tracker.tasks.database import (
     task_database_row_from_fetched_task_database_page,
     task_dependency_graph_from_database_query_results,
 )

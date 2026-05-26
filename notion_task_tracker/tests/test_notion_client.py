@@ -28,15 +28,15 @@ from notion_task_tracker.tasks.actions.write_log import (
     timeline_state_for_task_command,
     tracker_state_with_fetched_task_timeline_dates,
 )
-from notion_task_tracker.tasks.actions.create_task import execute_database_task_creation_command
-from notion_task_tracker.tasks.pages.task_page_content import timeline_entries_from_fetched_task_page_content
+from notion_task_tracker.tasks.actions.create_task_page_in_database import execute_task_creation_command
+from notion_task_tracker.tasks.page_content import timeline_entries_from_fetched_task_page_content
 from notion_task_tracker.tasks.actions.update_task_dependencies import (
     reconcile_tracker_state_for_command_targets,
     reconcile_tracker_state_from_notion_pages,
     repair_operation_keys_for_reconciled_task_pages,
 )
-from notion_task_tracker.tasks.pages import Priority, TaskDependencyGraph, TaskPageMetadata, TaskStatus
-from notion_task_tracker.tasks.pages.task_database import default_task_database_tracker_state
+from notion_task_tracker.tasks import Priority, TaskDependencyGraph, Task, TaskStatus
+from notion_task_tracker.tasks.database import default_task_database_tracker_state
 
 
 def test_rest_client_does_not_import_notion_mcp_runtime():
@@ -512,7 +512,7 @@ def test_reconcile_tracker_state_for_command_targets_requires_known_tasks():
     assert notion_client.queries == []
 
 
-def test_execute_database_task_creation_command_creates_database_row_then_refreshes_landing():
+def test_execute_task_creation_command_creates_database_row_then_refreshes_landing():
     tracker_state = _tracker_state_with_root_task()
     tracker_state["task_database"] = default_task_database_tracker_state()
     notion_client = _FakeNotionMcpClient(
@@ -536,7 +536,7 @@ def test_execute_database_task_creation_command_creates_database_row_then_refres
     )
 
     updated_tracker_state, completed_operation_keys = asyncio.run(
-        execute_database_task_creation_command(
+        execute_task_creation_command(
             command={
                 "command": "create_child_task",
                 "parent_task_id": "ALOVYA-1",
@@ -857,7 +857,7 @@ def _tracker_state_with_root_task() -> dict:
     work_graph = TaskDependencyGraph()
     work_graph.landing_page.notion_page_id = "11111111111111111111111111111111"
     work_graph.add_task(
-        TaskPageMetadata(
+        Task(
             task_id="ALOVYA-1",
             title="Root task",
             configured_priority=Priority.P1,
@@ -872,7 +872,7 @@ def _tracker_state_with_root_and_child_task() -> dict:
     work_graph = TaskDependencyGraph()
     work_graph.landing_page.notion_page_id = "11111111111111111111111111111111"
     work_graph.add_task(
-        TaskPageMetadata(
+        Task(
             task_id="ALOVYA-1",
             title="Root task",
             configured_priority=Priority.P1,
@@ -881,7 +881,7 @@ def _tracker_state_with_root_and_child_task() -> dict:
         )
     )
     work_graph.add_task(
-        TaskPageMetadata(
+        Task(
             task_id="ALOVYA-2",
             title="Child task",
             configured_priority=Priority.P1,

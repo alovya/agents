@@ -9,7 +9,7 @@ Fixed page names live in `common.py`:
 3. `Alovya's miscellanous notes`
 4. `Alovya's synthesis notes`
 
-Notion page ids live in tracker state because Notion assigns them. The task database source and saved-view URLs live in `tasks/pages/task_database.py`.
+Notion page ids live in tracker state because Notion assigns them. The task database source and saved-view URLs live in `tasks/database.py`.
 
 ## Agent Workflow
 
@@ -259,8 +259,12 @@ The package is Python metadata and Notion write execution code. Live fetch/write
 - `__main__.py`: CLI for command JSON and direct task database reconciliation.
 - `commands.py`: command dispatcher from JSON to tracker-state updates and Notion writes.
 - `tasks/workflow.py`: top-level task command and reconciliation workflow.
-- `tasks/actions/`: task actions such as timeline logging, task creation, and dependency reconciliation.
-- `tasks/pages/`: task database projection, task graph metadata, and rendering.
+- `tasks/dependency_graph.py`: task dependency graph and derived landing-page write planning.
+- `tasks/database.py`: task database projection and database-row parsing.
+- `tasks/task.py`: task, priority, status, and timeline-entry data.
+- `tasks/page_content.py`: task page body parsing for timeline logs.
+- `tasks/rendering.py`: task title, landing-page, and timeline block rendering.
+- `tasks/actions/`: task actions such as timeline logging, completion, database-backed creation, and dependency reconciliation.
 - `rest/`: Notion REST client and workflow transport.
 - `mcp/`: temporary Notion MCP fallback client, call compiler, and workflow transport.
 - `notion_client.py`: compatibility imports for the public task workflow.

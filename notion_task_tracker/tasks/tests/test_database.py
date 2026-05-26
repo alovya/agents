@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 
 from notion_task_tracker.common import COMPLETED_LANDING_PAGE_TITLE, LANDING_PAGE_TITLE, PagePointer
-from notion_task_tracker.tasks.pages import Priority, TaskDependencyGraph, TaskPageMetadata, TaskStatus
-from notion_task_tracker.tasks.pages.task_database import (
+from notion_task_tracker.tasks import Priority, TaskDependencyGraph, Task, TaskStatus
+from notion_task_tracker.tasks.database import (
     TASK_DATABASE_DATA_SOURCE_URL,
     TASK_DATABASE_VIEW_URL,
     default_task_database_tracker_state,
@@ -20,7 +20,7 @@ class TestTaskDependencyGraphFromDatabaseQueryResults:
     def test_builds_graph_from_ticket_ids_and_parent_relations(self):
         previous_work_graph = TaskDependencyGraph()
         previous_work_graph.add_task(
-            TaskPageMetadata(
+            Task(
                 task_id="ALOVYA-1",
                 title="Old root title",
                 configured_priority=Priority.P1,

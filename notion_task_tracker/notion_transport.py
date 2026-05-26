@@ -9,7 +9,7 @@ from typing import Any, Protocol
 from notion_task_tracker.commands import CommandResult
 from notion_task_tracker.mcp.client import NotionMcpClient
 from notion_task_tracker.rest.client import NotionRestClient
-from notion_task_tracker.tasks.pages.task_database import (
+from notion_task_tracker.tasks.database import (
     task_database_data_source_url_from_tracker_state,
     task_database_query_for_tracker_state,
     task_database_view_url_from_tracker_state,

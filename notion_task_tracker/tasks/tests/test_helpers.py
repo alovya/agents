@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from notion_task_tracker.tasks.pages import (
+from notion_task_tracker.tasks import (
     Priority,
-    TaskPageMetadata,
+    Task,
     TaskStatus,
     TimelineEntry,
     TaskDependencyGraph,
@@ -12,7 +12,7 @@ from notion_task_tracker.tasks.pages import (
 def _build_recursive_work_graph() -> TaskDependencyGraph:
     work_graph = TaskDependencyGraph()
     work_graph.add_task(
-        TaskPageMetadata(
+        Task(
             task_id="ALOVYA-2",
             title="Activation quantisation stack",
             configured_priority=Priority.P2,
@@ -22,7 +22,7 @@ def _build_recursive_work_graph() -> TaskDependencyGraph:
         )
     )
     work_graph.add_task(
-        TaskPageMetadata(
+        Task(
             task_id="ALOVYA-3",
             title="Find activation mismatch",
             configured_priority=Priority.P1,
@@ -38,7 +38,7 @@ def _build_recursive_work_graph() -> TaskDependencyGraph:
         )
     )
     work_graph.add_task(
-        TaskPageMetadata(
+        Task(
             task_id="ALOVYA-4",
             title="Complete calibration branch",
             configured_priority=Priority.P3,
@@ -47,7 +47,7 @@ def _build_recursive_work_graph() -> TaskDependencyGraph:
         )
     )
     work_graph.add_task(
-        TaskPageMetadata(
+        Task(
             task_id="ALOVYA-5",
             title="Debug ONNX/QNN activation mismatch",
             configured_priority=Priority.P0,

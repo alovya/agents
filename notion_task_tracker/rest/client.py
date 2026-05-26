@@ -12,7 +12,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from notion_task_tracker.common import NotionPageRegistry, NotionWriteIntent, canonical_notion_page_id, notion_page_id_from_url
-from notion_task_tracker.tasks.pages.task_database import (
+from notion_task_tracker.tasks.database import (
     TASK_DATABASE_DATA_SOURCE_ID,
     TASK_DATABASE_PARENT_PROPERTY,
     TASK_DATABASE_PRIORITY_PROPERTY,

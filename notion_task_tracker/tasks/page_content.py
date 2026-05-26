@@ -6,7 +6,7 @@ import re
 from typing import Any
 
 from notion_task_tracker.common import paragraph_block
-from notion_task_tracker.tasks.pages.task_metadata import (
+from notion_task_tracker.tasks.task import (
     MENTION_DATE_START_PATTERN,
     PROPERTIES_BLOCK_PATTERN,
     TASK_PAGE_TIMELINE_LOG_HEADING,

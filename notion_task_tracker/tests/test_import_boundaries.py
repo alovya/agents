@@ -29,7 +29,7 @@ def test_workflow_modules_do_not_import_transport_protocol_details():
     workflow_files = [
         "tasks/workflow.py",
         "tasks/actions/write_log.py",
-        "tasks/actions/create_task.py",
+        "tasks/actions/create_task_page_in_database.py",
         "tasks/actions/update_task_dependencies.py",
         "notion_write_executor.py",
     ]

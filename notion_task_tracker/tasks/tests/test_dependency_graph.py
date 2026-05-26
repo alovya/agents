@@ -5,14 +5,14 @@ import json
 import pytest
 
 from notion_task_tracker.common import COMPLETED_LANDING_PAGE_TITLE, LANDING_PAGE_TITLE
-from notion_task_tracker.tasks.pages import (
+from notion_task_tracker.tasks import (
     Priority,
     TaskDependencyGraph,
-    TaskPageMetadata,
+    Task,
     TaskStatus,
     TimelineEntry,
 )
-from notion_task_tracker.tasks.pages.tests.task_page_test_helpers import (
+from notion_task_tracker.tasks.tests.test_helpers import (
     _build_recursive_work_graph,
     _visible_strikethrough_text,
 )
@@ -51,7 +51,7 @@ class TestTaskDependencyGraphValidate:
     def test_rejects_task_hierarchy_cycle(self):
         work_graph = TaskDependencyGraph()
         work_graph.add_task(
-            TaskPageMetadata(
+            Task(
                 task_id="ALOVYA-1",
                 title="Root",
                 configured_priority=Priority.P1,
@@ -61,7 +61,7 @@ class TestTaskDependencyGraphValidate:
             )
         )
         work_graph.add_task(
-            TaskPageMetadata(
+            Task(
                 task_id="ALOVYA-2",
                 title="Child",
                 configured_priority=Priority.P1,
@@ -98,7 +98,7 @@ class TestTaskDependencyGraphTaskIdsGroupedForLandingPage:
     def test_groups_live_top_level_tasks_by_displayed_priority(self):
         work_graph = _build_recursive_work_graph()
         work_graph.add_task(
-            TaskPageMetadata(
+            Task(
                 task_id="ALOVYA-9",
                 title="Parked cleanup",
                 configured_priority=Priority.P3,
@@ -115,7 +115,7 @@ class TestTaskDependencyGraphTaskIdsGroupedForLandingPage:
     def test_keeps_completed_top_level_tasks_in_completed_section(self):
         work_graph = _build_recursive_work_graph()
         work_graph.add_task(
-            TaskPageMetadata(
+            Task(
                 task_id="ALOVYA-9",
                 title="Completed optimisation",
                 configured_priority=Priority.P0,
@@ -132,7 +132,7 @@ class TestTaskDependencyGraphTaskIdsGroupedForLandingPage:
     def test_orders_top_level_tasks_by_ticket_number_not_title(self):
         work_graph = _build_recursive_work_graph()
         work_graph.add_task(
-            TaskPageMetadata(
+            Task(
                 task_id="ALOVYA-10",
                 title="A title that would sort before the existing task",
                 configured_priority=Priority.P0,

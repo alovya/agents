@@ -1,7 +1,8 @@
-"""Create task database pages and update derived task views."""
+"""Create parent, child, or sibling task pages through the task database."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 from typing import Any
 
@@ -9,8 +10,8 @@ from notion_task_tracker.commands import apply_command_to_tracker_state
 from notion_task_tracker.notion_transport import NotionTransport
 from notion_task_tracker.notion_write_executor import execute_command_result_writes
 from notion_task_tracker.tasks.actions.write_log import command_result_from_current_notion_state
-from notion_task_tracker.tasks.pages import TaskDependencyGraph, TaskPageMetadata, TimelineEntry
-from notion_task_tracker.tasks.pages.task_database import (
+from notion_task_tracker.tasks import TaskDependencyGraph, Task, TimelineEntry
+from notion_task_tracker.tasks.database import (
     TASK_DATABASE_PARENT_PROPERTY,
     TASK_DATABASE_PRIORITY_PROPERTY,
     TASK_DATABASE_STATUS_PROPERTY,
@@ -18,67 +19,50 @@ from notion_task_tracker.tasks.pages.task_database import (
     task_database_data_source_id_from_tracker_state,
     task_id_from_fetched_task_database_page,
 )
-from notion_task_tracker.tasks.pages.task_metadata import (
+from notion_task_tracker.tasks.task import (
     TASK_PAGE_TIMELINE_LOG_HEADING,
     Priority,
     TaskStatus,
 )
-from notion_task_tracker.tasks.pages.task_page_content import timeline_entry_for_date
+from notion_task_tracker.tasks.page_content import timeline_entry_for_date
 from notion_task_tracker.tasks.actions.update_task_dependencies import replace_task_graph_in_tracker_state
 
 
-async def execute_database_task_creation_command(
+async def execute_task_creation_command(
     command: dict[str, Any],
     tracker_state: dict[str, Any],
     notion_transport: NotionTransport,
 ) -> tuple[dict[str, Any], list[str]]:
     work_graph = TaskDependencyGraph.from_snapshot(tracker_state)
-    parent_task_id = _database_task_parent_id_for_creation_command(command, work_graph)
-    task_command = _database_task_command_for_creation_command(command)
-    initial_timeline_entry = _initial_timeline_entry_for_created_database_task(command, parent_task_id)
-    created_page_id, created_task_id, create_operation_keys = await _create_task_database_row(
-        command_name=command["command"],
-        task_title=task_command["title"],
-        configured_priority=Priority(task_command["configured_priority"]),
-        status=TaskStatus(task_command["status"]),
-        initial_timeline_entry=initial_timeline_entry,
-        parent_task_id=parent_task_id,
+    task_creation = _task_creation_from_command(command, work_graph)
+    created_page_id, created_task_id, create_operation_keys = await _create_database_page_and_read_ticket_id(
+        task_creation=task_creation,
         tracker_state=tracker_state,
         work_graph=work_graph,
         notion_transport=notion_transport,
     )
 
-    work_graph.add_task(
-        TaskPageMetadata(
-            task_id=created_task_id,
-            title=task_command["title"],
-            configured_priority=Priority(task_command["configured_priority"]),
-            status=TaskStatus(task_command["status"]),
-            timeline_entries=_timeline_entries_for_created_database_task(initial_timeline_entry),
-            notion_page_id=created_page_id,
-        )
+    _add_created_task_to_dependency_graph(
+        work_graph=work_graph,
+        task_creation=task_creation,
+        created_task_id=created_task_id,
+        created_page_id=created_page_id,
     )
-    if parent_task_id is not None:
-        work_graph.link_parent_to_child(parent_task_id=parent_task_id, child_task_id=created_task_id)
-    work_graph.validate()
-    work_graph.recalculate_display_priorities()
-
     updated_tracker_state = replace_task_graph_in_tracker_state(tracker_state, work_graph)
-    timeline_tracker_state, timeline_operation_keys = await _append_database_task_creation_timeline_entry(
-        command=command,
+    timeline_tracker_state, timeline_operation_keys = await _write_task_creation_timeline_entry(
+        task_creation=task_creation,
         tracker_state=updated_tracker_state,
         created_task_id=created_task_id,
-        parent_task_id=parent_task_id,
         notion_transport=notion_transport,
     )
-    landing_tracker_state, landing_operation_keys = await _refresh_landing_page_from_database_task_graph(
+    landing_tracker_state, landing_operation_keys = await _refresh_derived_task_landing_pages(
         timeline_tracker_state,
         notion_transport,
     )
     return landing_tracker_state, create_operation_keys + timeline_operation_keys + landing_operation_keys
 
 
-def should_create_task_through_database(command: dict[str, Any], tracker_state: dict[str, Any]) -> bool:
+def command_creates_task_page_in_database(command: dict[str, Any], tracker_state: dict[str, Any]) -> bool:
     if command.get("command") not in {
         "create_top_level_task",
         "create_child_task",
@@ -92,35 +76,97 @@ def should_create_task_through_database(command: dict[str, Any], tracker_state: 
     return True
 
 
-async def _create_task_database_row(
-    command_name: str,
-    task_title: str,
-    configured_priority: Priority,
-    status: TaskStatus,
-    initial_timeline_entry: dict[str, Any] | None,
-    parent_task_id: str | None,
+@dataclass(frozen=True)
+class _TaskCreation:
+    command_name: str
+    task_title: str
+    configured_priority: Priority
+    status: TaskStatus
+    parent_task_id: str | None
+    initial_child_timeline_entry: dict[str, Any] | None
+    parent_timeline_entry: dict[str, Any] | None
+
+
+def _task_creation_from_command(command: dict[str, Any], work_graph: TaskDependencyGraph) -> _TaskCreation:
+    command_name = command["command"]
+    if command_name == "create_top_level_task":
+        return _parent_task_creation_from_command(command)
+
+    if command_name == "create_child_task":
+        return _child_task_creation_from_command(command)
+
+    if command_name == "create_sibling_task":
+        return _sibling_task_creation_from_command(command, work_graph)
+
+    raise ValueError(f"Unsupported database task creation command {command_name!r}")
+
+
+def _parent_task_creation_from_command(command: dict[str, Any]) -> _TaskCreation:
+    task_command = command["task"]
+    return _TaskCreation(
+        command_name=command["command"],
+        task_title=task_command["title"],
+        configured_priority=Priority(task_command["configured_priority"]),
+        status=TaskStatus(task_command["status"]),
+        parent_task_id=None,
+        initial_child_timeline_entry=None,
+        parent_timeline_entry=command.get("timeline_entry"),
+    )
+
+
+def _child_task_creation_from_command(command: dict[str, Any]) -> _TaskCreation:
+    child_task_command = command["child_task"]
+    parent_timeline_entry = command.get("parent_timeline_entry")
+    return _TaskCreation(
+        command_name=command["command"],
+        task_title=child_task_command["title"],
+        configured_priority=Priority(child_task_command["configured_priority"]),
+        status=TaskStatus(child_task_command["status"]),
+        parent_task_id=command["parent_task_id"],
+        initial_child_timeline_entry=parent_timeline_entry,
+        parent_timeline_entry=parent_timeline_entry,
+    )
+
+
+def _sibling_task_creation_from_command(command: dict[str, Any], work_graph: TaskDependencyGraph) -> _TaskCreation:
+    sibling_task_command = command["sibling_task"]
+    parent_task_id = work_graph.tasks[command["sibling_task_id"]].parent_task_id
+    timeline_entry = command.get("timeline_entry")
+    return _TaskCreation(
+        command_name=command["command"],
+        task_title=sibling_task_command["title"],
+        configured_priority=Priority(sibling_task_command["configured_priority"]),
+        status=TaskStatus(sibling_task_command["status"]),
+        parent_task_id=parent_task_id,
+        initial_child_timeline_entry=timeline_entry if parent_task_id is not None else None,
+        parent_timeline_entry=timeline_entry,
+    )
+
+
+async def _create_database_page_and_read_ticket_id(
+    task_creation: _TaskCreation,
     tracker_state: dict[str, Any],
     work_graph: TaskDependencyGraph,
     notion_transport: NotionTransport,
 ) -> tuple[str, str, list[str]]:
-    create_operation_key = f"create_database_task:{command_name}"
+    create_operation_key = f"create_database_task:{task_creation.command_name}"
     created_page = await notion_transport.create_task_database_page(
         data_source_id=task_database_data_source_id_from_tracker_state(tracker_state),
         properties=_new_task_database_row_properties(
-            task_title=task_title,
-            configured_priority=configured_priority,
-            status=status,
-            parent_task_id=parent_task_id,
+            task_title=task_creation.task_title,
+            configured_priority=task_creation.configured_priority,
+            status=task_creation.status,
+            parent_task_id=task_creation.parent_task_id,
             work_graph=work_graph,
         ),
         blocks=_new_task_page_initial_blocks(
-            initial_timeline_entry=initial_timeline_entry,
-            parent_task_id=parent_task_id,
+            initial_timeline_entry=task_creation.initial_child_timeline_entry,
+            parent_task_id=task_creation.parent_task_id,
             work_graph=work_graph,
         ),
         content=_new_task_page_initial_content(
-            initial_timeline_entry=initial_timeline_entry,
-            parent_task_id=parent_task_id,
+            initial_timeline_entry=task_creation.initial_child_timeline_entry,
+            parent_task_id=task_creation.parent_task_id,
             work_graph=work_graph,
         ),
         operation_key=create_operation_key,
@@ -131,7 +177,7 @@ async def _create_task_database_row(
     completed_update_operation_key = await notion_transport.update_task_database_page_title(
         page_id=created_page.notion_page_id,
         title_property=TASK_DATABASE_TITLE_PROPERTY,
-        title=task_title,
+        title=task_creation.task_title,
         operation_key=update_title_operation_key,
     )
     return (
@@ -141,22 +187,43 @@ async def _create_task_database_row(
     )
 
 
-async def _append_database_task_creation_timeline_entry(
-    command: dict[str, Any],
+def _add_created_task_to_dependency_graph(
+    work_graph: TaskDependencyGraph,
+    task_creation: _TaskCreation,
+    created_task_id: str,
+    created_page_id: str,
+) -> None:
+    work_graph.add_task(
+        Task(
+            task_id=created_task_id,
+            title=task_creation.task_title,
+            configured_priority=task_creation.configured_priority,
+            status=task_creation.status,
+            timeline_entries=_timeline_entries_for_created_task(task_creation.initial_child_timeline_entry),
+            notion_page_id=created_page_id,
+        )
+    )
+    if task_creation.parent_task_id is not None:
+        work_graph.link_parent_to_child(parent_task_id=task_creation.parent_task_id, child_task_id=created_task_id)
+    work_graph.validate()
+    work_graph.recalculate_display_priorities()
+
+
+async def _write_task_creation_timeline_entry(
+    task_creation: _TaskCreation,
     tracker_state: dict[str, Any],
     created_task_id: str,
-    parent_task_id: str | None,
     notion_transport: NotionTransport,
 ) -> tuple[dict[str, Any], list[str]]:
-    timeline_command = _database_task_creation_timeline_command(
-        command=command,
+    timeline_command = _timeline_entry_that_records_created_task(
+        task_creation=task_creation,
         created_task_id=created_task_id,
         tracker_state=tracker_state,
     )
     if timeline_command is None:
         return tracker_state, []
 
-    timeline_owner_task_id = parent_task_id or created_task_id
+    timeline_owner_task_id = task_creation.parent_task_id or created_task_id
     timeline_result = await command_result_from_current_notion_state(
         command={
             "command": "append_task_timeline_log",
@@ -169,7 +236,7 @@ async def _append_database_task_creation_timeline_entry(
     return await execute_command_result_writes(timeline_result, notion_transport)
 
 
-async def _refresh_landing_page_from_database_task_graph(
+async def _refresh_derived_task_landing_pages(
     tracker_state: dict[str, Any],
     notion_transport: NotionTransport,
 ) -> tuple[dict[str, Any], list[str]]:
@@ -183,48 +250,7 @@ async def _refresh_landing_page_from_database_task_graph(
     return await execute_command_result_writes(landing_refresh_result, notion_transport)
 
 
-def _database_task_parent_id_for_creation_command(
-    command: dict[str, Any],
-    work_graph: TaskDependencyGraph,
-) -> str | None:
-    command_name = command["command"]
-    if command_name == "create_top_level_task":
-        return None
-
-    if command_name == "create_child_task":
-        return command["parent_task_id"]
-
-    if command_name == "create_sibling_task":
-        return work_graph.tasks[command["sibling_task_id"]].parent_task_id
-
-    raise ValueError(f"Unsupported database task creation command {command_name!r}")
-
-
-def _database_task_command_for_creation_command(command: dict[str, Any]) -> dict[str, Any]:
-    command_name = command["command"]
-    if command_name == "create_top_level_task":
-        return command["task"]
-
-    if command_name == "create_child_task":
-        return command["child_task"]
-
-    if command_name == "create_sibling_task":
-        return command["sibling_task"]
-
-    raise ValueError(f"Unsupported database task creation command {command_name!r}")
-
-
-def _initial_timeline_entry_for_created_database_task(
-    command: dict[str, Any],
-    parent_task_id: str | None,
-) -> dict[str, Any] | None:
-    if parent_task_id is None:
-        return None
-
-    return _raw_database_task_creation_timeline_command(command)
-
-
-def _timeline_entries_for_created_database_task(
+def _timeline_entries_for_created_task(
     initial_timeline_entry: dict[str, Any] | None,
 ) -> list[TimelineEntry]:
     if initial_timeline_entry is None:
@@ -239,30 +265,21 @@ def _timeline_entries_for_created_database_task(
     ]
 
 
-def _database_task_creation_timeline_command(
-    command: dict[str, Any],
+def _timeline_entry_that_records_created_task(
+    task_creation: _TaskCreation,
     created_task_id: str,
     tracker_state: dict[str, Any],
 ) -> dict[str, Any] | None:
-    timeline_command = _raw_database_task_creation_timeline_command(command)
-    if timeline_command is None:
+    if task_creation.parent_timeline_entry is None:
         return None
 
-    if command["command"] not in {"create_child_task", "create_sibling_task"}:
-        return timeline_command
+    if task_creation.command_name not in {"create_child_task", "create_sibling_task"}:
+        return task_creation.parent_timeline_entry
 
-    return _timeline_command_with_created_task_link(timeline_command, created_task_id, tracker_state)
-
-
-def _raw_database_task_creation_timeline_command(command: dict[str, Any]) -> dict[str, Any] | None:
-    command_name = command["command"]
-    if command_name == "create_child_task":
-        return command.get("parent_timeline_entry")
-
-    return command.get("timeline_entry")
+    return _timeline_entry_with_created_task_link(task_creation.parent_timeline_entry, created_task_id, tracker_state)
 
 
-def _timeline_command_with_created_task_link(
+def _timeline_entry_with_created_task_link(
     timeline_command: dict[str, Any],
     created_task_id: str,
     tracker_state: dict[str, Any],

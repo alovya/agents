@@ -1,7 +1,7 @@
 import json
 
 from notion_task_tracker.commands import CommandResult, apply_command_files, apply_command_to_tracker_state
-from notion_task_tracker.tasks.pages import Priority, TaskPageMetadata, TaskStatus, TaskDependencyGraph
+from notion_task_tracker.tasks import Priority, Task, TaskStatus, TaskDependencyGraph
 
 
 class TestApplyCommandToTrackerState:
@@ -340,7 +340,7 @@ def _task_tracker_state():
     work_graph = TaskDependencyGraph()
     work_graph.landing_page.notion_page_id = "11111111111111111111111111111111"
     work_graph.add_task(
-        TaskPageMetadata(
+        Task(
             task_id="ALOVYA-1",
             title="Root task",
             configured_priority=Priority.P1,
