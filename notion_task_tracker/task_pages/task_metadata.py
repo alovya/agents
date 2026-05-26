@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any
 
 from notion_task_tracker.common import ExternalLink
 
@@ -81,6 +82,7 @@ class TimelineEntry:
     entry_date: str
     heading: str
     lines: list[str] = field(default_factory=list)
+    blocks: list[dict[str, Any]] = field(default_factory=list)
     subheading: str | None = None
 
 

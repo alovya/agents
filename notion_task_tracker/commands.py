@@ -337,6 +337,7 @@ def _timeline_entry_from_command(command: dict[str, Any]) -> TimelineEntry:
         entry_date=entry_date,
         heading=_date_only_timeline_heading(command.get("heading", ""), entry_date),
         lines=list(command.get("lines", [])),
+        blocks=list(command.get("blocks", [])),
         subheading=command.get("subheading"),
     )
 

@@ -113,6 +113,29 @@ class TestNotionMarkdownRendererRenderBlocks:
             ]
         )
 
+    def test_renders_code_blocks(self):
+        renderer = NotionMarkdownRenderer(_page_registry())
+
+        markdown = renderer.render_blocks(
+            [
+                {"type": "paragraph", "text": "Commands run:"},
+                {
+                    "type": "code",
+                    "language": "bash",
+                    "text": "st status\nstax rs --restack",
+                },
+            ]
+        )
+
+        assert markdown == "\n".join(
+            [
+                "Commands run:",
+                "```bash",
+                "st status\nstax rs --restack",
+                "```",
+            ]
+        )
+
     def test_rejects_missing_page_ids_for_mentions(self):
         renderer = NotionMarkdownRenderer(
             NotionPageRegistry(

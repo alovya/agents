@@ -29,6 +29,9 @@ class NotionMarkdownRenderer:
         if block_type == "paragraph":
             return [block["text"]]
 
+        if block_type == "code":
+            return self._render_code_block(block)
+
         if block_type == "page_mention":
             return [self._render_page_mention(block["page_key"])]
 
@@ -46,6 +49,14 @@ class NotionMarkdownRenderer:
     def _render_heading_block(self, block: dict[str, Any]) -> str:
         heading_level = int(block["type"].removeprefix("heading_"))
         return f"{'#' * heading_level} {block['text']}"
+
+    def _render_code_block(self, block: dict[str, Any]) -> list[str]:
+        language = block.get("language", "")
+        return [
+            f"```{language}",
+            block["text"],
+            "```",
+        ]
 
     def _render_bullet_block(self, block: dict[str, Any]) -> str:
         indent = "\t" * block.get("depth", 0)

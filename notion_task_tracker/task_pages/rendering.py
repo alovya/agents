@@ -65,7 +65,7 @@ def _render_visible_strikethrough_text(text: str) -> str:
 
 
 def _render_timeline_entry_content_blocks(timeline_entry: TimelineEntry) -> list[dict[str, Any]]:
-    line_blocks = [_timeline_line_block(line) for line in timeline_entry.lines]
+    line_blocks = timeline_entry.blocks or [_timeline_line_block(line) for line in timeline_entry.lines]
     if timeline_entry.subheading:
         return [toggle_block(text=timeline_entry.subheading, children=line_blocks)]
 

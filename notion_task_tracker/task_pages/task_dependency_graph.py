@@ -526,6 +526,7 @@ def _upsert_timeline_entry(
         return timeline_entry
 
     existing_entry.lines.extend(timeline_entry.lines)
+    existing_entry.blocks.extend(timeline_entry.blocks)
     return existing_entry
 
 
@@ -534,6 +535,7 @@ def _copy_timeline_entry(timeline_entry: TimelineEntry) -> TimelineEntry:
         entry_date=timeline_entry.entry_date,
         heading=timeline_entry.heading,
         lines=list(timeline_entry.lines),
+        blocks=[dict(block) for block in timeline_entry.blocks],
         subheading=timeline_entry.subheading,
     )
 
@@ -554,6 +556,7 @@ def _merged_timeline_entries_by_date(timeline_entries: list[TimelineEntry]) -> l
             continue
 
         existing_entry.lines.extend(timeline_entry.lines)
+        existing_entry.blocks.extend(timeline_entry.blocks)
 
     return merged_entries
 
@@ -609,6 +612,7 @@ def _timeline_entry_to_snapshot(timeline_entry: TimelineEntry) -> dict[str, Any]
         "entry_date": timeline_entry.entry_date,
         "heading": timeline_entry.heading,
         "lines": [],
+        "blocks": [],
     }
 
 
@@ -641,4 +645,5 @@ def _timeline_entry_from_snapshot(snapshot: dict[str, Any]) -> TimelineEntry:
         entry_date=snapshot["entry_date"],
         heading=snapshot["heading"],
         lines=[],
+        blocks=[],
     )

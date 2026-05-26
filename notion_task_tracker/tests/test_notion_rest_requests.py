@@ -152,6 +152,43 @@ class TestNotionRestRequestPlannerCompileWriteIntent:
             }
         ]
 
+    def test_compiles_timeline_blocks_without_bullets(self):
+        work_graph = _single_task_graph()
+        timeline_intent = work_graph.append_task_timeline_log(
+            task_id="ALOVYA-1",
+            timeline_entry=TimelineEntry(
+                entry_date="2026-05-24",
+                heading='<mention-date start="2026-05-24"/>',
+                blocks=[
+                    {"type": "paragraph", "text": "Commands run:"},
+                    {
+                        "type": "code",
+                        "language": "bash",
+                        "text": "st status\nstax rs --restack",
+                    },
+                ],
+            ),
+        )
+
+        request_plan = NotionRestRequestPlanner(work_graph.page_registry()).compile_write_intent(timeline_intent)
+
+        assert request_plan.blocked_operations == []
+        assert request_plan.requests[0].body["update_content"]["content_updates"] == [
+            {
+                "old_str": "## Timeline log",
+                "new_str": "\n".join(
+                    [
+                        "## Timeline log",
+                        '### <mention-date start="2026-05-24"/>',
+                        "Commands run:",
+                        "```bash",
+                        "st status\nstax rs --restack",
+                        "```",
+                    ]
+                ),
+            }
+        ]
+
     def test_stages_miscellaneous_page_creation_then_refreshes_dated_and_root_pages(self):
         miscellaneous_notes = MiscellaneousNotesMetadata()
         miscellaneous_notes.page.notion_page_id = "44444444444444444444444444444444"
