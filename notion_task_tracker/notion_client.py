@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from notion_task_tracker.commands import CommandResult, apply_command_to_tracker_state
+from notion_task_tracker.common import NotionWriteIntent, paragraph_block
 from notion_task_tracker.notion_mcp_calls import NotionMcpCallPlan, NotionMcpCallPlanner, NotionMcpToolCall
 from notion_task_tracker.notion_mcp_client import NotionMcpClient
 from notion_task_tracker.notion_rest_client import NotionRestClient
@@ -32,6 +33,7 @@ from notion_task_tracker.task_pages.task_metadata import (
     MENTION_DATE_START_PATTERN,
     PROPERTIES_BLOCK_PATTERN,
     TASK_PAGE_TIMELINE_LOG_HEADING,
+    UPDATE_TIMELINE_LOG_OPERATION_NAME,
     Priority,
     TaskPageMetadata,
     TaskStatus,
@@ -96,19 +98,12 @@ async def _execute_command_file(
     _write_json(destination_backup_path, tracker_state)
 
     notion_client = _notion_client_from_credentials_path(Path(credentials_path), notion_transport)
-    preflight_result = await _reconcile_tracker_state_for_command_targets(
+    command_ready_result = await _tracker_state_ready_for_command(
         command=command,
         tracker_state=tracker_state,
         notion_client=notion_client,
     )
-    repair_result = _maybe_repair_reconciled_task_pages(
-        reconcile_result=preflight_result,
-        task_graph_changes=_task_graph_changes(tracker_state, preflight_result.tracker_state),
-    )
-    command_ready_tracker_state, completed_operation_keys = await _execute_command_result_writes(
-        repair_result,
-        notion_client,
-    )
+    command_ready_tracker_state = command_ready_result.tracker_state
 
     if _should_create_task_through_database(command, command_ready_tracker_state):
         command_tracker_state, command_operation_keys = await _execute_database_task_creation_command(
@@ -118,25 +113,27 @@ async def _execute_command_file(
         )
         command_warnings = []
     else:
-        command_ready_tracker_state, timeline_setup_operation_keys = await _tracker_state_ready_for_timeline_command(
+        context_repair_result = _repair_result_for_command_context(
+            before_tracker_state=tracker_state,
+            command_ready_result=command_ready_result,
+        )
+        command_result = await _command_result_from_current_notion_state(
             command=command,
             tracker_state=command_ready_tracker_state,
             notion_client=notion_client,
         )
-        command_result = apply_command_to_tracker_state(command, command_ready_tracker_state)
+        command_result = _command_result_with_context_repairs(context_repair_result, command_result)
         command_tracker_state, command_operation_keys = await _execute_command_result_writes(command_result, notion_client)
-        command_operation_keys = timeline_setup_operation_keys + command_operation_keys
         command_warnings = command_result.warnings or []
-    completed_operation_keys.extend(command_operation_keys)
 
     _write_json(source_tracker_state_path, command_tracker_state)
     execution_summary = NotionCommandExecutionSummary(
         backup_path=destination_backup_path,
         command_path=source_command_path,
-        completed_operation_keys=completed_operation_keys,
+        completed_operation_keys=command_operation_keys,
         output_path=destination_output_path,
         tracker_state_path=source_tracker_state_path,
-        warnings=list(preflight_result.warnings or []) + list(command_warnings),
+        warnings=list(command_ready_result.warnings or []) + list(command_warnings),
     )
     _write_json(destination_output_path, execution_summary.to_json_summary())
     return execution_summary
@@ -200,6 +197,194 @@ async def _reconcile_tracker_state_for_command_targets(
     return CommandResult(
         tracker_state=_replace_task_graph_in_tracker_state(tracker_state, work_graph),
         warnings=[],
+    )
+
+
+async def _tracker_state_ready_for_command(
+    command: dict[str, Any],
+    tracker_state: dict[str, Any],
+    notion_client: "_NotionClient",
+) -> CommandResult:
+    if _is_task_command(command):
+        return await _reconcile_tracker_state_for_command_targets(
+            command=command,
+            tracker_state=tracker_state,
+            notion_client=notion_client,
+        )
+
+    return CommandResult(tracker_state=tracker_state, warnings=[])
+
+
+async def _command_result_from_current_notion_state(
+    command: dict[str, Any],
+    tracker_state: dict[str, Any],
+    notion_client: "_NotionClient",
+) -> CommandResult:
+    task_id = _task_id_whose_timeline_is_written_by_command(command)
+    if task_id is None:
+        return apply_command_to_tracker_state(command, tracker_state)
+
+    timeline_state = await _timeline_state_for_task_command(
+        task_id=task_id,
+        entry_date=command["timeline_entry"]["entry_date"],
+        tracker_state=tracker_state,
+        notion_client=notion_client,
+    )
+    command_result = apply_command_to_tracker_state(command, timeline_state.tracker_state)
+    if timeline_state.has_usable_timeline_log:
+        return command_result
+
+    return _command_result_with_initialised_task_timeline(
+        command_result=command_result,
+        task_id=task_id,
+        entry_date=command["timeline_entry"]["entry_date"],
+        fetched_page_content=timeline_state.fetched_page_content,
+    )
+
+
+def _is_task_command(command: dict[str, Any]) -> bool:
+    return command["command"] in {
+        "append_task_timeline_log",
+        "complete_task",
+        "create_child_task",
+        "create_sibling_task",
+    }
+
+
+@dataclass(frozen=True)
+class _TimelineStateForCommand:
+    tracker_state: dict[str, Any]
+    fetched_page_content: str
+    has_usable_timeline_log: bool
+
+
+async def _timeline_state_for_task_command(
+    task_id: str,
+    entry_date: str,
+    tracker_state: dict[str, Any],
+    notion_client: "_NotionClient",
+) -> _TimelineStateForCommand:
+    notion_page_id = tracker_state["tasks"][task_id].get("notion_page_id")
+    if notion_page_id is None:
+        return _TimelineStateForCommand(
+            tracker_state=tracker_state,
+            fetched_page_content="",
+            has_usable_timeline_log=True,
+        )
+
+    fetched_page_content = await notion_client.fetch_task_page_content(notion_page_id)
+    timeline_entries = _timeline_entries_from_fetched_task_page_content(fetched_page_content)
+    has_usable_timeline_log = _fetched_task_page_has_usable_timeline_log(
+        fetched_page_content,
+        timeline_entries,
+    )
+    if has_usable_timeline_log:
+        return _TimelineStateForCommand(
+            tracker_state=_tracker_state_with_known_task_timeline_dates(
+                task_id=task_id,
+                tracker_state=tracker_state,
+                timeline_entries=timeline_entries,
+            ),
+            fetched_page_content=fetched_page_content,
+            has_usable_timeline_log=True,
+        )
+
+    return _TimelineStateForCommand(
+        tracker_state=_tracker_state_with_known_task_timeline_dates(
+            task_id=task_id,
+            tracker_state=tracker_state,
+            timeline_entries=[_timeline_entry_for_date(entry_date)],
+        ),
+        fetched_page_content=fetched_page_content,
+        has_usable_timeline_log=False,
+    )
+
+
+def _command_result_with_initialised_task_timeline(
+    command_result: CommandResult,
+    task_id: str,
+    entry_date: str,
+    fetched_page_content: str,
+) -> CommandResult:
+    replacement_write_intent = _initialised_task_timeline_write_intent(
+        task_id,
+        entry_date,
+        fetched_page_content,
+        command_result,
+    )
+    return CommandResult(
+        tracker_state=command_result.tracker_state,
+        write_intents=[
+            replacement_write_intent
+            if write_intent.operation_key == replacement_write_intent.operation_key
+            else write_intent
+            for write_intent in command_result.write_intents
+        ],
+        page_registry=command_result.page_registry,
+        warnings=command_result.warnings,
+    )
+
+
+def _initialised_task_timeline_write_intent(
+    task_id: str,
+    entry_date: str,
+    fetched_page_content: str,
+    command_result: CommandResult,
+) -> NotionWriteIntent:
+    timeline_write_intent = _task_timeline_write_intent(command_result, task_id, entry_date)
+    return NotionWriteIntent(
+        operation_key=timeline_write_intent.operation_key,
+        operation_name="replace_page_children",
+        target_page_key=timeline_write_intent.target_page_key,
+        arguments={
+            "blocks": _initialised_task_timeline_blocks(
+                entry_date=entry_date,
+                timeline_blocks=timeline_write_intent.arguments["append_blocks"],
+                fetched_page_content=fetched_page_content,
+            ),
+        },
+    )
+
+
+def _task_timeline_write_intent(
+    command_result: CommandResult,
+    task_id: str,
+    entry_date: str,
+) -> NotionWriteIntent:
+    operation_key = f"{UPDATE_TIMELINE_LOG_OPERATION_NAME}:task:{task_id}:{entry_date}"
+    for write_intent in command_result.write_intents:
+        if write_intent.operation_key == operation_key:
+            return write_intent
+
+    raise ValueError(f"Command result did not include timeline update {operation_key!r}")
+
+
+def _repair_result_for_command_context(
+    before_tracker_state: dict[str, Any],
+    command_ready_result: CommandResult,
+) -> CommandResult:
+    return _maybe_repair_reconciled_task_pages(
+        reconcile_result=command_ready_result,
+        task_graph_changes=_task_graph_changes(before_tracker_state, command_ready_result.tracker_state),
+    )
+
+
+def _command_result_with_context_repairs(
+    context_repair_result: CommandResult,
+    command_result: CommandResult,
+) -> CommandResult:
+    write_intents_by_key = {
+        write_intent.operation_key: write_intent
+        for write_intent in context_repair_result.write_intents
+    }
+    for write_intent in command_result.write_intents:
+        write_intents_by_key[write_intent.operation_key] = write_intent
+
+    return CommandResult(
+        tracker_state=command_result.tracker_state,
+        write_intents=list(write_intents_by_key.values()),
+        page_registry=command_result.page_registry or context_repair_result.page_registry,
+        warnings=list(context_repair_result.warnings or []) + list(command_result.warnings or []),
     )
 
 
@@ -386,78 +571,17 @@ async def _append_database_task_creation_timeline_entry(
         return tracker_state, []
 
     timeline_owner_task_id = parent_task_id or created_task_id
-    tracker_state, timeline_setup_operation_keys = await _tracker_state_ready_for_task_timeline_write(
-        task_id=timeline_owner_task_id,
-        entry_date=timeline_command["entry_date"],
-        tracker_state=tracker_state,
-        notion_client=notion_client,
-    )
-    timeline_result = apply_command_to_tracker_state(
+    timeline_result = await _command_result_from_current_notion_state(
         command={
             "command": "append_task_timeline_log",
             "task_id": timeline_owner_task_id,
             "timeline_entry": timeline_command,
         },
         tracker_state=tracker_state,
-    )
-    timeline_tracker_state, timeline_operation_keys = await _execute_command_result_writes(timeline_result, notion_client)
-    return timeline_tracker_state, timeline_setup_operation_keys + timeline_operation_keys
-async def _tracker_state_ready_for_timeline_command(
-    command: dict[str, Any],
-    tracker_state: dict[str, Any],
-    notion_client: "_NotionClient",
-) -> tuple[dict[str, Any], list[str]]:
-    task_id = _task_id_whose_timeline_is_written_by_command(command)
-    if task_id is None:
-        return tracker_state, []
-
-    return await _tracker_state_ready_for_task_timeline_write(
-        task_id=task_id,
-        entry_date=command["timeline_entry"]["entry_date"],
-        tracker_state=tracker_state,
         notion_client=notion_client,
     )
-
-
-async def _tracker_state_ready_for_task_timeline_write(
-    task_id: str,
-    entry_date: str,
-    tracker_state: dict[str, Any],
-    notion_client: "_NotionClient",
-) -> tuple[dict[str, Any], list[str]]:
-    notion_page_id = tracker_state["tasks"][task_id].get("notion_page_id")
-    if notion_page_id is None:
-        return tracker_state, []
-
-    fetched_page_content = await notion_client.fetch_task_page_content(notion_page_id)
-    timeline_entries = _timeline_entries_from_fetched_task_page_content(fetched_page_content)
-    if _fetched_task_page_has_usable_timeline_log(fetched_page_content, timeline_entries):
-        return _tracker_state_with_known_task_timeline_dates(
-            task_id=task_id,
-            tracker_state=tracker_state,
-            timeline_entries=timeline_entries,
-        ), []
-
-    setup_operation_key = f"initialise_timeline_log:task:{task_id}:{entry_date}"
-    await notion_client.send_call(
-        NotionMcpToolCall(
-            operation_key=setup_operation_key,
-            tool_name="notion-update-page",
-            arguments={
-                "page_id": notion_page_id,
-                "command": "replace_content",
-                "new_str": _initialised_task_timeline_content(
-                    entry_date=entry_date,
-                    fetched_page_content=fetched_page_content,
-                ),
-            },
-        )
-    )
-    return _tracker_state_with_known_task_timeline_dates(
-        task_id=task_id,
-        tracker_state=tracker_state,
-        timeline_entries=[_timeline_entry_for_date(entry_date)],
-    ), [setup_operation_key]
+    timeline_tracker_state, timeline_operation_keys = await _execute_command_result_writes(timeline_result, notion_client)
+    return timeline_tracker_state, timeline_operation_keys
 
 
 async def _tracker_state_with_fetched_task_timeline_dates(
@@ -1182,14 +1306,29 @@ def _fetched_task_page_has_usable_timeline_log(
     return _timeline_log_content_from_fetched_task_page_content(fetched_page_content) is not None and bool(timeline_entries)
 
 
-def _initialised_task_timeline_content(entry_date: str, fetched_page_content: str) -> str:
-    timeline_heading = f"## {TASK_PAGE_TIMELINE_LOG_HEADING}"
-    date_heading = _timeline_entry_for_date(entry_date)["heading"]
+def _initialised_task_timeline_blocks(
+    entry_date: str,
+    timeline_blocks: list[dict[str, Any]],
+    fetched_page_content: str,
+) -> list[dict[str, Any]]:
+    blocks = [
+        {"type": "heading_2", "text": TASK_PAGE_TIMELINE_LOG_HEADING},
+        {"type": "heading_3", "text": _timeline_entry_for_date(entry_date)["heading"]},
+        *timeline_blocks,
+    ]
     existing_body_content = _body_content_to_subsume_under_initial_timeline_date(fetched_page_content)
-    if not existing_body_content:
-        return "\n".join([timeline_heading, f"### {date_heading}"])
+    if existing_body_content:
+        blocks.extend(_blocks_from_existing_body_content(existing_body_content))
+    return blocks
 
-    return "\n".join([timeline_heading, f"### {date_heading}", "", existing_body_content])
+
+def _blocks_from_existing_body_content(existing_body_content: str) -> list[dict[str, Any]]:
+    blocks = []
+    for paragraph in existing_body_content.split("\n\n"):
+        paragraph_text = paragraph.strip()
+        if paragraph_text:
+            blocks.append(paragraph_block(paragraph_text))
+    return blocks
 
 
 def _timeline_entry_for_date(entry_date: str) -> dict[str, str]:

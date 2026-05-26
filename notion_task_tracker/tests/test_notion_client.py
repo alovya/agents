@@ -13,16 +13,18 @@ from notion_task_tracker.common import (
 )
 from notion_task_tracker.notion_mcp_calls import NotionMcpCallPlan, NotionMcpToolCall
 from notion_task_tracker.notion_client import (
+    _command_result_with_context_repairs,
     _execute_database_task_creation_command,
     _execute_command_result_writes,
     _notion_client_from_credentials_path,
     _repair_and_write_reconciled_tracker_state,
+    _repair_result_for_command_context,
     _raise_if_call_plan_has_blocked_operations,
     _repair_operation_keys_for_reconciled_task_pages,
     _reconcile_tracker_state_for_command_targets,
     _reconcile_tracker_state_from_notion_pages,
+    _timeline_state_for_task_command,
     _timeline_entries_from_fetched_task_page_content,
-    _tracker_state_ready_for_task_timeline_write,
     _tracker_state_with_fetched_task_timeline_dates,
 )
 from notion_task_tracker.notion_mcp_client import NotionMcpClient
@@ -247,6 +249,72 @@ def test_repair_and_write_reconciled_tracker_state_skips_repairs_when_nothing_ch
     assert notion_client.calls == []
     assert reconcile_summary.to_json_summary()["task_graph_changes"] == []
     assert reconcile_summary.to_json_summary()["repair_operation_count"] == 0
+
+
+def test_repair_result_for_command_context_plans_repairs_without_writing_them():
+    before_tracker_state = _tracker_state_with_root_task()
+    after_tracker_state = _tracker_state_with_root_task()
+    after_tracker_state["tasks"]["ALOVYA-1"]["title"] = "Root task edited in Notion"
+
+    repair_result = _repair_result_for_command_context(
+        before_tracker_state=before_tracker_state,
+        command_ready_result=CommandResult(tracker_state=after_tracker_state),
+    )
+
+    assert repair_result.tracker_state["tasks"]["ALOVYA-1"]["title"] == "Root task edited in Notion"
+    assert [write_intent.operation_key for write_intent in repair_result.write_intents] == [
+        "update_properties:task:ALOVYA-1",
+        "replace:landing_page",
+    ]
+
+
+def test_command_result_with_context_repairs_keeps_one_ordered_write_set_and_command_wins():
+    context_repair_result = CommandResult(
+        tracker_state={"phase": "ready"},
+        write_intents=[
+            NotionWriteIntent(
+                operation_key="replace:landing_page",
+                operation_name="replace_page_children",
+                target_page_key="landing_page",
+                arguments={"blocks": [{"type": "paragraph", "text": "Stale landing"}]},
+            ),
+            NotionWriteIntent(
+                operation_key="update_properties:task:ALOVYA-1",
+                operation_name="update_page_properties",
+                target_page_key="task:ALOVYA-1",
+                arguments={"properties": {"Status": "Active"}},
+            ),
+        ],
+    )
+    command_result = CommandResult(
+        tracker_state={"phase": "command"},
+        write_intents=[
+            NotionWriteIntent(
+                operation_key="replace:landing_page",
+                operation_name="replace_page_children",
+                target_page_key="landing_page",
+                arguments={"blocks": [{"type": "paragraph", "text": "Command landing"}]},
+            ),
+            NotionWriteIntent(
+                operation_key="update_timeline_log:task:ALOVYA-1:2026-05-26",
+                operation_name="update_timeline_log",
+                target_page_key="task:ALOVYA-1",
+                arguments={"blocks": [{"type": "heading_3", "text": "2026-05-26"}]},
+            ),
+        ],
+    )
+
+    combined_result = _command_result_with_context_repairs(context_repair_result, command_result)
+
+    assert combined_result.tracker_state == {"phase": "command"}
+    assert [write_intent.operation_key for write_intent in combined_result.write_intents] == [
+        "replace:landing_page",
+        "update_properties:task:ALOVYA-1",
+        "update_timeline_log:task:ALOVYA-1:2026-05-26",
+    ]
+    assert combined_result.write_intents[0].arguments["blocks"] == [
+        {"type": "paragraph", "text": "Command landing"}
+    ]
 
 
 def test_execute_command_result_writes_compiles_mcp_calls_downstream():
@@ -489,7 +557,6 @@ def test_execute_database_task_creation_command_creates_database_row_then_refres
     assert completed_operation_keys == [
         "create_database_task:create_child_task",
         "update_properties:task:ALOVYA-72",
-        "initialise_timeline_log:task:ALOVYA-1:2026-05-25",
         "update_timeline_log:task:ALOVYA-1:2026-05-25",
         "replace:landing_page",
     ]
@@ -514,8 +581,9 @@ def test_execute_database_task_creation_command_creates_database_row_then_refres
     assert notion_client.calls[1].arguments["properties"] == {
         "Ticket page": "Child task",
     }
-    assert notion_client.calls[3].arguments["content_updates"][0]["new_str"] == "\n".join(
+    assert notion_client.calls[2].arguments["new_str"] == "\n".join(
         [
+            "## Timeline log",
             '### <mention-date start="2026-05-25"/>',
             '- Spawned child task: <mention-page url="https://www.notion.so/33333333333333333333333333333333"/>.',
         ]
@@ -582,7 +650,7 @@ def test_tracker_state_with_fetched_task_timeline_dates_remembers_manual_date_be
     assert notion_client.fetched_pages == ["22222222222222222222222222222222"]
 
 
-def test_tracker_state_ready_for_task_timeline_write_initialises_missing_timeline_log():
+def test_timeline_state_for_task_command_records_missing_timeline_log_without_writing():
     tracker_state = _tracker_state_with_root_task()
     notion_client = _FakeNotionMcpClient(
         fetched_page_content_by_id={
@@ -599,8 +667,8 @@ def test_tracker_state_ready_for_task_timeline_write_initialises_missing_timelin
         }
     )
 
-    updated_tracker_state, operation_keys = asyncio.run(
-        _tracker_state_ready_for_task_timeline_write(
+    timeline_state = asyncio.run(
+        _timeline_state_for_task_command(
             task_id="ALOVYA-1",
             entry_date="2026-05-26",
             tracker_state=tracker_state,
@@ -608,29 +676,18 @@ def test_tracker_state_ready_for_task_timeline_write_initialises_missing_timelin
         )
     )
 
-    assert operation_keys == ["initialise_timeline_log:task:ALOVYA-1:2026-05-26"]
-    assert updated_tracker_state["tasks"]["ALOVYA-1"]["timeline_entries"] == [
+    assert not timeline_state.has_usable_timeline_log
+    assert timeline_state.tracker_state["tasks"]["ALOVYA-1"]["timeline_entries"] == [
         {
             "entry_date": "2026-05-26",
             "heading": '<mention-date start="2026-05-26"/>',
             "lines": [],
         }
     ]
-    assert notion_client.calls[0].arguments == {
-        "page_id": "22222222222222222222222222222222",
-        "command": "replace_content",
-        "new_str": "\n".join(
-            [
-                "## Timeline log",
-                '### <mention-date start="2026-05-26"/>',
-                "",
-                "Loose notes written before the tracker touched the page.",
-            ]
-        ),
-    }
+    assert notion_client.calls == []
 
 
-def test_tracker_state_ready_for_task_timeline_write_initialises_timeline_log_without_dates():
+def test_timeline_state_for_task_command_records_empty_timeline_log_without_writing():
     tracker_state = _tracker_state_with_root_task()
     notion_client = _FakeNotionMcpClient(
         fetched_page_content_by_id={
@@ -643,8 +700,8 @@ def test_tracker_state_ready_for_task_timeline_write_initialises_timeline_log_wi
         }
     )
 
-    updated_tracker_state, operation_keys = asyncio.run(
-        _tracker_state_ready_for_task_timeline_write(
+    timeline_state = asyncio.run(
+        _timeline_state_for_task_command(
             task_id="ALOVYA-1",
             entry_date="2026-05-26",
             tracker_state=tracker_state,
@@ -652,19 +709,12 @@ def test_tracker_state_ready_for_task_timeline_write_initialises_timeline_log_wi
         )
     )
 
-    assert operation_keys == ["initialise_timeline_log:task:ALOVYA-1:2026-05-26"]
-    assert updated_tracker_state["tasks"]["ALOVYA-1"]["timeline_entries"][0]["entry_date"] == "2026-05-26"
-    assert notion_client.calls[0].arguments["new_str"] == "\n".join(
-        [
-            "## Timeline log",
-            '### <mention-date start="2026-05-26"/>',
-            "",
-            "Loose notes already under the heading.",
-        ]
-    )
+    assert not timeline_state.has_usable_timeline_log
+    assert timeline_state.tracker_state["tasks"]["ALOVYA-1"]["timeline_entries"][0]["entry_date"] == "2026-05-26"
+    assert notion_client.calls == []
 
 
-def test_tracker_state_ready_for_task_timeline_write_keeps_usable_timeline_log():
+def test_timeline_state_for_task_command_keeps_usable_timeline_log():
     tracker_state = _tracker_state_with_root_task()
     notion_client = _FakeNotionMcpClient(
         fetched_page_content_by_id={
@@ -678,8 +728,8 @@ def test_tracker_state_ready_for_task_timeline_write_keeps_usable_timeline_log()
         }
     )
 
-    updated_tracker_state, operation_keys = asyncio.run(
-        _tracker_state_ready_for_task_timeline_write(
+    timeline_state = asyncio.run(
+        _timeline_state_for_task_command(
             task_id="ALOVYA-1",
             entry_date="2026-05-26",
             tracker_state=tracker_state,
@@ -687,9 +737,9 @@ def test_tracker_state_ready_for_task_timeline_write_keeps_usable_timeline_log()
         )
     )
 
-    assert operation_keys == []
+    assert timeline_state.has_usable_timeline_log
     assert notion_client.calls == []
-    assert updated_tracker_state["tasks"]["ALOVYA-1"]["timeline_entries"] == [
+    assert timeline_state.tracker_state["tasks"]["ALOVYA-1"]["timeline_entries"] == [
         {
             "entry_date": "2026-05-25",
             "heading": '<mention-date start="2026-05-25"/>',
