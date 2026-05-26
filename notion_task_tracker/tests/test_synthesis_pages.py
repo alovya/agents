@@ -1,6 +1,6 @@
 import pytest
 
-from notion_task_tracker.common import NotionMcpCallPlanningError
+from notion_task_tracker.common import NotionPlanningError
 from notion_task_tracker.synthesis_pages import (
     ExistingSynthesisPageMention,
     SynthesisNotesMetadata,
@@ -192,7 +192,7 @@ class TestSynthesisNotesMetadataReconcileRootPageMentionsFromContent:
     def test_rejects_bare_new_page_mentions_without_a_known_title(self):
         synthesis_notes = SynthesisNotesMetadata()
 
-        with pytest.raises(NotionMcpCallPlanningError):
+        with pytest.raises(NotionPlanningError):
             synthesis_notes.reconcile_root_page_mentions_from_content(
                 root_page_content=(
                     '<mention-page url="https://www.notion.so/wayve/'
@@ -203,7 +203,7 @@ class TestSynthesisNotesMetadataReconcileRootPageMentionsFromContent:
     def test_rejects_duplicate_existing_page_mentions(self):
         synthesis_notes = SynthesisNotesMetadata()
 
-        with pytest.raises(NotionMcpCallPlanningError):
+        with pytest.raises(NotionPlanningError):
             synthesis_notes.reconcile_root_page_mentions_from_content(
                 root_page_content=(
                     '<mention-page url="https://www.notion.so/wayve/'

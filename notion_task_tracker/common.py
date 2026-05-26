@@ -51,7 +51,7 @@ class NotionPageReference:
         if self.notion_page_id:
             return f"https://www.notion.so/{self.notion_page_id.replace('-', '')}"
 
-        raise NotionMcpCallPlanningError(f"Page {self.local_page_key!r} has no Notion URL or page id")
+        raise NotionPlanningError(f"Page {self.local_page_key!r} has no Notion URL or page id")
 
 
 @dataclass
@@ -87,13 +87,13 @@ class NotionPageRegistry:
         try:
             return self.pages[local_page_key]
         except KeyError as error:
-            raise NotionMcpCallPlanningError(f"Page {local_page_key!r} is not registered") from error
+            raise NotionPlanningError(f"Page {local_page_key!r} is not registered") from error
 
     def page_id(self, local_page_key: str) -> str:
         page = self.page_reference(local_page_key)
 
         if page.notion_page_id is None:
-            raise NotionMcpCallPlanningError(f"Page {local_page_key!r} has no Notion page id")
+            raise NotionPlanningError(f"Page {local_page_key!r} has no Notion page id")
 
         return page.notion_page_id
 
@@ -144,7 +144,7 @@ class NotionWriteIntent:
     arguments: dict[str, Any]
 
 
-class NotionMcpCallPlanningError(ValueError):
+class NotionPlanningError(ValueError):
     """Raised when a write intent cannot become an exact Notion call."""
 
 
@@ -152,7 +152,7 @@ def canonical_notion_page_id(notion_page_id: str) -> str:
     compact_page_id = notion_page_id.replace("-", "").lower()
 
     if not _COMPACT_NOTION_PAGE_ID_PATTERN.fullmatch(compact_page_id):
-        raise NotionMcpCallPlanningError(f"Invalid Notion page id {notion_page_id!r}")
+        raise NotionPlanningError(f"Invalid Notion page id {notion_page_id!r}")
 
     return compact_page_id
 
@@ -163,7 +163,7 @@ def notion_page_id_from_url(notion_url: str) -> str:
     page_id_match = _TRAILING_NOTION_PAGE_ID_PATTERN.search(final_path_part)
 
     if page_id_match is None:
-        raise NotionMcpCallPlanningError(f"Notion URL {notion_url!r} does not contain a page id")
+        raise NotionPlanningError(f"Notion URL {notion_url!r} does not contain a page id")
 
     return canonical_notion_page_id(page_id_match.group(1))
 

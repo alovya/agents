@@ -26,7 +26,6 @@ DEFAULT_NOTION_API_BASE_URL = "https://api.notion.com"
 DEFAULT_NOTION_API_VERSION = "2026-03-11"
 _DATE_MENTION_PATTERN = re.compile(r'<mention-date\s+[^>]*start="([^"]+)"[^>]*/>')
 _PAGE_MENTION_PATTERN = re.compile(r'<mention-page\s+[^>]*url="([^"]+)"[^>]*/>')
-_COLOUR_SUFFIX_PATTERN = re.compile(r'\s+\{color="([^"]+)"\}$')
 
 
 class NotionRestClient:
@@ -254,11 +253,6 @@ class NotionRestClient:
             await self._archive_block(block["id"])
         await self._append_blocks(page_id, _rest_blocks_from_tracker_blocks(blocks))
 
-    async def update_page_content(self, page_id: str, content_updates: list[dict[str, str]]) -> None:
-        blocks = await self._fetch_all_block_children(page_id)
-        for content_update in content_updates:
-            await self._insert_content_update(page_id, blocks, content_update)
-
     async def insert_blocks_after_matching_block(
         self,
         page_id: str,
@@ -273,28 +267,6 @@ class NotionRestClient:
             page_id,
             _rest_blocks_from_tracker_blocks(blocks),
             position={"type": "after_block", "after_block": {"id": matching_block["id"]}},
-        )
-
-    async def _insert_content_update(
-        self,
-        page_id: str,
-        blocks: list[dict[str, Any]],
-        content_update: dict[str, str],
-    ) -> None:
-        old_blocks = _blocks_from_markdown(content_update["old_str"])
-        new_blocks = _blocks_from_markdown(content_update["new_str"])
-        if not old_blocks:
-            raise ValueError(f"Content update has no old block: {content_update!r}")
-
-        anchor_block = _find_matching_top_level_block(blocks, old_blocks[0])
-        if anchor_block is None:
-            raise ValueError(f"Could not find Notion block matching {content_update['old_str']!r}")
-
-        blocks_to_insert = _rest_blocks_from_tracker_blocks(new_blocks[1:])
-        await self._append_blocks(
-            page_id,
-            blocks_to_insert,
-            position={"type": "after_block", "after_block": {"id": anchor_block["id"]}},
         )
 
     async def _archive_block(self, block_id: str) -> None:
@@ -679,75 +651,6 @@ def _plain_text_from_mention(mention: dict[str, Any]) -> str:
     return ""
 
 
-def _blocks_from_markdown(markdown: str) -> list[dict[str, Any]]:
-    blocks = []
-    lines = markdown.splitlines()
-    line_index = 0
-
-    while line_index < len(lines):
-        raw_line = lines[line_index]
-        if raw_line.strip() == "<details>":
-            toggle_block, line_index = _toggle_block_from_details_lines(lines, line_index)
-            blocks.append(toggle_block)
-            continue
-
-        block = _block_from_markdown_line(raw_line)
-        line_index += 1
-        if block is not None:
-            blocks.append(block)
-
-    return blocks
-
-
-def _toggle_block_from_details_lines(lines: list[str], start_index: int) -> tuple[dict[str, Any], int]:
-    summary_line = lines[start_index + 1].strip()
-    summary_match = re.fullmatch(r"<summary>(?P<summary>.*)</summary>", summary_line)
-    if summary_match is None:
-        raise ValueError("Toggle details block must start with a summary line")
-
-    child_lines = []
-    line_index = start_index + 2
-    while line_index < len(lines) and lines[line_index].strip() != "</details>":
-        child_lines.append(lines[line_index].removeprefix("\t"))
-        line_index += 1
-
-    if line_index == len(lines):
-        raise ValueError("Toggle details block has no closing </details> line")
-
-    return {
-        "type": "toggle",
-        "text": summary_match.group("summary"),
-        "children": _blocks_from_markdown("\n".join(child_lines)),
-    }, line_index + 1
-
-
-def _block_from_markdown_line(raw_line: str) -> dict[str, Any] | None:
-    depth = len(raw_line) - len(raw_line.lstrip("\t"))
-    line = raw_line.strip()
-    line, colour = _line_without_colour_suffix(line)
-    if not line:
-        return None
-    if line.startswith("### "):
-        return {"type": "heading_3", "text": line.removeprefix("### ")}
-    if line.startswith("## "):
-        return {"type": "heading_2", "text": line.removeprefix("## ")}
-    if line.startswith("# "):
-        return {"type": "heading_1", "text": line.removeprefix("# ")}
-    if line.startswith("- "):
-        block = {"type": "bulleted_list_item", "depth": depth, "text": line.removeprefix("- ")}
-        if colour is not None:
-            block["color"] = colour
-        return block
-    return {"type": "paragraph", "text": line}
-
-
-def _line_without_colour_suffix(line: str) -> tuple[str, str | None]:
-    colour_match = _COLOUR_SUFFIX_PATTERN.search(line)
-    if colour_match is None:
-        return line, None
-    return line[:colour_match.start()], colour_match.group(1)
-
-
 def _rest_parent_from_page_key(
     parent_page_key: str | None,
     page_registry: NotionPageRegistry,
@@ -800,16 +703,6 @@ def _data_source_id_from_url(data_source_url: str) -> str:
     return data_source_url.rsplit("/", 1)[-1]
 
 
-def _tool_result_from_rest_page(page: dict[str, Any]) -> dict[str, Any]:
-    page_id = canonical_notion_page_id(page["id"])
-    return {
-        "tool_name": "notion-rest",
-        "result": {
-            "text": page.get("url") or f"https://www.notion.so/{page_id}",
-        },
-    }
-
-
 def _write_result(
     operation_key: str,
     captured_page_key: str | None = None,
@@ -822,13 +715,6 @@ def _write_result(
         result["captured_page_key"] = captured_page_key
         result["captured_page_id"] = canonical_notion_page_id(page["id"])
     return result
-
-
-def _empty_tool_result() -> dict[str, Any]:
-    return {
-        "tool_name": "notion-rest",
-        "result": {"text": ""},
-    }
 
 
 def _chunks(items: list[dict[str, Any]], chunk_size: int) -> list[list[dict[str, Any]]]:

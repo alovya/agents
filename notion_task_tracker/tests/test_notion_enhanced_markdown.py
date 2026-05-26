@@ -3,7 +3,7 @@ import pytest
 from notion_task_tracker.common import (
     NotionPageReference,
     NotionPageRegistry,
-    NotionMcpCallPlanningError,
+    NotionPlanningError,
 )
 from notion_task_tracker.notion_enhanced_markdown import NotionMarkdownRenderer
 
@@ -148,7 +148,7 @@ class TestNotionMarkdownRendererRenderBlocks:
             )
         )
 
-        with pytest.raises(NotionMcpCallPlanningError, match="has no Notion URL or page id"):
+        with pytest.raises(NotionPlanningError, match="has no Notion URL or page id"):
             renderer.render_blocks(
                 [
                     {

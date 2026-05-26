@@ -264,8 +264,7 @@ The package is Python metadata and Notion write execution code. Live fetch/write
 - `task_pages/`: task database projection, task graph metadata, and rendering.
 - `miscellaneous_pages.py`: dated miscellaneous notes.
 - `synthesis_pages.py`: flat synthesis root mentions and synthesis subpages with sources.
-- `notion_mcp_calls.py`: compiler from write intents to the internal write calls still used by the command dispatcher.
-- `notion_rest_requests.py`: older serialisable REST request planner; do not use it for live execution.
+- `notion_mcp_calls.py`: compiler from write intents to MCP fallback calls.
 - `notion_enhanced_markdown.py`: renderer from internal blocks to Notion enhanced Markdown.
 - `common.py`: shared page references, write intents, fixed page titles, and block helpers.
 

@@ -14,7 +14,7 @@ from notion_task_tracker.common import (
     LANDING_PAGE_LOCAL_KEY,
     LANDING_PAGE_TITLE,
     NotionPageRegistry,
-    NotionMcpCallPlanningError,
+    NotionPlanningError,
     NotionWriteIntent,
     PagePointer,
     external_link_from_snapshot,
@@ -113,7 +113,7 @@ class TaskDependencyGraph:
 
     def add_task(self, task: TaskPageMetadata) -> None:
         if task.task_id in self.tasks:
-            raise NotionMcpCallPlanningError(f"Task {task.task_id} already exists")
+            raise NotionPlanningError(f"Task {task.task_id} already exists")
         self.tasks[task.task_id] = task
 
     def link_parent_to_child(self, parent_task_id: str, child_task_id: str) -> None:
@@ -415,7 +415,7 @@ class TaskDependencyGraph:
             return self._render_landing_page_blocks()
         if local_page_key == self.completed_landing_page.local_page_key:
             return self._render_completed_landing_page_blocks()
-        raise NotionMcpCallPlanningError(f"Task graph cannot create dynamic page {local_page_key!r}")
+        raise NotionPlanningError(f"Task graph cannot create dynamic page {local_page_key!r}")
 
     def _validate_fixed_page_keys_and_titles(self) -> None:
         validate_fixed_page_pointer(
@@ -432,7 +432,7 @@ class TaskDependencyGraph:
     def _validate_task_keys_match_task_values(self) -> None:
         for task_id, task in self.tasks.items():
             if task_id != task.task_id:
-                raise NotionMcpCallPlanningError(f"Task key {task_id!r} does not match task id {task.task_id!r}")
+                raise NotionPlanningError(f"Task key {task_id!r} does not match task id {task.task_id!r}")
 
     def _validate_parent_child_links(self) -> None:
         for task_id, task in self.tasks.items():
@@ -440,20 +440,20 @@ class TaskDependencyGraph:
                 self._validate_task_exists(task.parent_task_id)
                 parent_task = self.tasks[task.parent_task_id]
                 if task_id not in parent_task.child_task_ids:
-                    raise NotionMcpCallPlanningError(
+                    raise NotionPlanningError(
                         f"Task {task_id} should be listed as child of {task.parent_task_id}"
                     )
             for child_task_id in task.child_task_ids:
                 self._validate_task_exists(child_task_id)
                 child_task = self.tasks[child_task_id]
                 if child_task.parent_task_id != task_id:
-                    raise NotionMcpCallPlanningError(
+                    raise NotionPlanningError(
                         f"Task {child_task_id} should have parent {task_id}"
                     )
 
     def _validate_task_exists(self, task_id: str) -> None:
         if task_id not in self.tasks:
-            raise NotionMcpCallPlanningError(f"Task {task_id} does not exist")
+            raise NotionPlanningError(f"Task {task_id} does not exist")
 
     def _validate_task_hierarchy_has_no_cycles(self) -> None:
         for task_id in self.tasks:
@@ -461,7 +461,7 @@ class TaskDependencyGraph:
             current_task_id = task_id
             while current_task_id is not None:
                 if current_task_id in visited_task_ids:
-                    raise NotionMcpCallPlanningError("Task hierarchy has a cycle")
+                    raise NotionPlanningError("Task hierarchy has a cycle")
                 visited_task_ids.add(current_task_id)
                 current_task_id = self.tasks[current_task_id].parent_task_id
 

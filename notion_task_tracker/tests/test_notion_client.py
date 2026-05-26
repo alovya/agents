@@ -27,13 +27,14 @@ from notion_task_tracker.task_pages import Priority, TaskDependencyGraph, TaskPa
 from notion_task_tracker.task_pages.task_database import default_task_database_tracker_state
 
 
-def test_rest_call_planner_does_not_import_notion_mcp_runtime():
+def test_rest_client_does_not_import_notion_mcp_runtime():
     package_path = Path(__file__).resolve().parents[1]
-    runtime_source = (package_path / "notion_rest_requests.py").read_text(encoding="utf-8")
+    runtime_source = (package_path / "notion_rest_client.py").read_text(encoding="utf-8")
 
     assert "from mcp" not in runtime_source
     assert "import mcp" not in runtime_source
     assert "streamable_http" not in runtime_source
+    assert "NotionMcpToolCall" not in runtime_source
 
 
 def test_notion_client_from_credentials_path_defaults_to_rest(monkeypatch, tmp_path):

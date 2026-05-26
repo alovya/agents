@@ -9,7 +9,7 @@ from typing import Any
 
 from notion_task_tracker.common import (
     NotionPageRegistry,
-    NotionMcpCallPlanningError,
+    NotionPlanningError,
     NotionWriteIntent,
     write_json_snapshot,
 )
@@ -110,7 +110,7 @@ def apply_command_to_tracker_state(command: dict[str, Any], tracker_state: dict[
     if command_name == "refresh_synthesis_pages":
         return _refresh_synthesis_pages(command, tracker_state)
 
-    raise NotionMcpCallPlanningError(f"Unsupported command {command_name!r}")
+    raise NotionPlanningError(f"Unsupported command {command_name!r}")
 
 
 def _record_page_id_in_tracker_state(command: dict[str, Any], tracker_state: dict[str, Any]) -> CommandResult:
@@ -144,7 +144,7 @@ def _record_page_id_in_tracker_state(command: dict[str, Any], tracker_state: dic
         _record_synthesis_page_id(updated_tracker_state, synthesis_key, notion_page_id)
         return CommandResult(tracker_state=updated_tracker_state, call_plan=NotionMcpCallPlan())
 
-    raise NotionMcpCallPlanningError(f"Cannot record page id for unknown local page key {local_page_key!r}")
+    raise NotionPlanningError(f"Cannot record page id for unknown local page key {local_page_key!r}")
 
 
 def _apply_task_command(

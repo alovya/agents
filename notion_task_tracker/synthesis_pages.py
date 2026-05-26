@@ -10,7 +10,7 @@ from notion_task_tracker.common import (
     SYNTHESIS_NOTES_PAGE_LOCAL_KEY,
     SYNTHESIS_NOTES_PAGE_TITLE,
     NotionPageRegistry,
-    NotionMcpCallPlanningError,
+    NotionPlanningError,
     NotionWriteIntent,
     PagePointer,
     canonical_notion_page_id,
@@ -159,7 +159,7 @@ class SynthesisNotesMetadata:
             mention_key = _mention_key_from_notion_page_id(notion_page_id)
 
             if mention_key in reconciled_existing_page_mentions:
-                raise NotionMcpCallPlanningError(
+                raise NotionPlanningError(
                     f"Synthesis root mentions page {notion_page_id!r} more than once"
                 )
 
@@ -427,10 +427,10 @@ class _SynthesisRootPageMentionParser(HTMLParser):
         root_block_type: str | None,
     ) -> None:
         if notion_url is None:
-            raise NotionMcpCallPlanningError("Synthesis root contains a page mention without a URL")
+            raise NotionPlanningError("Synthesis root contains a page mention without a URL")
 
         if root_block_type is None:
-            raise NotionMcpCallPlanningError("Synthesis root contains a page mention without a block type")
+            raise NotionPlanningError("Synthesis root contains a page mention without a block type")
 
         self.page_mentions.append(
             SynthesisRootPageMention(
@@ -460,7 +460,7 @@ def _title_for_root_page_mention(
     if notion_page_id in title_lookup:
         return title_lookup[notion_page_id]
 
-    raise NotionMcpCallPlanningError(
+    raise NotionPlanningError(
         f"Fetched synthesis root mentions page {notion_page_id!r} without a known title"
     )
 
@@ -476,7 +476,7 @@ def _root_block_type_from_tag(tag: str) -> str:
     if tag == "mention-page":
         return SYNTHESIS_ROOT_PAGE_MENTION_BLOCK
 
-    raise NotionMcpCallPlanningError(f"Unsupported synthesis root page-reference tag {tag!r}")
+    raise NotionPlanningError(f"Unsupported synthesis root page-reference tag {tag!r}")
 
 
 def _synthesis_page_pointer(
@@ -517,7 +517,7 @@ def _render_existing_page_mention_block(existing_page_mention: ExistingSynthesis
     if existing_page_mention.root_block_type == SYNTHESIS_ROOT_PAGE_MENTION_BLOCK:
         return page_mention_block(existing_page_mention.local_page_key)
 
-    raise NotionMcpCallPlanningError(
+    raise NotionPlanningError(
         f"Unsupported synthesis root block type {existing_page_mention.root_block_type!r}"
     )
 

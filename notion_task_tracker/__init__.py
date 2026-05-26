@@ -7,7 +7,7 @@ from notion_task_tracker.common import (
     ExternalLink,
     NotionPageReference,
     NotionPageRegistry,
-    NotionMcpCallPlanningError,
+    NotionPlanningError,
     NotionWriteIntent,
     PagePointer,
 )
@@ -19,12 +19,6 @@ from notion_task_tracker.commands import (
 from notion_task_tracker.notion_client import (
     NotionTaskReconcileSummary,
     reconcile_task_dependency_graph_from_notion,
-)
-from notion_task_tracker.notion_rest_requests import (
-    BlockedNotionOperation,
-    NotionRestRequestPlan,
-    NotionRestRequestPlanner,
-    NotionRestRequest,
 )
 from notion_task_tracker.miscellaneous_pages import (
     MiscellaneousNoteEntry,
@@ -53,17 +47,13 @@ __all__ = [
     "MISCELLANEOUS_NOTES_PAGE_TITLE",
     "SYNTHESIS_NOTES_PAGE_TITLE",
     "ExternalLink",
-    "BlockedNotionOperation",
     "CommandResult",
     "MiscellaneousNoteEntry",
     "MiscellaneousNotesMetadata",
     "MiscellaneousNotesPageMetadata",
-    "NotionRestRequestPlan",
-    "NotionRestRequestPlanner",
-    "NotionRestRequest",
     "NotionPageReference",
     "NotionPageRegistry",
-    "NotionMcpCallPlanningError",
+    "NotionPlanningError",
     "NotionTaskReconcileSummary",
     "NotionWriteIntent",
     "PagePointer",

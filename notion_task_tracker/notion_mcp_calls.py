@@ -8,7 +8,7 @@ from typing import Any
 
 from notion_task_tracker.common import (
     NotionPageRegistry,
-    NotionMcpCallPlanningError,
+    NotionPlanningError,
     NotionWriteIntent,
     write_json_snapshot,
 )
@@ -124,7 +124,7 @@ class NotionMcpCallPlanner:
                 write_intent.operation_key,
                 f"Intent is missing required argument {error.args[0]!r}",
             )
-        except NotionMcpCallPlanningError as error:
+        except NotionPlanningError as error:
             return self._blocked_plan(write_intent.operation_key, str(error))
 
     def _compile_supported_write_intent(self, write_intent: NotionWriteIntent) -> NotionMcpCallPlan:
@@ -172,7 +172,7 @@ class NotionMcpCallPlanner:
     def _compile_update_page_properties_intent(self, write_intent: NotionWriteIntent) -> NotionMcpCallPlan:
         try:
             page_id = self.page_registry.page_id(self._required_target_page_key(write_intent))
-        except NotionMcpCallPlanningError as error:
+        except NotionPlanningError as error:
             return self._blocked_plan(write_intent.operation_key, str(error))
 
         return NotionMcpCallPlan(
@@ -316,7 +316,7 @@ class NotionMcpCallPlanner:
     ) -> NotionMcpCallPlan:
         try:
             arguments = self._create_page_arguments(title, parent_page_key, blocks)
-        except NotionMcpCallPlanningError as error:
+        except NotionPlanningError as error:
             return self._blocked_plan(operation_key, str(error))
 
         return NotionMcpCallPlan(
@@ -361,7 +361,7 @@ class NotionMcpCallPlanner:
         try:
             page_id = self.page_registry.page_id(target_page_key)
             content = self.markdown_renderer.render_blocks(blocks)
-        except NotionMcpCallPlanningError as error:
+        except NotionPlanningError as error:
             return self._blocked_plan(operation_key, str(error))
 
         return NotionMcpCallPlan(
@@ -391,7 +391,7 @@ class NotionMcpCallPlanner:
                 {"type": "heading_2", "text": timeline_log_heading}
             ])
             content = self.markdown_renderer.render_blocks(blocks)
-        except NotionMcpCallPlanningError as error:
+        except NotionPlanningError as error:
             return self._blocked_plan(operation_key, str(error))
 
         return NotionMcpCallPlan(
@@ -424,7 +424,7 @@ class NotionMcpCallPlanner:
             page_id = self.page_registry.page_id(target_page_key)
             heading_content = self.markdown_renderer.render_blocks([{"type": "heading_3", "text": timeline_heading}])
             appended_content = self.markdown_renderer.render_blocks(append_blocks)
-        except NotionMcpCallPlanningError as error:
+        except NotionPlanningError as error:
             return self._blocked_plan(operation_key, str(error))
 
         return NotionMcpCallPlan(
@@ -449,20 +449,20 @@ class NotionMcpCallPlanner:
     def _page_has_id(self, local_page_key: str) -> bool:
         try:
             self.page_registry.page_id(local_page_key)
-        except NotionMcpCallPlanningError:
+        except NotionPlanningError:
             return False
 
         return True
 
     def _required_target_page_key(self, write_intent: NotionWriteIntent) -> str:
         if write_intent.target_page_key is None:
-            raise NotionMcpCallPlanningError(f"Intent {write_intent.operation_key!r} has no target page key")
+            raise NotionPlanningError(f"Intent {write_intent.operation_key!r} has no target page key")
 
         return write_intent.target_page_key
 
     def _required_blocks(self, write_intent: NotionWriteIntent, argument_key: str) -> list[dict[str, Any]]:
         if argument_key not in write_intent.arguments:
-            raise NotionMcpCallPlanningError(
+            raise NotionPlanningError(
                 f"Intent {write_intent.operation_key!r} has no {argument_key!r} blocks"
             )
 

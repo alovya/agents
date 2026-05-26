@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from notion_task_tracker.common import (
-    NotionMcpCallPlanningError,
+    NotionPlanningError,
     PagePointer,
     canonical_notion_page_id,
     notion_page_id_from_url,
@@ -158,7 +158,7 @@ def _database_row_has_no_parent_or_known_parent(
     task_page_ids: set[str],
 ) -> bool:
     if len(database_row.parent_notion_page_ids) > 1:
-        raise NotionMcpCallPlanningError(f"Task {database_row.task_id} has more than one parent")
+        raise NotionPlanningError(f"Task {database_row.task_id} has more than one parent")
 
     return not database_row.parent_notion_page_ids or database_row.parent_notion_page_ids[0] in task_page_ids
 
@@ -170,7 +170,7 @@ def _ticket_number_from_fetched_task_database_page(fetched_page_content: str) ->
 def _properties_from_fetched_task_database_page(fetched_page_content: str) -> dict[str, Any]:
     properties_match = PROPERTIES_BLOCK_PATTERN.search(fetched_page_content)
     if properties_match is None:
-        raise NotionMcpCallPlanningError("Fetched task database page has no properties block")
+        raise NotionPlanningError("Fetched task database page has no properties block")
 
     return json.loads(properties_match.group(1))
 
@@ -256,7 +256,7 @@ def _record_database_row_by_task_id(
         database_rows_by_task_id[database_row.task_id] = database_row
         return
 
-    raise NotionMcpCallPlanningError(f"Duplicate task id {database_row.task_id} in task database")
+    raise NotionPlanningError(f"Duplicate task id {database_row.task_id} in task database")
 
 
 def _task_title_from_database_title(database_title: str, task_id: str) -> str:
@@ -281,13 +281,13 @@ def _relation_page_urls(raw_relation: Any) -> list[str]:
     if isinstance(raw_relation, str):
         return [str(page_url) for page_url in json.loads(raw_relation)]
 
-    raise NotionMcpCallPlanningError(f"Unsupported relation value {raw_relation!r}")
+    raise NotionPlanningError(f"Unsupported relation value {raw_relation!r}")
 
 
 def _required_ticket_number(query_result: dict[str, Any]) -> int:
     raw_ticket_number = query_result.get(TASK_DATABASE_TICKET_ID_PROPERTY)
     if raw_ticket_number in {None, ""}:
-        raise NotionMcpCallPlanningError("Task database row has no Ticket ID")
+        raise NotionPlanningError("Task database row has no Ticket ID")
 
     return int(raw_ticket_number)
 
@@ -295,7 +295,7 @@ def _required_ticket_number(query_result: dict[str, Any]) -> int:
 def _required_text_property(query_result: dict[str, Any], property_name: str) -> str:
     value = _optional_text_property(query_result, property_name)
     if value is None:
-        raise NotionMcpCallPlanningError(f"Task database row has no {property_name}")
+        raise NotionPlanningError(f"Task database row has no {property_name}")
 
     return value
 

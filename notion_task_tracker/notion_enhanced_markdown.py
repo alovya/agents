@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from notion_task_tracker.common import NotionPageRegistry, NotionMcpCallPlanningError
+from notion_task_tracker.common import NotionPageRegistry, NotionPlanningError
 
 
 class NotionMarkdownRenderer:
@@ -44,7 +44,7 @@ class NotionMarkdownRenderer:
         if block_type == "toggle":
             return self._render_toggle_block(block)
 
-        raise NotionMcpCallPlanningError(f"Unsupported Notion block type {block_type!r}")
+        raise NotionPlanningError(f"Unsupported Notion block type {block_type!r}")
 
     def _render_heading_block(self, block: dict[str, Any]) -> str:
         heading_level = int(block["type"].removeprefix("heading_"))

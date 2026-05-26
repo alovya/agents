@@ -4,7 +4,6 @@ import json
 from notion_task_tracker.common import NotionPageReference, NotionPageRegistry, NotionWriteIntent
 from notion_task_tracker.notion_rest_client import (
     NotionRestClient,
-    _blocks_from_markdown,
     _markdown_from_rest_blocks,
     _notion_rest_error_message,
     _rich_text_items,
@@ -290,35 +289,6 @@ def test_rich_text_items_render_date_and_page_mentions():
             },
         },
         {"type": "text", "text": {"content": "."}},
-    ]
-
-
-def test_blocks_from_markdown_parses_tracker_subset():
-    assert _blocks_from_markdown("## Timeline log\n### Today\n- Line\n\t- Child {color=\"green\"}\nLoose text") == [
-        {"type": "heading_2", "text": "Timeline log"},
-        {"type": "heading_3", "text": "Today"},
-        {"type": "bulleted_list_item", "depth": 0, "text": "Line"},
-        {"type": "bulleted_list_item", "depth": 1, "text": "Child", "color": "green"},
-        {"type": "paragraph", "text": "Loose text"},
-    ]
-
-
-def test_blocks_from_markdown_parses_details_as_toggle():
-    assert _blocks_from_markdown("\n".join([
-        "<details>",
-        "<summary>Migration details</summary>",
-        "\t- Migrated the live path.",
-        "\t- Verified REST reconciliation.",
-        "</details>",
-    ])) == [
-        {
-            "type": "toggle",
-            "text": "Migration details",
-            "children": [
-                {"type": "bulleted_list_item", "depth": 0, "text": "Migrated the live path."},
-                {"type": "bulleted_list_item", "depth": 0, "text": "Verified REST reconciliation."},
-            ],
-        }
     ]
 
 
