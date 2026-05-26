@@ -1,21 +1,21 @@
-"""Execute planned Notion writes through the selected transport."""
+"""Execute planned Notion writes through the selected Notion client."""
 
 from __future__ import annotations
 
 from typing import Any
 
 from notion_task_tracker.commands import CommandResult, apply_command_to_tracker_state
-from notion_task_tracker.notion_transport import NotionTransport
+from notion_task_tracker.notion_client import NotionClient
 
 
 async def execute_command_result_writes(
     command_result: CommandResult,
-    notion_transport: NotionTransport,
+    notion_client: NotionClient,
 ) -> tuple[dict[str, Any], list[str]]:
     if not command_result.write_intents:
         return command_result.tracker_state, []
 
-    write_result = await notion_transport.execute_command_result(command_result)
+    write_result = await notion_client.execute_command_result(command_result)
     tracker_state_with_page_ids = _record_captured_page_ids(
         command_result.tracker_state,
         write_result.captured_page_ids,
@@ -29,7 +29,7 @@ async def execute_command_result_writes(
     )
     refresh_tracker_state, refresh_operation_keys = await execute_command_result_writes(
         refresh_result,
-        notion_transport,
+        notion_client,
     )
     return refresh_tracker_state, write_result.completed_operation_keys + refresh_operation_keys
 

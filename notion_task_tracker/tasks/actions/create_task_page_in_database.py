@@ -7,7 +7,7 @@ import json
 from typing import Any
 
 from notion_task_tracker.commands import apply_command_to_tracker_state
-from notion_task_tracker.notion_transport import NotionTransport
+from notion_task_tracker.notion_client import NotionClient
 from notion_task_tracker.notion_write_executor import execute_command_result_writes
 from notion_task_tracker.tasks.actions.write_log import command_result_from_current_notion_state
 from notion_task_tracker.tasks import TaskDependencyGraph, Task, TimelineEntry
@@ -31,7 +31,7 @@ from notion_task_tracker.tasks.actions.update_task_dependencies import replace_t
 async def execute_task_creation_command(
     command: dict[str, Any],
     tracker_state: dict[str, Any],
-    notion_transport: NotionTransport,
+    notion_client: NotionClient,
 ) -> tuple[dict[str, Any], list[str]]:
     work_graph = TaskDependencyGraph.from_snapshot(tracker_state)
     task_creation = _task_creation_from_command(command, work_graph)
@@ -39,7 +39,7 @@ async def execute_task_creation_command(
         task_creation=task_creation,
         tracker_state=tracker_state,
         work_graph=work_graph,
-        notion_transport=notion_transport,
+        notion_client=notion_client,
     )
 
     _add_created_task_to_dependency_graph(
@@ -53,11 +53,11 @@ async def execute_task_creation_command(
         task_creation=task_creation,
         tracker_state=updated_tracker_state,
         created_task_id=created_task_id,
-        notion_transport=notion_transport,
+        notion_client=notion_client,
     )
     landing_tracker_state, landing_operation_keys = await _refresh_derived_task_landing_pages(
         timeline_tracker_state,
-        notion_transport,
+        notion_client,
     )
     return landing_tracker_state, create_operation_keys + timeline_operation_keys + landing_operation_keys
 
@@ -147,10 +147,10 @@ async def _create_database_page_and_read_ticket_id(
     task_creation: _TaskCreation,
     tracker_state: dict[str, Any],
     work_graph: TaskDependencyGraph,
-    notion_transport: NotionTransport,
+    notion_client: NotionClient,
 ) -> tuple[str, str, list[str]]:
     create_operation_key = f"create_database_task:{task_creation.command_name}"
-    created_page = await notion_transport.create_task_database_page(
+    created_page = await notion_client.create_task_database_page(
         data_source_id=task_database_data_source_id_from_tracker_state(tracker_state),
         properties=_new_task_database_row_properties(
             task_title=task_creation.task_title,
@@ -171,10 +171,10 @@ async def _create_database_page_and_read_ticket_id(
         ),
         operation_key=create_operation_key,
     )
-    fetched_page_content = await notion_transport.fetch_task_page_content(created_page.notion_page_id)
+    fetched_page_content = await notion_client.fetch_task_page_content(created_page.notion_page_id)
     created_task_id = task_id_from_fetched_task_database_page(fetched_page_content)
     update_title_operation_key = f"update_properties:task:{created_task_id}"
-    completed_update_operation_key = await notion_transport.update_task_database_page_title(
+    completed_update_operation_key = await notion_client.update_task_database_page_title(
         page_id=created_page.notion_page_id,
         title_property=TASK_DATABASE_TITLE_PROPERTY,
         title=task_creation.task_title,
@@ -213,7 +213,7 @@ async def _write_task_creation_timeline_entry(
     task_creation: _TaskCreation,
     tracker_state: dict[str, Any],
     created_task_id: str,
-    notion_transport: NotionTransport,
+    notion_client: NotionClient,
 ) -> tuple[dict[str, Any], list[str]]:
     timeline_command = _timeline_entry_that_records_created_task(
         task_creation=task_creation,
@@ -231,14 +231,14 @@ async def _write_task_creation_timeline_entry(
             "timeline_entry": timeline_command,
         },
         tracker_state=tracker_state,
-        notion_transport=notion_transport,
+        notion_client=notion_client,
     )
-    return await execute_command_result_writes(timeline_result, notion_transport)
+    return await execute_command_result_writes(timeline_result, notion_client)
 
 
 async def _refresh_derived_task_landing_pages(
     tracker_state: dict[str, Any],
-    notion_transport: NotionTransport,
+    notion_client: NotionClient,
 ) -> tuple[dict[str, Any], list[str]]:
     landing_refresh_result = apply_command_to_tracker_state(
         command={
@@ -247,7 +247,7 @@ async def _refresh_derived_task_landing_pages(
         },
         tracker_state=tracker_state,
     )
-    return await execute_command_result_writes(landing_refresh_result, notion_transport)
+    return await execute_command_result_writes(landing_refresh_result, notion_client)
 
 
 def _timeline_entries_for_created_task(

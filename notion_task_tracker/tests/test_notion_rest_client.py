@@ -2,7 +2,7 @@ import asyncio
 import json
 
 from notion_task_tracker.common import NotionPageReference, NotionPageRegistry, NotionWriteIntent
-from notion_task_tracker.rest.client import (
+from notion_task_tracker.notion_rest_client import (
     NotionRestClient,
     _markdown_from_rest_blocks,
     _notion_rest_error_message,

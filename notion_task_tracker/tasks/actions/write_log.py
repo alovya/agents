@@ -8,7 +8,7 @@ from typing import Any
 
 from notion_task_tracker.commands import CommandResult, apply_command_to_tracker_state
 from notion_task_tracker.common import NotionWriteIntent
-from notion_task_tracker.notion_transport import NotionTransport
+from notion_task_tracker.notion_client import NotionClient
 from notion_task_tracker.tasks.task import UPDATE_TIMELINE_LOG_OPERATION_NAME
 from notion_task_tracker.tasks.page_content import (
     fetched_task_page_has_usable_timeline_log,
@@ -26,13 +26,13 @@ from notion_task_tracker.tasks.actions.update_task_dependencies import (
 async def tracker_state_ready_for_command(
     command: dict[str, Any],
     tracker_state: dict[str, Any],
-    notion_transport: NotionTransport,
+    notion_client: NotionClient,
 ) -> CommandResult:
     if _is_task_command(command):
         return await reconcile_tracker_state_for_command_targets(
             command=command,
             tracker_state=tracker_state,
-            notion_transport=notion_transport,
+            notion_client=notion_client,
         )
 
     return CommandResult(tracker_state=tracker_state, warnings=[])
@@ -41,7 +41,7 @@ async def tracker_state_ready_for_command(
 async def command_result_from_current_notion_state(
     command: dict[str, Any],
     tracker_state: dict[str, Any],
-    notion_transport: NotionTransport,
+    notion_client: NotionClient,
 ) -> CommandResult:
     task_id = task_id_whose_timeline_is_written_by_command(command)
     if task_id is None:
@@ -51,7 +51,7 @@ async def command_result_from_current_notion_state(
         task_id=task_id,
         entry_date=command["timeline_entry"]["entry_date"],
         tracker_state=tracker_state,
-        notion_transport=notion_transport,
+        notion_client=notion_client,
     )
     command_result = apply_command_to_tracker_state(command, timeline_state.tracker_state)
     if timeline_state.has_usable_timeline_log:
@@ -104,13 +104,13 @@ def task_id_whose_timeline_is_written_by_command(command: dict[str, Any]) -> str
 async def tracker_state_with_fetched_task_timeline_dates(
     task_id: str,
     tracker_state: dict[str, Any],
-    notion_transport: NotionTransport,
+    notion_client: NotionClient,
 ) -> dict[str, Any]:
     notion_page_id = tracker_state["tasks"][task_id].get("notion_page_id")
     if notion_page_id is None:
         return tracker_state
 
-    fetched_page_content = await notion_transport.fetch_task_page_content(notion_page_id)
+    fetched_page_content = await notion_client.fetch_task_page_content(notion_page_id)
     return tracker_state_with_known_task_timeline_dates(
         task_id=task_id,
         tracker_state=tracker_state,
@@ -129,7 +129,7 @@ async def timeline_state_for_task_command(
     task_id: str,
     entry_date: str,
     tracker_state: dict[str, Any],
-    notion_transport: NotionTransport,
+    notion_client: NotionClient,
 ) -> TimelineStateForCommand:
     notion_page_id = tracker_state["tasks"][task_id].get("notion_page_id")
     if notion_page_id is None:
@@ -139,7 +139,7 @@ async def timeline_state_for_task_command(
             has_usable_timeline_log=True,
         )
 
-    fetched_page_content = await notion_transport.fetch_task_page_content(notion_page_id)
+    fetched_page_content = await notion_client.fetch_task_page_content(notion_page_id)
     timeline_entries = timeline_entries_from_fetched_task_page_content(fetched_page_content)
     has_usable_timeline_log = fetched_task_page_has_usable_timeline_log(
         fetched_page_content,

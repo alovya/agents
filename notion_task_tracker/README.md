@@ -265,8 +265,8 @@ The package is Python metadata and Notion write execution code. Live fetch/write
 - `tasks/page_content.py`: task page body parsing for timeline logs.
 - `tasks/rendering.py`: task title, landing-page, and timeline block rendering.
 - `tasks/actions/`: task actions such as timeline logging, completion, database-backed creation, and dependency reconciliation.
-- `rest/`: Notion REST client and workflow transport.
-- `mcp/`: temporary Notion MCP fallback client, call compiler, and workflow transport.
+- `notion_rest_client.py`: Notion REST client.
+- `notion_mcp_client.py`: temporary Notion MCP fallback client and call compiler.
 - `notion_client.py`: compatibility imports for the public task workflow.
 - `miscellaneous_pages.py`: dated miscellaneous notes.
 - `synthesis_pages.py`: flat synthesis root mentions and synthesis subpages with sources.

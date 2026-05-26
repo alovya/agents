@@ -4,21 +4,21 @@ from pathlib import Path
 PACKAGE_PATH = Path(__file__).resolve().parents[1]
 
 
-def test_rest_transport_does_not_import_mcp_symbols():
-    source = _source("rest/transport.py")
+def test_rest_client_does_not_import_mcp_symbols():
+    source = _source("notion_rest_client.py")
 
     assert "notion_task_tracker.mcp" not in source
     assert "NotionMcp" not in source
 
 
-def test_mcp_transport_does_not_import_rest_symbols():
-    source = _source("mcp/transport.py")
+def test_mcp_client_does_not_import_rest_symbols():
+    source = _source("notion_mcp_client.py")
 
     assert "notion_task_tracker.rest" not in source
     assert "NotionRest" not in source
 
 
-def test_workflow_modules_do_not_import_transport_protocol_details():
+def test_workflow_modules_do_not_import_notion_protocol_details():
     forbidden_text = [
         "NotionMcpToolCall",
         "NotionMcpCallPlanner",

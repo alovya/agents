@@ -6,7 +6,7 @@ import json
 from typing import Any
 
 from notion_task_tracker.commands import CommandResult, apply_command_to_tracker_state
-from notion_task_tracker.notion_transport import NotionTransport
+from notion_task_tracker.notion_client import NotionClient
 from notion_task_tracker.tasks import TaskDependencyGraph
 from notion_task_tracker.tasks.database import (
     task_database_row_from_fetched_task_database_page,
@@ -16,10 +16,10 @@ from notion_task_tracker.tasks.database import (
 
 async def reconcile_tracker_state_from_notion_pages(
     tracker_state: dict[str, Any],
-    notion_transport: NotionTransport,
+    notion_client: NotionClient,
 ) -> CommandResult:
     if "task_database" in tracker_state:
-        return await _reconcile_tracker_state_from_task_database(tracker_state, notion_transport)
+        return await _reconcile_tracker_state_from_task_database(tracker_state, notion_client)
 
     raise ValueError("Task reconciliation requires task_database in tracker state")
 
@@ -27,7 +27,7 @@ async def reconcile_tracker_state_from_notion_pages(
 async def reconcile_tracker_state_for_command_targets(
     command: dict[str, Any],
     tracker_state: dict[str, Any],
-    notion_transport: NotionTransport,
+    notion_client: NotionClient,
 ) -> CommandResult:
     task_ids_to_refresh = task_ids_to_refresh_before_command(command, tracker_state)
     if not task_ids_to_refresh:
@@ -42,7 +42,7 @@ async def reconcile_tracker_state_for_command_targets(
         if task_id in refreshed_task_ids:
             continue
 
-        database_row = await _fetch_known_task_database_row(task_id, work_graph, notion_transport)
+        database_row = await _fetch_known_task_database_row(task_id, work_graph, notion_client)
         parent_task_id = _parent_task_id_for_fetched_database_row(database_row, work_graph)
         _refresh_task_from_fetched_database_row(task_id, database_row, parent_task_id, work_graph)
         refreshed_task_ids.add(task_id)
@@ -148,10 +148,10 @@ def replace_task_graph_in_tracker_state(
 
 async def _reconcile_tracker_state_from_task_database(
     tracker_state: dict[str, Any],
-    notion_transport: NotionTransport,
+    notion_client: NotionClient,
 ) -> CommandResult:
     previous_work_graph = TaskDependencyGraph.from_snapshot(tracker_state)
-    database_rows = await notion_transport.query_task_database_rows(tracker_state)
+    database_rows = await notion_client.query_task_database_rows(tracker_state)
     work_graph = task_dependency_graph_from_database_query_results(
         query_results=database_rows,
         landing_page=previous_work_graph.landing_page,
@@ -186,7 +186,7 @@ def task_ids_to_refresh_before_command(command: dict[str, Any], tracker_state: d
 async def _fetch_known_task_database_row(
     task_id: str,
     work_graph: TaskDependencyGraph,
-    notion_transport: NotionTransport,
+    notion_client: NotionClient,
 ):
     if task_id not in work_graph.tasks:
         raise ValueError(f"Task {task_id} is not in local tracker state; run notion_task update")
@@ -195,7 +195,7 @@ async def _fetch_known_task_database_row(
     if notion_page_id is None:
         raise ValueError(f"Task {task_id} has no Notion page id; run notion_task update")
 
-    fetched_page_content = await notion_transport.fetch_task_page_content(notion_page_id)
+    fetched_page_content = await notion_client.fetch_task_page_content(notion_page_id)
     database_row = task_database_row_from_fetched_task_database_page(
         fetched_page_content=fetched_page_content,
         notion_page_id=notion_page_id,

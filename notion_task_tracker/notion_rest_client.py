@@ -1,4 +1,4 @@
-"""Notion REST transport client."""
+"""Notion REST client."""
 
 from __future__ import annotations
 
@@ -11,7 +11,9 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from notion_task_tracker.commands import CommandResult
 from notion_task_tracker.common import NotionPageRegistry, NotionWriteIntent, canonical_notion_page_id, notion_page_id_from_url
+from notion_task_tracker.notion_client import CreatedTaskDatabasePage, NotionWriteExecutionResult
 from notion_task_tracker.tasks.database import (
     TASK_DATABASE_DATA_SOURCE_ID,
     TASK_DATABASE_PARENT_PROPERTY,
@@ -19,6 +21,9 @@ from notion_task_tracker.tasks.database import (
     TASK_DATABASE_STATUS_PROPERTY,
     TASK_DATABASE_TICKET_ID_PROPERTY,
     TASK_DATABASE_TITLE_PROPERTY,
+    task_database_data_source_url_from_tracker_state,
+    task_database_query_for_tracker_state,
+    task_database_view_url_from_tracker_state,
 )
 
 
@@ -61,6 +66,16 @@ class NotionRestClient:
     async def query_database_view(self, view_url: str) -> list[dict[str, Any]]:
         return await self.query_data_source_id(TASK_DATABASE_DATA_SOURCE_ID)
 
+    async def query_task_database_rows(self, tracker_state: dict[str, Any]) -> list[dict[str, Any]]:
+        view_url = task_database_view_url_from_tracker_state(tracker_state)
+        if view_url is not None:
+            return await self.query_database_view(view_url)
+
+        return await self.query_data_source(
+            data_source_url=task_database_data_source_url_from_tracker_state(tracker_state),
+            query=task_database_query_for_tracker_state(tracker_state),
+        )
+
     async def query_data_source_id(self, data_source_id: str) -> list[dict[str, Any]]:
         rows = []
         next_cursor = None
@@ -92,7 +107,7 @@ class NotionRestClient:
             return await self._execute_miscellaneous_context_append_intent(write_intent, page_registry)
         if write_intent.operation_name == "create_synthesis_page":
             return await self._execute_synthesis_page_creation_intent(write_intent, page_registry)
-        raise ValueError(f"Notion REST transport cannot execute write intent {write_intent.operation_name!r}")
+        raise ValueError(f"Notion REST client cannot execute write intent {write_intent.operation_name!r}")
 
     async def create_database_page(
         self,
@@ -104,6 +119,55 @@ class NotionRestClient:
             parent={"type": "data_source_id", "data_source_id": data_source_id},
             properties=properties,
             blocks=blocks,
+        )
+
+    async def create_task_database_page(
+        self,
+        data_source_id: str,
+        properties: dict[str, Any],
+        blocks: list[dict[str, Any]],
+        content: str,
+        operation_key: str,
+    ) -> CreatedTaskDatabasePage:
+        del content
+        created_page = await self.create_database_page(
+            data_source_id=data_source_id,
+            properties=properties,
+            blocks=blocks,
+        )
+        return CreatedTaskDatabasePage(
+            notion_page_id=created_page["id"],
+            operation_keys=[operation_key],
+        )
+
+    async def update_task_database_page_title(
+        self,
+        page_id: str,
+        title_property: str,
+        title: str,
+        operation_key: str,
+    ) -> str:
+        await self.update_page_properties(
+            page_id=page_id,
+            properties={title_property or TASK_DATABASE_TITLE_PROPERTY: title},
+        )
+        return operation_key
+
+    async def execute_command_result(self, command_result: CommandResult) -> NotionWriteExecutionResult:
+        if command_result.page_registry is None:
+            raise ValueError("REST write execution requires a page registry")
+
+        completed_operation_keys = []
+        captured_page_ids = {}
+        for write_intent in command_result.write_intents:
+            write_result = await self.execute_write_intent(write_intent, command_result.page_registry)
+            completed_operation_keys.append(write_result["operation_key"])
+            if write_result.get("captured_page_key") is not None:
+                captured_page_ids[write_result["captured_page_key"]] = write_result["captured_page_id"]
+
+        return NotionWriteExecutionResult(
+            completed_operation_keys=completed_operation_keys,
+            captured_page_ids=captured_page_ids,
         )
 
     async def _execute_create_page_intent(
@@ -350,7 +414,7 @@ def _notion_rest_access_token_from_environment_or_path(credentials_path: Path) -
         if isinstance(credential_token, str) and credential_token.startswith("ntn_"):
             return credential_token
 
-    raise PermissionError("Set NOTION_API_KEY to the ntn_ Notion integration token before using REST transport.")
+    raise PermissionError("Set NOTION_API_KEY to the ntn_ Notion integration token before using the REST client.")
 
 
 def _task_database_rows_from_rest_pages(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -3,8 +3,8 @@ from dataclasses import dataclass
 
 import pytest
 
-from notion_task_tracker.mcp.calls import NotionMcpToolCall
-from notion_task_tracker.mcp.client import (
+from notion_task_tracker.notion_mcp_client import NotionMcpToolCall
+from notion_task_tracker.notion_mcp_client import (
     NotionMcpClient,
     _available_tool_names_from_session,
     _fetched_page_text_from_notion_mcp_tool_result,

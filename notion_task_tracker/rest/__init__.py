@@ -1,2 +1,0 @@
-"""REST transport for Notion."""
-

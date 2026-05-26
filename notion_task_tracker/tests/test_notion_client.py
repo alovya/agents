@@ -11,17 +11,17 @@ from notion_task_tracker.common import (
     NotionPageRegistry,
     NotionWriteIntent,
 )
-from notion_task_tracker.mcp.calls import NotionMcpCallPlan, NotionMcpToolCall
-from notion_task_tracker.mcp.transport import (
-    NotionMcpTransport,
+from notion_task_tracker.notion_mcp_client import NotionMcpCallPlan, NotionMcpCallPlanner, NotionMcpToolCall
+from notion_task_tracker.notion_mcp_client import (
+    NotionMcpClient,
+    _notion_page_id_from_tool_result,
     _raise_if_call_plan_has_blocked_operations,
 )
-from notion_task_tracker.rest.transport import NotionRestTransport
+from notion_task_tracker.notion_client import CreatedTaskDatabasePage, NotionWriteExecutionResult
+from notion_task_tracker.notion_rest_client import NotionRestClient
 from notion_task_tracker.tasks.workflow import repair_and_write_reconciled_tracker_state
-from notion_task_tracker.notion_transport import notion_transport_from_credentials_path
+from notion_task_tracker.notion_client import notion_client_from_credentials_path
 from notion_task_tracker.notion_write_executor import execute_command_result_writes
-from notion_task_tracker.mcp.client import NotionMcpClient
-from notion_task_tracker.rest.client import NotionRestClient
 from notion_task_tracker.tasks.actions.write_log import (
     command_result_with_context_repairs,
     repair_result_for_command_context,
@@ -37,11 +37,16 @@ from notion_task_tracker.tasks.actions.update_task_dependencies import (
 )
 from notion_task_tracker.tasks import Priority, TaskDependencyGraph, Task, TaskStatus
 from notion_task_tracker.tasks.database import default_task_database_tracker_state
+from notion_task_tracker.tasks.database import (
+    task_database_data_source_url_from_tracker_state,
+    task_database_query_for_tracker_state,
+    task_database_view_url_from_tracker_state,
+)
 
 
 def test_rest_client_does_not_import_notion_mcp_runtime():
     package_path = Path(__file__).resolve().parents[1]
-    runtime_source = (package_path / "rest" / "client.py").read_text(encoding="utf-8")
+    runtime_source = (package_path / "notion_rest_client.py").read_text(encoding="utf-8")
 
     assert "from mcp" not in runtime_source
     assert "import mcp" not in runtime_source
@@ -49,18 +54,17 @@ def test_rest_client_does_not_import_notion_mcp_runtime():
     assert "NotionMcpToolCall" not in runtime_source
 
 
-def test_notion_transport_from_credentials_path_defaults_to_rest(monkeypatch, tmp_path):
+def test_notion_client_from_credentials_path_defaults_to_rest(monkeypatch, tmp_path):
     credentials_path = tmp_path / ".credentials.json"
     credentials_path.write_text("{}", encoding="utf-8")
     monkeypatch.setenv("NOTION_API_KEY", "ntn_test")
 
-    notion_transport = notion_transport_from_credentials_path(credentials_path)
+    notion_client = notion_client_from_credentials_path(credentials_path)
 
-    assert isinstance(notion_transport, NotionRestTransport)
-    assert isinstance(notion_transport.client, NotionRestClient)
+    assert isinstance(notion_client, NotionRestClient)
 
 
-def test_notion_transport_from_credentials_path_keeps_mcp_fallback(tmp_path):
+def test_notion_client_from_credentials_path_keeps_mcp_fallback(tmp_path):
     credentials_path = tmp_path / ".credentials.json"
     credentials_path.write_text(
         json.dumps(
@@ -74,10 +78,9 @@ def test_notion_transport_from_credentials_path_keeps_mcp_fallback(tmp_path):
         encoding="utf-8",
     )
 
-    notion_transport = notion_transport_from_credentials_path(credentials_path, "mcp")
+    notion_client = notion_client_from_credentials_path(credentials_path, "mcp")
 
-    assert isinstance(notion_transport, NotionMcpTransport)
-    assert isinstance(notion_transport.client, NotionMcpClient)
+    assert isinstance(notion_client, NotionMcpClient)
 
 
 def test_repair_and_write_reconciled_tracker_state_pushes_repairs_for_changed_task(
@@ -158,7 +161,7 @@ def test_repair_and_write_reconciled_tracker_state_pushes_repairs_for_changed_ta
                 tracker_state=after_tracker_state,
                 warnings=[{"kind": "manual_repair", "message": "Derived Notion views need repair"}],
             ),
-            notion_transport=NotionMcpTransport(notion_client),
+            notion_client=notion_client,
         ),
     )
 
@@ -248,7 +251,7 @@ def test_repair_and_write_reconciled_tracker_state_skips_repairs_when_nothing_ch
                 tracker_state=tracker_state,
                 warnings=[],
             ),
-            notion_transport=NotionMcpTransport(notion_client),
+            notion_client=notion_client,
         ),
     )
 
@@ -360,7 +363,7 @@ def test_execute_command_result_writes_compiles_mcp_calls_downstream():
     )
 
     _tracker_state, completed_operation_keys = asyncio.run(
-        execute_command_result_writes(command_result, NotionMcpTransport(notion_client))
+        execute_command_result_writes(command_result, notion_client)
     )
 
     assert [tool_call.operation_key for tool_call in notion_client.calls] == [
@@ -390,7 +393,7 @@ def test_reconcile_tracker_state_from_notion_pages_uses_database_view_when_confi
     )
 
     command_result = asyncio.run(
-        reconcile_tracker_state_from_notion_pages(tracker_state, NotionMcpTransport(notion_client))
+        reconcile_tracker_state_from_notion_pages(tracker_state, notion_client)
     )
 
     assert command_result.tracker_state["tasks"]["ALOVYA-1"]["title"] == "Root task edited in database"
@@ -421,7 +424,7 @@ def test_reconcile_tracker_state_from_notion_pages_uses_sql_when_view_is_not_con
     )
 
     command_result = asyncio.run(
-        reconcile_tracker_state_from_notion_pages(tracker_state, NotionMcpTransport(notion_client))
+        reconcile_tracker_state_from_notion_pages(tracker_state, notion_client)
     )
 
     assert command_result.tracker_state["tasks"]["ALOVYA-1"]["configured_priority"] == "P2"
@@ -470,7 +473,7 @@ def test_reconcile_tracker_state_for_command_targets_fetches_only_relevant_pages
                 },
             },
             tracker_state=tracker_state,
-            notion_transport=NotionMcpTransport(notion_client),
+            notion_client=notion_client,
         )
     )
 
@@ -503,7 +506,7 @@ def test_reconcile_tracker_state_for_command_targets_requires_known_tasks():
                     },
                 },
                 tracker_state=tracker_state,
-                notion_transport=NotionMcpTransport(notion_client),
+                notion_client=notion_client,
             )
         )
 
@@ -552,7 +555,7 @@ def test_execute_task_creation_command_creates_database_row_then_refreshes_landi
                 },
             },
             tracker_state=tracker_state,
-            notion_transport=NotionMcpTransport(notion_client),
+            notion_client=notion_client,
         )
     )
 
@@ -648,7 +651,7 @@ def test_tracker_state_with_fetched_task_timeline_dates_remembers_manual_date_be
         tracker_state_with_fetched_task_timeline_dates(
             task_id="ALOVYA-1",
             tracker_state=tracker_state,
-            notion_transport=NotionMcpTransport(notion_client),
+            notion_client=notion_client,
         )
     )
 
@@ -684,7 +687,7 @@ def test_timeline_state_for_task_command_records_missing_timeline_log_without_wr
             task_id="ALOVYA-1",
             entry_date="2026-05-26",
             tracker_state=tracker_state,
-            notion_transport=NotionMcpTransport(notion_client),
+            notion_client=notion_client,
         )
     )
 
@@ -717,7 +720,7 @@ def test_timeline_state_for_task_command_records_empty_timeline_log_without_writ
             task_id="ALOVYA-1",
             entry_date="2026-05-26",
             tracker_state=tracker_state,
-            notion_transport=NotionMcpTransport(notion_client),
+            notion_client=notion_client,
         )
     )
 
@@ -745,7 +748,7 @@ def test_timeline_state_for_task_command_keeps_usable_timeline_log():
             task_id="ALOVYA-1",
             entry_date="2026-05-26",
             tracker_state=tracker_state,
-            notion_transport=NotionMcpTransport(notion_client),
+            notion_client=notion_client,
         )
     )
 
@@ -845,6 +848,90 @@ class _FakeNotionMcpClient:
     async def query_database_view(self, view_url: str):
         self.view_queries.append(view_url)
         return list(self.database_rows)
+
+    async def query_task_database_rows(self, tracker_state: dict):
+        view_url = task_database_view_url_from_tracker_state(tracker_state)
+        if view_url is not None:
+            return await self.query_database_view(view_url)
+
+        return await self.query_data_source(
+            data_source_url=task_database_data_source_url_from_tracker_state(tracker_state),
+            query=task_database_query_for_tracker_state(tracker_state),
+        )
+
+    async def create_task_database_page(
+        self,
+        data_source_id: str,
+        properties: dict,
+        blocks: list[dict],
+        content: str,
+        operation_key: str,
+    ):
+        del blocks
+        tool_result = await self.send_call(
+            NotionMcpToolCall(
+                operation_key=operation_key,
+                tool_name="notion-create-pages",
+                arguments={
+                    "parent": {
+                        "type": "data_source_id",
+                        "data_source_id": data_source_id,
+                    },
+                    "pages": [
+                        {
+                            "properties": properties,
+                            "content": content,
+                        }
+                    ],
+                },
+            )
+        )
+        return CreatedTaskDatabasePage(
+            notion_page_id=_notion_page_id_from_tool_result(tool_result),
+            operation_keys=[operation_key],
+        )
+
+    async def update_task_database_page_title(
+        self,
+        page_id: str,
+        title_property: str,
+        title: str,
+        operation_key: str,
+    ):
+        await self.send_call(
+            NotionMcpToolCall(
+                operation_key=operation_key,
+                tool_name="notion-update-page",
+                arguments={
+                    "page_id": page_id,
+                    "command": "update_properties",
+                    "properties": {
+                        title_property: title,
+                    },
+                },
+            )
+        )
+        return operation_key
+
+    async def execute_command_result(self, command_result: CommandResult):
+        if command_result.page_registry is None:
+            raise ValueError("MCP write execution requires a page registry")
+
+        call_plan = NotionMcpCallPlanner(command_result.page_registry).compile_write_intents(command_result.write_intents)
+        completed_operation_keys = []
+        captured_page_ids = {}
+        for tool_call in call_plan.calls:
+            tool_result = await self.send_call(tool_call)
+            completed_operation_keys.append(tool_call.operation_key)
+            if tool_call.captures_page_key is not None:
+                captured_page_ids[tool_call.captures_page_key] = _notion_page_id_from_tool_result(tool_result)
+        if call_plan.blocked_operations and not captured_page_ids:
+            _raise_if_call_plan_has_blocked_operations(call_plan)
+        return NotionWriteExecutionResult(
+            completed_operation_keys=completed_operation_keys,
+            captured_page_ids=captured_page_ids,
+            blocked_operation_count=len(call_plan.blocked_operations),
+        )
 
     async def send_call(self, tool_call: NotionMcpToolCall):
         self.calls.append(tool_call)
