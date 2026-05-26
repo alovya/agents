@@ -28,7 +28,7 @@ from notion_task_tracker.common import (
 )
 
 
-from notion_task_tracker.task_pages.task_metadata import (
+from notion_task_tracker.tasks.pages.task_metadata import (
     LANDING_HEADING_BY_PRIORITY,
     Priority,
     TASK_DATABASE_PRIORITY_PROPERTY,
@@ -41,7 +41,7 @@ from notion_task_tracker.task_pages.task_metadata import (
     TimelineEntry,
     _PRIORITY_RANK_BY_VALUE,
 )
-from notion_task_tracker.task_pages.rendering import (
+from notion_task_tracker.tasks.pages.rendering import (
     _format_landing_task_text,
     _landing_color_for_task,
     _render_task_page_title,

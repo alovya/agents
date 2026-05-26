@@ -9,7 +9,7 @@ Fixed page names live in `common.py`:
 3. `Alovya's miscellanous notes`
 4. `Alovya's synthesis notes`
 
-Notion page ids live in tracker state because Notion assigns them. The task database source and saved-view URLs live in `task_pages/task_database.py`.
+Notion page ids live in tracker state because Notion assigns them. The task database source and saved-view URLs live in `tasks/pages/task_database.py`.
 
 ## Agent Workflow
 
@@ -258,13 +258,14 @@ The package is Python metadata and Notion write execution code. Live fetch/write
 
 - `__main__.py`: CLI for command JSON and direct task database reconciliation.
 - `commands.py`: command dispatcher from JSON to tracker-state updates and Notion writes.
-- `notion_client.py`: reconciliation and Notion write execution orchestrator.
-- `notion_rest_client.py`: Notion REST transport client for live fetch/write execution.
-- `notion_mcp_client.py`: temporary Notion MCP fallback transport.
-- `task_pages/`: task database projection, task graph metadata, and rendering.
+- `tasks/workflow.py`: top-level task command and reconciliation workflow.
+- `tasks/actions/`: task actions such as timeline logging, task creation, and dependency reconciliation.
+- `tasks/pages/`: task database projection, task graph metadata, and rendering.
+- `rest/`: Notion REST client and workflow transport.
+- `mcp/`: temporary Notion MCP fallback client, call compiler, and workflow transport.
+- `notion_client.py`: compatibility imports for the public task workflow.
 - `miscellaneous_pages.py`: dated miscellaneous notes.
 - `synthesis_pages.py`: flat synthesis root mentions and synthesis subpages with sources.
-- `notion_mcp_calls.py`: compiler from write intents to MCP fallback calls.
 - `notion_enhanced_markdown.py`: renderer from internal blocks to Notion enhanced Markdown.
 - `common.py`: shared page references, write intents, fixed page titles, and block helpers.
 
@@ -272,7 +273,5 @@ The package is Python metadata and Notion write execution code. Live fetch/write
 
 ```bash
 cd /home/alovyachowdhury/.codex/memories
-/workspace/venv/bin/python -m pytest \
-  notion_task_tracker/tests \
-  notion_task_tracker/task_pages/tests
+/workspace/venv/bin/python -m pytest notion_task_tracker
 ```

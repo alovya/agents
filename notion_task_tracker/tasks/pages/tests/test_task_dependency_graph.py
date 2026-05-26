@@ -5,14 +5,14 @@ import json
 import pytest
 
 from notion_task_tracker.common import COMPLETED_LANDING_PAGE_TITLE, LANDING_PAGE_TITLE
-from notion_task_tracker.task_pages import (
+from notion_task_tracker.tasks.pages import (
     Priority,
     TaskDependencyGraph,
     TaskPageMetadata,
     TaskStatus,
     TimelineEntry,
 )
-from notion_task_tracker.task_pages.tests.task_page_test_helpers import (
+from notion_task_tracker.tasks.pages.tests.task_page_test_helpers import (
     _build_recursive_work_graph,
     _visible_strikethrough_text,
 )

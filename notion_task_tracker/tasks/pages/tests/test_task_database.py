@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 
 from notion_task_tracker.common import COMPLETED_LANDING_PAGE_TITLE, LANDING_PAGE_TITLE, PagePointer
-from notion_task_tracker.task_pages import Priority, TaskDependencyGraph, TaskPageMetadata, TaskStatus
-from notion_task_tracker.task_pages.task_database import (
+from notion_task_tracker.tasks.pages import Priority, TaskDependencyGraph, TaskPageMetadata, TaskStatus
+from notion_task_tracker.tasks.pages.task_database import (
     TASK_DATABASE_DATA_SOURCE_URL,
     TASK_DATABASE_VIEW_URL,
     default_task_database_tracker_state,

@@ -10,7 +10,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from notion_task_tracker.notion_mcp_calls import NotionMcpToolCall
+from notion_task_tracker.mcp.calls import NotionMcpToolCall
 
 DEFAULT_NOTION_MCP_REQUEST_TIMEOUT_SECONDS = 30
 

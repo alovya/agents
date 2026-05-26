@@ -16,7 +16,7 @@ from notion_task_tracker.commands import (
     apply_command_files,
     apply_command_to_tracker_state,
 )
-from notion_task_tracker.notion_client import (
+from notion_task_tracker.tasks.workflow import (
     NotionTaskReconcileSummary,
     reconcile_task_dependency_graph_from_notion,
 )
@@ -33,7 +33,7 @@ from notion_task_tracker.synthesis_pages import (
     SynthesisSource,
     parse_synthesis_root_page_mentions,
 )
-from notion_task_tracker.task_pages import (
+from notion_task_tracker.tasks.pages import (
     Priority,
     TaskPageMetadata,
     TaskStatus,

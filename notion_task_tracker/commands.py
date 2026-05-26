@@ -15,11 +15,11 @@ from notion_task_tracker.common import (
 )
 from notion_task_tracker.miscellaneous_pages import MiscellaneousNotesMetadata
 from notion_task_tracker.synthesis_pages import SynthesisNotesMetadata, SynthesisPageMetadata, SynthesisSource
-from notion_task_tracker.task_pages import (
+from notion_task_tracker.tasks.pages import (
     TaskDependencyGraph,
     TimelineEntry,
 )
-from notion_task_tracker.task_pages.task_metadata import MENTION_DATE_START_PATTERN
+from notion_task_tracker.tasks.pages.task_metadata import MENTION_DATE_START_PATTERN
 
 
 @dataclass(frozen=True, init=False)

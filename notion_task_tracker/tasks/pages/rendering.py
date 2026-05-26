@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from notion_task_tracker.common import heading_block, paragraph_block, toggle_block
-from notion_task_tracker.task_pages.task_metadata import (
+from notion_task_tracker.tasks.pages.task_metadata import (
     COMPLETED_TASK_PRIORITY_LABEL,
     LANDING_COLOR_BY_PRIORITY,
     LANDING_COLOR_BY_STATUS,

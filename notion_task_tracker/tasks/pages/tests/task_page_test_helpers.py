@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from notion_task_tracker.task_pages import (
+from notion_task_tracker.tasks.pages import (
     Priority,
     TaskPageMetadata,
     TaskStatus,

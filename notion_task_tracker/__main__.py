@@ -7,7 +7,7 @@ import json
 
 from collections.abc import Sequence
 
-from notion_task_tracker.notion_client import (
+from notion_task_tracker.tasks.workflow import (
     DEFAULT_CREDENTIALS_PATH,
     DEFAULT_OUTPUT_PATH,
     DEFAULT_TRACKER_STATE_PATH,

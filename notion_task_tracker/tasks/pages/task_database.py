@@ -13,8 +13,8 @@ from notion_task_tracker.common import (
     canonical_notion_page_id,
     notion_page_id_from_url,
 )
-from notion_task_tracker.task_pages.task_dependency_graph import TaskDependencyGraph
-from notion_task_tracker.task_pages.task_metadata import (
+from notion_task_tracker.tasks.pages.task_dependency_graph import TaskDependencyGraph
+from notion_task_tracker.tasks.pages.task_metadata import (
     PROPERTIES_BLOCK_PATTERN,
     TASK_DATABASE_PRIORITY_PROPERTY,
     TASK_DATABASE_STATUS_PROPERTY,

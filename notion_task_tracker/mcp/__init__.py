@@ -1,0 +1,2 @@
+"""MCP transport for Notion."""
+

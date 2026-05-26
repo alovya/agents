@@ -1,7 +1,7 @@
 import json
 
 from notion_task_tracker.commands import CommandResult, apply_command_files, apply_command_to_tracker_state
-from notion_task_tracker.task_pages import Priority, TaskPageMetadata, TaskStatus, TaskDependencyGraph
+from notion_task_tracker.tasks.pages import Priority, TaskPageMetadata, TaskStatus, TaskDependencyGraph
 
 
 class TestApplyCommandToTrackerState:
