@@ -39,5 +39,17 @@ def test_workflow_modules_do_not_import_notion_protocol_details():
         assert not any(forbidden in source for forbidden in forbidden_text), workflow_file
 
 
+def test_legacy_common_module_has_been_deleted():
+    assert not (PACKAGE_PATH / "common.py").exists()
+
+
+def test_rest_client_uses_notion_sdk_not_raw_http_transport():
+    source = _source("notion_rest_client.py")
+
+    assert "from notion_client import AsyncClient" in source
+    assert "urlopen" not in source
+    assert "urllib.request" not in source
+
+
 def _source(relative_path: str) -> str:
     return (PACKAGE_PATH / relative_path).read_text(encoding="utf-8")

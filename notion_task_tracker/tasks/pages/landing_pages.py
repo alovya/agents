@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from notion_task_tracker.common import (
+from notion_task_tracker.notion_pages import (
     NotionWriteIntent,
     PagePointer,
     heading_block,

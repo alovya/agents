@@ -1,11 +1,11 @@
 import pytest
 
-from notion_task_tracker.common import (
+from notion_task_tracker.notion_pages import (
     NotionPageReference,
     NotionPageRegistry,
     NotionPlanningError,
 )
-from notion_task_tracker.notion_enhanced_markdown import NotionMarkdownRenderer
+from notion_task_tracker.notion_pages.markdown import NotionMarkdownRenderer
 
 
 class TestNotionMarkdownRendererRenderBlocks:

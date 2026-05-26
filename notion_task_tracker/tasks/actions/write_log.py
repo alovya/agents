@@ -7,10 +7,10 @@ import json
 from typing import Any
 
 from notion_task_tracker.commands import CommandResult, apply_command_to_tracker_state
-from notion_task_tracker.common import NotionWriteIntent
+from notion_task_tracker.notion_pages import NotionWriteIntent
 from notion_task_tracker.notion_client import NotionClient
 from notion_task_tracker.tasks.task import UPDATE_TIMELINE_LOG_OPERATION_NAME
-from notion_task_tracker.tasks.page_content import (
+from notion_task_tracker.tasks.pages.timeline_log import (
     fetched_task_page_has_usable_timeline_log,
     initialised_task_timeline_blocks,
     timeline_entries_from_fetched_task_page_content,

@@ -1,24 +1,14 @@
-"""Shared metadata primitives for Notion page planning."""
+"""Local references to Notion pages."""
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from notion_task_tracker.notion_pages.write_intents import NotionPlanningError
 
-LANDING_PAGE_LOCAL_KEY = "landing_page"
-COMPLETED_LANDING_PAGE_LOCAL_KEY = "completed_landing_page"
-MISCELLANEOUS_NOTES_PAGE_LOCAL_KEY = "miscellaneous_notes"
-SYNTHESIS_NOTES_PAGE_LOCAL_KEY = "synthesis_notes"
-
-LANDING_PAGE_TITLE = "Alovya's ongoing tasks landing page"
-COMPLETED_LANDING_PAGE_TITLE = "Alovya's completed tasks landing page"
-MISCELLANEOUS_NOTES_PAGE_TITLE = "Alovya's miscellanous notes"
-SYNTHESIS_NOTES_PAGE_TITLE = "Alovya's synthesis notes"
 
 _COMPACT_NOTION_PAGE_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 _TRAILING_NOTION_PAGE_ID_PATTERN = re.compile(r"([0-9a-fA-F]{32})$")
@@ -126,28 +116,6 @@ class NotionPageRegistry:
         }
 
 
-@dataclass
-class ExternalLink:
-    """Link from an internal page to an external artefact."""
-
-    label: str
-    external_url: str
-
-
-@dataclass(frozen=True)
-class NotionWriteIntent:
-    """Notion write planner input."""
-
-    operation_key: str
-    operation_name: str
-    target_page_key: str | None
-    arguments: dict[str, Any]
-
-
-class NotionPlanningError(ValueError):
-    """Raised when a write intent cannot become an exact Notion call."""
-
-
 def canonical_notion_page_id(notion_page_id: str) -> str:
     compact_page_id = notion_page_id.replace("-", "").lower()
 
@@ -166,59 +134,6 @@ def notion_page_id_from_url(notion_url: str) -> str:
         raise NotionPlanningError(f"Notion URL {notion_url!r} does not contain a page id")
 
     return canonical_notion_page_id(page_id_match.group(1))
-
-
-def heading_block(level: int, text: str) -> dict[str, Any]:
-    return {
-        "type": f"heading_{level}",
-        "text": text,
-    }
-
-
-def paragraph_block(text: str) -> dict[str, Any]:
-    return {
-        "type": "paragraph",
-        "text": text,
-    }
-
-
-def toggle_block(text: str, children: list[dict[str, Any]]) -> dict[str, Any]:
-    return {
-        "type": "toggle",
-        "text": text,
-        "children": children,
-    }
-
-
-def metadata_bullet_block(text: str) -> dict[str, Any]:
-    return {
-        "type": "bulleted_list_item",
-        "depth": 0,
-        "text": text,
-    }
-
-
-def linked_metadata_bullet_block(text: str, page_key: str) -> dict[str, Any]:
-    return {
-        "type": "bulleted_list_item",
-        "depth": 0,
-        "text": text,
-        "page_key": page_key,
-    }
-
-
-def page_mention_block(page_key: str) -> dict[str, Any]:
-    return {
-        "type": "page_mention",
-        "page_key": page_key,
-    }
-
-
-def child_page_block(page_key: str) -> dict[str, Any]:
-    return {
-        "type": "child_page",
-        "page_key": page_key,
-    }
 
 
 def page_pointer_to_snapshot(page: PagePointer) -> dict[str, Any]:
@@ -250,14 +165,6 @@ def notion_page_reference_from_snapshot(snapshot: dict[str, Any]) -> NotionPageR
     )
 
 
-def write_json_snapshot(snapshot: dict[str, Any], snapshot_path: str | Path) -> None:
-    destination_path = Path(snapshot_path)
-    destination_path.write_text(
-        json.dumps(snapshot, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
-
-
 def fixed_page_pointer_from_snapshot(
     snapshot: dict[str, Any],
     local_page_key: str,
@@ -285,17 +192,3 @@ def validate_fixed_page_pointer(
         raise ValueError(
             f"Fixed page title {page.title!r} should be {expected_title!r}"
         )
-
-
-def external_link_to_snapshot(link: ExternalLink) -> dict[str, Any]:
-    return {
-        "label": link.label,
-        "external_url": link.external_url,
-    }
-
-
-def external_link_from_snapshot(snapshot: dict[str, Any]) -> ExternalLink:
-    return ExternalLink(
-        label=snapshot["label"],
-        external_url=snapshot["external_url"],
-    )

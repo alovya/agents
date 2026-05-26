@@ -1,8 +1,8 @@
 # Notion Task Tracker
 
-This package turns small agent-written JSON commands into Notion writes. The agent supplies intent; the tracker owns graph projection, page shape, rendering, write ordering, and exact Notion REST requests. Task metadata now comes from `Alovya's task database`; task page bodies contain timeline logs only, and the ongoing and completed task landing pages are derived views.
+This package turns small agent-written JSON commands into Notion writes. The agent supplies intent; the tracker owns graph projection, page shape, rendering, write ordering, and Notion SDK calls. Task metadata now comes from `Alovya's task database`; task page bodies contain timeline logs only, and the ongoing and completed task landing pages are derived views.
 
-Fixed page names live in `common.py`:
+Fixed page names live in `notion_pages/fixed_pages.py`:
 
 1. `Alovya's ongoing tasks landing page`
 2. `Alovya's completed tasks landing page`
@@ -31,6 +31,12 @@ cd /home/alovyachowdhury/.codex/memories
 ```
 
 REST execution needs `NOTION_API_KEY` to contain the `ntn_` Notion integration token. MCP remains available as an explicit fallback with `--notion-transport mcp`.
+
+Install runtime dependencies into the local venv with:
+
+```bash
+/workspace/venv/bin/python -m pip install -r /home/alovyachowdhury/agents/requirements.txt
+```
 
 `command_result.json` contains:
 
@@ -254,24 +260,23 @@ This replaces the local existing-page mention list with exactly the page mention
 
 ## Package Shape
 
-The package is Python metadata and Notion write execution code. Live fetch/write execution uses the authenticated Notion REST client by default. The MCP client is a temporary fallback while REST reliability is proven.
+The package is Python metadata and Notion write execution code. Live fetch/write execution uses the authenticated Notion REST client by default through `notion-client`. The MCP client is a temporary fallback while REST reliability is proven.
 
 - `__main__.py`: CLI for command JSON and direct task database reconciliation.
 - `commands.py`: command dispatcher from JSON to tracker-state updates and Notion writes.
 - `tasks/workflow.py`: top-level task command and reconciliation workflow.
 - `tasks/dependency_graph.py`: task dependency graph validation, priority rollup, and task-write orchestration.
-- `tasks/landing_pages.py`: ongoing and completed task landing-page rendering and refresh intents.
 - `tasks/database.py`: task database projection and database-row parsing.
 - `tasks/task.py`: task, priority, status, timeline-entry data, task property refresh intents, and timeline-log update intents.
-- `tasks/page_content.py`: task page body parsing for timeline logs.
+- `tasks/pages/landing_pages.py`: ongoing and completed task landing-page rendering and refresh intents.
+- `tasks/pages/timeline_log.py`: task page body parsing for timeline logs.
 - `tasks/actions/`: task actions such as timeline logging, completion, database-backed creation, and dependency reconciliation.
-- `notion_rest_client.py`: Notion REST client.
+- `notion_pages/`: page references, fixed page titles, write intents, internal block builders, REST block conversion, and MCP Markdown rendering.
+- `notion_rest_client.py`: Notion REST client using the Python Notion SDK.
 - `notion_mcp_client.py`: temporary Notion MCP fallback client and call compiler.
 - `notion_client.py`: workflow-facing Notion client protocol and client factory.
 - `miscellaneous_pages.py`: dated miscellaneous notes.
 - `synthesis_pages.py`: flat synthesis root mentions and synthesis subpages with sources.
-- `notion_enhanced_markdown.py`: renderer from internal blocks to Notion enhanced Markdown.
-- `common.py`: shared page references, write intents, fixed page titles, and block helpers.
 
 ## Tests
 

@@ -5,14 +5,22 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import re
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.parse import parse_qs, urlparse
+
+from notion_client import AsyncClient
+from notion_client.errors import APIResponseError
 
 from notion_task_tracker.commands import CommandResult
-from notion_task_tracker.common import NotionPageRegistry, NotionWriteIntent, canonical_notion_page_id, notion_page_id_from_url
+from notion_task_tracker.notion_pages import NotionPageRegistry, NotionWriteIntent, canonical_notion_page_id, notion_page_id_from_url
+from notion_task_tracker.notion_pages.rest_blocks import (
+    find_matching_top_level_block,
+    markdown_from_rest_blocks,
+    plain_text_from_rich_text_items,
+    rest_blocks_from_tracker_blocks,
+    rich_text_items,
+)
 from notion_task_tracker.notion_client import CreatedTaskDatabasePage, NotionWriteExecutionResult
 from notion_task_tracker.tasks.database import (
     TASK_DATABASE_DATA_SOURCE_ID,
@@ -29,8 +37,6 @@ from notion_task_tracker.tasks.database import (
 
 DEFAULT_NOTION_API_BASE_URL = "https://api.notion.com"
 DEFAULT_NOTION_API_VERSION = "2026-03-11"
-_DATE_MENTION_PATTERN = re.compile(r'<mention-date\s+[^>]*start="([^"]+)"[^>]*/>')
-_PAGE_MENTION_PATTERN = re.compile(r'<mention-page\s+[^>]*url="([^"]+)"[^>]*/>')
 
 
 class NotionRestClient:
@@ -38,6 +44,11 @@ class NotionRestClient:
         self.access_token = access_token
         self.base_url = base_url.rstrip("/")
         self.notion_version = notion_version
+        self.client = AsyncClient(
+            auth=access_token,
+            base_url=self.base_url,
+            notion_version=notion_version,
+        )
 
     @classmethod
     def from_credentials_path(cls, credentials_path: Path) -> "NotionRestClient":
@@ -300,7 +311,7 @@ class NotionRestClient:
             {
                 "parent": parent,
                 "properties": _rest_database_properties(properties),
-                "children": _rest_blocks_from_tracker_blocks(blocks),
+                "children": rest_blocks_from_tracker_blocks(blocks),
             },
         )
 
@@ -315,7 +326,7 @@ class NotionRestClient:
         existing_blocks = await self._fetch_all_block_children(page_id)
         for block in existing_blocks:
             await self._archive_block(block["id"])
-        await self._append_blocks(page_id, _rest_blocks_from_tracker_blocks(blocks))
+        await self._append_blocks(page_id, rest_blocks_from_tracker_blocks(blocks))
 
     async def insert_blocks_after_matching_block(
         self,
@@ -324,12 +335,12 @@ class NotionRestClient:
         blocks: list[dict[str, Any]],
     ) -> None:
         page_blocks = await self._fetch_all_block_children(page_id)
-        matching_block = _find_matching_top_level_block(page_blocks, anchor_block)
+        matching_block = find_matching_top_level_block(page_blocks, anchor_block)
         if matching_block is None:
             raise ValueError(f"Could not find Notion block matching {anchor_block!r}")
         await self._append_blocks(
             page_id,
-            _rest_blocks_from_tracker_blocks(blocks),
+            rest_blocks_from_tracker_blocks(blocks),
             position={"type": "after_block", "after_block": {"id": matching_block["id"]}},
         )
 
@@ -364,39 +375,44 @@ class NotionRestClient:
             next_cursor = response.get("next_cursor")
 
     async def _send_json(self, method: str, path: str, body: dict[str, Any] | None) -> dict[str, Any]:
-        return await asyncio.to_thread(self._send_json_sync, method, path, body)
-
-    def _send_json_sync(self, method: str, path: str, body: dict[str, Any] | None) -> dict[str, Any]:
-        request_body = None if body is None else json.dumps(body).encode("utf-8")
-        request = Request(
-            url=f"{self.base_url}{path}",
-            data=request_body,
-            method=method,
-            headers=self._headers(body is not None),
-        )
-
         try:
-            with urlopen(request, timeout=60) as response:
-                response_text = response.read().decode("utf-8")
-        except HTTPError as error:
-            error_text = error.read().decode("utf-8")
-            raise ValueError(_notion_rest_error_message(method, path, error.code, error_text)) from error
-        except URLError as error:
-            raise ValueError(_notion_rest_error_message(method, path, None, str(error))) from error
+            return await self._send_sdk_request(method, path, body or {})
+        except APIResponseError as error:
+            raise ValueError(
+                _notion_rest_error_message(method, path, error.status, error.body)
+            ) from error
 
-        if not response_text:
-            return {}
+    async def _send_sdk_request(self, method: str, path: str, body: dict[str, Any]) -> dict[str, Any]:
+        parsed_path = urlparse(path)
+        path_parts = parsed_path.path.strip("/").split("/")
+        query = parse_qs(parsed_path.query)
 
-        return json.loads(response_text)
+        if method == "GET" and path_parts[:2] == ["v1", "pages"]:
+            return await self.client.pages.retrieve(page_id=path_parts[2])
 
-    def _headers(self, has_body: bool) -> dict[str, str]:
-        headers = {
-            "Authorization": f"Bearer {self.access_token}",
-            "Notion-Version": self.notion_version,
-        }
-        if has_body:
-            headers["Content-Type"] = "application/json"
-        return headers
+        if method == "PATCH" and path_parts[:2] == ["v1", "pages"]:
+            return await self.client.pages.update(page_id=path_parts[2], **body)
+
+        if method == "POST" and path_parts == ["v1", "pages"]:
+            return await self.client.pages.create(**body)
+
+        if method == "POST" and path_parts[:2] == ["v1", "data_sources"] and path_parts[3:] == ["query"]:
+            return await self.client.data_sources.query(data_source_id=path_parts[2], **body)
+
+        if method == "GET" and path_parts[:2] == ["v1", "blocks"] and path_parts[3:] == ["children"]:
+            return await self.client.blocks.children.list(
+                block_id=path_parts[2],
+                page_size=int(query.get("page_size", ["100"])[0]),
+                start_cursor=query.get("start_cursor", [None])[0],
+            )
+
+        if method == "PATCH" and path_parts[:2] == ["v1", "blocks"] and len(path_parts) == 3:
+            return await self.client.blocks.update(block_id=path_parts[2], **body)
+
+        if method == "PATCH" and path_parts[:2] == ["v1", "blocks"] and path_parts[3:] == ["children"]:
+            return await self.client.blocks.children.append(block_id=path_parts[2], **body)
+
+        raise ValueError(f"Unsupported Notion REST SDK request {method} {path}")
 
 
 def _notion_rest_access_token_from_environment_or_path(credentials_path: Path) -> str:
@@ -440,7 +456,7 @@ def _rest_database_properties(properties: dict[str, Any]) -> dict[str, Any]:
     rest_properties = {}
     for property_name, property_value in properties.items():
         if property_name in {"title", TASK_DATABASE_TITLE_PROPERTY}:
-            rest_properties[property_name] = {"title": _rich_text_items(str(property_value))}
+            rest_properties[property_name] = {"title": rich_text_items(str(property_value))}
         elif property_name == TASK_DATABASE_PRIORITY_PROPERTY:
             rest_properties[property_name] = {"select": {"name": str(property_value)}}
         elif property_name == TASK_DATABASE_STATUS_PROPERTY:
@@ -459,9 +475,9 @@ def _plain_property_value(property_value: dict[str, Any] | None) -> str:
     property_type = property_value.get("type")
     value = property_value.get(property_type)
     if property_type == "title":
-        return _plain_text_from_rich_text_items(value)
+        return plain_text_from_rich_text_items(value)
     if property_type == "rich_text":
-        return _plain_text_from_rich_text_items(value)
+        return plain_text_from_rich_text_items(value)
     if property_type in {"select", "status"}:
         return "" if value is None else str(value.get("name", ""))
     if property_type == "unique_id":
@@ -505,214 +521,11 @@ def _fetched_database_page_content(page: dict[str, Any], blocks: list[dict[str, 
             json.dumps(_task_database_row_from_rest_page(page)),
             "</properties>",
             "<content>",
-            _markdown_from_rest_blocks(blocks),
+            markdown_from_rest_blocks(blocks),
             "</content>",
             "</page>",
         ]
     )
-
-
-def _rest_blocks_from_tracker_blocks(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    root_blocks: list[dict[str, Any]] = []
-    bullet_stack: list[dict[str, Any]] = []
-
-    for block in blocks:
-        rest_block = _rest_block_from_tracker_block(block)
-        if block.get("type") != "bulleted_list_item":
-            root_blocks.append(rest_block)
-            bullet_stack = []
-            continue
-
-        depth = int(block.get("depth", 0))
-        if depth == 0 or not bullet_stack:
-            root_blocks.append(rest_block)
-            bullet_stack = [rest_block]
-            continue
-
-        parent_block = bullet_stack[min(depth - 1, len(bullet_stack) - 1)]
-        parent_block[parent_block["type"]].setdefault("children", []).append(rest_block)
-        bullet_stack = bullet_stack[:depth] + [rest_block]
-
-    return root_blocks
-
-
-def _rest_block_from_tracker_block(block: dict[str, Any]) -> dict[str, Any]:
-    block_type = block["type"]
-    if block_type.startswith("heading_"):
-        return _rest_heading_block(block)
-    if block_type == "paragraph":
-        return _rest_rich_text_block("paragraph", block["text"], {})
-    if block_type == "bulleted_list_item":
-        return _rest_rich_text_block(
-            "bulleted_list_item",
-            _landing_text_with_page_mention(block),
-            {"color": block.get("color", "default")},
-        )
-    if block_type == "toggle":
-        return _rest_toggle_block(block)
-    if block_type == "page_mention":
-        return _rest_rich_text_block("paragraph", _page_mention_text(block), {})
-    if block_type == "child_page":
-        return _rest_rich_text_block("paragraph", _page_mention_text(block), {})
-    raise ValueError(f"Unsupported tracker block type {block_type!r}")
-
-
-def _rest_heading_block(block: dict[str, Any]) -> dict[str, Any]:
-    block_type = block["type"]
-    return {
-        "object": "block",
-        "type": block_type,
-        block_type: {
-            "rich_text": _rich_text_items(block["text"]),
-            "is_toggleable": False,
-        },
-    }
-
-
-def _rest_toggle_block(block: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "object": "block",
-        "type": "toggle",
-        "toggle": {
-            "rich_text": _rich_text_items(block["text"]),
-            "children": _rest_blocks_from_tracker_blocks(block.get("children", [])),
-        },
-    }
-
-
-def _rest_rich_text_block(block_type: str, text: str, extra_fields: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "object": "block",
-        "type": block_type,
-        block_type: {
-            "rich_text": _rich_text_items(text),
-            **extra_fields,
-        },
-    }
-
-
-def _landing_text_with_page_mention(block: dict[str, Any]) -> str:
-    text = block["text"]
-    if "page_key" not in block:
-        return text
-
-    return _page_mention_text(block)
-
-
-def _page_mention_text(block: dict[str, Any]) -> str:
-    page_url = block.get("page_url")
-    if page_url is not None:
-        return f'<mention-page url="{page_url}"/>'
-
-    page_key = block["page_key"]
-    return f"<mention-page page_key=\"{page_key}\"/>"
-
-
-def _rich_text_items(text: str) -> list[dict[str, Any]]:
-    rich_text_items = []
-    remaining_text = text
-
-    while remaining_text:
-        mention_match = _first_mention_match(remaining_text)
-        if mention_match is None:
-            rich_text_items.append(_text_item(remaining_text))
-            break
-
-        if mention_match.start() > 0:
-            rich_text_items.append(_text_item(remaining_text[:mention_match.start()]))
-        rich_text_items.append(_mention_item_from_match(mention_match))
-        remaining_text = remaining_text[mention_match.end():]
-
-    return rich_text_items or [_text_item("")]
-
-
-def _first_mention_match(text: str) -> re.Match[str] | None:
-    matches = [
-        match
-        for match in [_DATE_MENTION_PATTERN.search(text), _PAGE_MENTION_PATTERN.search(text)]
-        if match is not None
-    ]
-    if not matches:
-        return None
-    return min(matches, key=lambda match: match.start())
-
-
-def _mention_item_from_match(match: re.Match[str]) -> dict[str, Any]:
-    if match.re is _DATE_MENTION_PATTERN:
-        return {
-            "type": "mention",
-            "mention": {
-                "type": "date",
-                "date": {"start": match.group(1)},
-            },
-        }
-
-    return {
-        "type": "mention",
-        "mention": {
-            "type": "page",
-            "page": {"id": notion_page_id_from_url(match.group(1))},
-        },
-    }
-
-
-def _text_item(text: str) -> dict[str, Any]:
-    return {
-        "type": "text",
-        "text": {"content": text},
-    }
-
-
-def _markdown_from_rest_blocks(blocks: list[dict[str, Any]]) -> str:
-    return "\n".join(
-        line
-        for block in blocks
-        for line in _markdown_lines_from_rest_block(block)
-    )
-
-
-def _markdown_lines_from_rest_block(block: dict[str, Any]) -> list[str]:
-    block_type = block.get("type")
-    if block_type in {"heading_1", "heading_2", "heading_3"}:
-        level = int(block_type.removeprefix("heading_"))
-        return [f"{'#' * level} {_plain_text_from_block(block)}"]
-    if block_type == "paragraph":
-        return [_plain_text_from_block(block)]
-    if block_type == "bulleted_list_item":
-        return [f"- {_plain_text_from_block(block)}"]
-    if block_type == "toggle":
-        return [
-            "<details>",
-            f"<summary>{_plain_text_from_block(block)}</summary>",
-            "</details>",
-        ]
-    return []
-
-
-def _plain_text_from_block(block: dict[str, Any]) -> str:
-    block_type = block["type"]
-    return _plain_text_from_rich_text_items(block[block_type].get("rich_text", []))
-
-
-def _plain_text_from_rich_text_items(rich_text_items: list[dict[str, Any]]) -> str:
-    return "".join(_plain_text_from_rich_text_item(rich_text_item) for rich_text_item in rich_text_items)
-
-
-def _plain_text_from_rich_text_item(rich_text_item: dict[str, Any]) -> str:
-    if rich_text_item.get("type") == "mention":
-        return _plain_text_from_mention(rich_text_item["mention"])
-    if "plain_text" in rich_text_item:
-        return str(rich_text_item["plain_text"])
-    return str(rich_text_item.get("text", {}).get("content", ""))
-
-
-def _plain_text_from_mention(mention: dict[str, Any]) -> str:
-    if mention.get("type") == "date":
-        return f'<mention-date start="{mention["date"]["start"]}"/>'
-    if mention.get("type") == "page":
-        page_id = canonical_notion_page_id(mention["page"]["id"])
-        return f'<mention-page url="https://www.notion.so/{page_id}"/>'
-    return ""
 
 
 def _rest_parent_from_page_key(
@@ -742,23 +555,6 @@ def _page_has_id(page_registry: NotionPageRegistry, page_key: str) -> bool:
         return False
 
     return True
-
-
-def _find_matching_top_level_block(
-    blocks: list[dict[str, Any]],
-    tracker_block: dict[str, Any],
-) -> dict[str, Any] | None:
-    for block in blocks:
-        if _block_matches_tracker_block(block, tracker_block):
-            return block
-    return None
-
-
-def _block_matches_tracker_block(rest_block: dict[str, Any], tracker_block: dict[str, Any]) -> bool:
-    return (
-        rest_block.get("type") == tracker_block["type"]
-        and _plain_text_from_block(rest_block) == tracker_block["text"]
-    )
 
 
 def _data_source_id_from_url(data_source_url: str) -> str:

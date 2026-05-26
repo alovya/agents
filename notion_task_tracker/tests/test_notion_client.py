@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from notion_task_tracker.commands import CommandResult
-from notion_task_tracker.common import (
+from notion_task_tracker.notion_pages import (
     COMPLETED_LANDING_PAGE_TITLE,
     LANDING_PAGE_TITLE,
     NotionPageReference,
@@ -29,7 +29,7 @@ from notion_task_tracker.tasks.actions.write_log import (
     tracker_state_with_fetched_task_timeline_dates,
 )
 from notion_task_tracker.tasks.actions.create_task_page_in_database import execute_task_creation_command
-from notion_task_tracker.tasks.page_content import timeline_entries_from_fetched_task_page_content
+from notion_task_tracker.tasks.pages.timeline_log import timeline_entries_from_fetched_task_page_content
 from notion_task_tracker.tasks.actions.update_task_dependencies import (
     reconcile_tracker_state_for_command_targets,
     reconcile_tracker_state_from_notion_pages,

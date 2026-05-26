@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from notion_task_tracker.common import NotionPageRegistry, NotionPlanningError
+from notion_task_tracker.notion_pages import NotionPageRegistry, NotionPlanningError
 
 
 class NotionMarkdownRenderer:

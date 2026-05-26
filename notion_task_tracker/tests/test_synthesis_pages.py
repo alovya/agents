@@ -1,6 +1,6 @@
 import pytest
 
-from notion_task_tracker.common import NotionPlanningError
+from notion_task_tracker.notion_pages import NotionPlanningError
 from notion_task_tracker.synthesis_pages import (
     ExistingSynthesisPageMention,
     SynthesisNotesMetadata,
@@ -215,7 +215,7 @@ class TestSynthesisNotesMetadataReconcileRootPageMentionsFromContent:
 
 
 class TestParseSynthesisRootPageMentions:
-    def test_extracts_page_ids_and_optional_titles_from_notion_enhanced_markdown(self):
+    def test_extracts_page_ids_and_optional_titles_from_mcp_markdown(self):
         page_mentions = parse_synthesis_root_page_mentions(
             '<mention-page url="https://www.notion.so/wayve/Guide-'
             '77777777777777777777777777777777">Guide</mention-page>\n'

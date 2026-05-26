@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from notion_task_tracker.common import COMPLETED_LANDING_PAGE_TITLE, LANDING_PAGE_TITLE
+from notion_task_tracker.notion_pages import COMPLETED_LANDING_PAGE_TITLE, LANDING_PAGE_TITLE
 from notion_task_tracker.tasks import (
     Priority,
     TaskDependencyGraph,

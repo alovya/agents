@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from notion_task_tracker.common import ExternalLink, NotionWriteIntent, heading_block, toggle_block
+from notion_task_tracker.notion_pages import ExternalLink, NotionWriteIntent, heading_block, toggle_block
 
 
 COMPLETED_TASK_PRIORITY_LABEL = "N/A"

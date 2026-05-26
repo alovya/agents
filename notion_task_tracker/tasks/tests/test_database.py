@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from notion_task_tracker.common import COMPLETED_LANDING_PAGE_TITLE, LANDING_PAGE_TITLE, PagePointer
+from notion_task_tracker.notion_pages import COMPLETED_LANDING_PAGE_TITLE, LANDING_PAGE_TITLE, PagePointer
 from notion_task_tracker.tasks import Priority, TaskDependencyGraph, Task, TaskStatus
 from notion_task_tracker.tasks.database import (
     TASK_DATABASE_DATA_SOURCE_URL,

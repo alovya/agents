@@ -1,6 +1,6 @@
 """Personal Notion task tracker metadata package."""
 
-from notion_task_tracker.common import (
+from notion_task_tracker.notion_pages import (
     LANDING_PAGE_TITLE,
     MISCELLANEOUS_NOTES_PAGE_TITLE,
     SYNTHESIS_NOTES_PAGE_TITLE,

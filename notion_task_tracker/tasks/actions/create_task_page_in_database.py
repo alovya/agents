@@ -24,7 +24,7 @@ from notion_task_tracker.tasks.task import (
     Priority,
     TaskStatus,
 )
-from notion_task_tracker.tasks.page_content import timeline_entry_for_date
+from notion_task_tracker.tasks.pages.timeline_log import timeline_entry_for_date
 from notion_task_tracker.tasks.actions.update_task_dependencies import replace_task_graph_in_tracker_state
 
 

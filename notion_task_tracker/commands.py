@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from notion_task_tracker.common import (
+from notion_task_tracker.notion_pages import (
     NotionPageRegistry,
     NotionPlanningError,
     NotionWriteIntent,

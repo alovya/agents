@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from notion_task_tracker.common import (
+from notion_task_tracker.notion_pages import (
     COMPLETED_LANDING_PAGE_LOCAL_KEY,
     COMPLETED_LANDING_PAGE_TITLE,
     LANDING_PAGE_LOCAL_KEY,
@@ -25,7 +25,7 @@ from notion_task_tracker.common import (
 )
 
 
-from notion_task_tracker.tasks.landing_pages import CompletedTasksLandingPage, OngoingTasksLandingPage
+from notion_task_tracker.tasks.pages.landing_pages import CompletedTasksLandingPage, OngoingTasksLandingPage
 from notion_task_tracker.tasks.task import (
     Priority,
     Task,

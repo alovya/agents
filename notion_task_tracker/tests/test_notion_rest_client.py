@@ -1,12 +1,10 @@
 import asyncio
 import json
 
-from notion_task_tracker.common import NotionPageReference, NotionPageRegistry, NotionWriteIntent
+from notion_task_tracker.notion_pages import NotionPageReference, NotionPageRegistry, NotionWriteIntent
 from notion_task_tracker.notion_rest_client import (
     NotionRestClient,
-    _markdown_from_rest_blocks,
     _notion_rest_error_message,
-    _rich_text_items,
     _task_database_row_from_rest_page,
 )
 
@@ -41,6 +39,24 @@ def test_fetch_task_page_content_uses_page_properties_and_block_children():
     assert notion_client.requests == [
         ("GET", "/v1/pages/22222222222222222222222222222222", None),
         ("GET", "/v1/blocks/22222222222222222222222222222222/children?page_size=100", None),
+    ]
+
+
+def test_fetch_page_goes_through_notion_sdk_page_endpoint():
+    notion_client = NotionRestClient(
+        access_token="ntn_test",
+        base_url="https://api.notion.test",
+        notion_version="2026-03-11",
+    )
+    notion_client.client = _FakeNotionSdkClient(
+        page_result={"id": "22222222222222222222222222222222"}
+    )
+
+    page = asyncio.run(notion_client.fetch_page("22222222222222222222222222222222"))
+
+    assert page == {"id": "22222222222222222222222222222222"}
+    assert notion_client.client.pages.requests == [
+        ("retrieve", "22222222222222222222222222222222")
     ]
 
 
@@ -272,48 +288,6 @@ def test_create_pages_call_creates_database_page_with_children():
     assert notion_client.requests[0][2]["children"][0]["type"] == "heading_2"
 
 
-def test_rich_text_items_render_date_and_page_mentions():
-    rich_text_items = _rich_text_items(
-        'See <mention-date start="2026-05-26"/> and <mention-page url="https://www.notion.so/22222222222222222222222222222222"/>.'
-    )
-
-    assert rich_text_items == [
-        {"type": "text", "text": {"content": "See "}},
-        {"type": "mention", "mention": {"type": "date", "date": {"start": "2026-05-26"}}},
-        {"type": "text", "text": {"content": " and "}},
-        {
-            "type": "mention",
-            "mention": {
-                "type": "page",
-                "page": {"id": "22222222222222222222222222222222"},
-            },
-        },
-        {"type": "text", "text": {"content": "."}},
-    ]
-
-
-def test_markdown_from_rest_blocks_preserves_date_mentions():
-    markdown = _markdown_from_rest_blocks([
-        {
-            "type": "heading_3",
-            "heading_3": {
-                "rich_text": [
-                    {
-                        "type": "mention",
-                        "mention": {
-                            "type": "date",
-                            "date": {"start": "2026-05-26"},
-                        },
-                        "plain_text": "2026-05-26",
-                    }
-                ]
-            },
-        }
-    ])
-
-    assert markdown == '### <mention-date start="2026-05-26"/>'
-
-
 def test_notion_rest_error_message_includes_request_context():
     error_message = _notion_rest_error_message(
         method="PATCH",
@@ -362,6 +336,21 @@ class _FakeNotionRestClient(NotionRestClient):
     async def _send_json(self, method: str, path: str, body: dict | None):
         self.requests.append((method, path, body))
         return self.responses.pop(0)
+
+
+class _FakeNotionSdkClient:
+    def __init__(self, page_result: dict):
+        self.pages = _FakePagesEndpoint(page_result)
+
+
+class _FakePagesEndpoint:
+    def __init__(self, page_result: dict):
+        self.page_result = page_result
+        self.requests = []
+
+    async def retrieve(self, page_id: str):
+        self.requests.append(("retrieve", page_id))
+        return self.page_result
 
 
 def _page_registry() -> NotionPageRegistry:
