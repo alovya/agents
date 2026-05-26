@@ -1,10 +1,11 @@
 import asyncio
 import json
 
-from notion_task_tracker.notion_mcp_calls import NotionMcpToolCall
+from notion_task_tracker.common import NotionPageReference, NotionPageRegistry, NotionWriteIntent
 from notion_task_tracker.notion_rest_client import (
     NotionRestClient,
     _blocks_from_markdown,
+    _markdown_from_rest_blocks,
     _notion_rest_error_message,
     _rich_text_items,
     _task_database_row_from_rest_page,
@@ -83,20 +84,20 @@ def test_update_properties_call_uses_rest_page_property_shape():
     )
 
     asyncio.run(
-        notion_client.send_call(
-            NotionMcpToolCall(
+        notion_client.execute_write_intent(
+            NotionWriteIntent(
                 operation_key="update_properties:task:ALOVYA-1",
-                tool_name="notion-update-page",
+                operation_name="update_page_properties",
+                target_page_key="task:ALOVYA-1",
                 arguments={
-                    "page_id": "22222222222222222222222222222222",
-                    "command": "update_properties",
                     "properties": {
                         "Ticket page": "Root task",
                         "Priority": "P2",
                         "Status": "Blocked",
                     },
                 },
-            )
+            ),
+            _page_registry(),
         )
     )
 
@@ -128,16 +129,19 @@ def test_replace_content_archives_existing_blocks_then_appends_rest_blocks():
     )
 
     asyncio.run(
-        notion_client.send_call(
-            NotionMcpToolCall(
+        notion_client.execute_write_intent(
+            NotionWriteIntent(
                 operation_key="replace:landing_page",
-                tool_name="notion-update-page",
+                operation_name="replace_page_children",
+                target_page_key="landing_page",
                 arguments={
-                    "page_id": "11111111111111111111111111111111",
-                    "command": "replace_content",
-                    "new_str": "## P1\n- Active task",
+                    "blocks": [
+                        {"type": "heading_2", "text": "P1"},
+                        {"type": "bulleted_list_item", "depth": 0, "text": "Active task"},
+                    ],
                 },
-            )
+            ),
+            _page_registry(),
         )
     )
 
@@ -179,21 +183,20 @@ def test_update_content_inserts_new_blocks_after_matching_heading():
     )
 
     asyncio.run(
-        notion_client.send_call(
-            NotionMcpToolCall(
+        notion_client.execute_write_intent(
+            NotionWriteIntent(
                 operation_key="update_timeline_log:task:ALOVYA-1:2026-05-26",
-                tool_name="notion-update-page",
+                operation_name="update_timeline_log",
+                target_page_key="task:ALOVYA-1",
                 arguments={
-                    "page_id": "22222222222222222222222222222222",
-                    "command": "update_content",
-                    "content_updates": [
-                        {
-                            "old_str": "## Timeline log",
-                            "new_str": "## Timeline log\n### <mention-date start=\"2026-05-26\"/>\n- New log.",
-                        }
+                    "timeline_log_heading": "Timeline log",
+                    "blocks": [
+                        {"type": "heading_3", "text": '<mention-date start="2026-05-26"/>'},
+                        {"type": "bulleted_list_item", "depth": 0, "text": "New log."},
                     ],
                 },
-            )
+            ),
+            _page_registry(),
         )
     )
 
@@ -243,31 +246,26 @@ def test_create_pages_call_creates_database_page_with_children():
     )
 
     result = asyncio.run(
-        notion_client.send_call(
-            NotionMcpToolCall(
-                operation_key="create_database_task:create_child_task",
-                tool_name="notion-create-pages",
-                arguments={
-                    "parent": {"type": "data_source_id", "data_source_id": "data-source-a"},
-                    "pages": [
-                        {
-                            "properties": {
-                                "Ticket page": "Child task",
-                                "Priority": "P1",
-                                "Status": "Active",
-                                "Parent": json.dumps([
-                                    "https://www.notion.so/22222222222222222222222222222222"
-                                ]),
-                            },
-                            "content": "## Timeline log",
-                        }
-                    ],
+        notion_client.create_database_page(
+            data_source_id="data-source-a",
+            properties={
+                "Ticket page": "Child task",
+                "Priority": "P1",
+                "Status": "Active",
+                "Parent": json.dumps([
+                    "https://www.notion.so/22222222222222222222222222222222"
+                ]),
+            },
+            blocks=[
+                {
+                    "type": "heading_2",
+                    "text": "Timeline log",
                 },
-            )
+            ],
         )
     )
 
-    assert result["result"]["text"] == "https://www.notion.so/33333333333333333333333333333333"
+    assert result["url"] == "https://www.notion.so/33333333333333333333333333333333"
     assert notion_client.requests[0][0:2] == ("POST", "/v1/pages")
     assert notion_client.requests[0][2]["properties"]["Parent"] == {
         "relation": [{"id": "22222222222222222222222222222222"}]
@@ -303,6 +301,47 @@ def test_blocks_from_markdown_parses_tracker_subset():
         {"type": "bulleted_list_item", "depth": 1, "text": "Child", "color": "green"},
         {"type": "paragraph", "text": "Loose text"},
     ]
+
+
+def test_blocks_from_markdown_parses_details_as_toggle():
+    assert _blocks_from_markdown("\n".join([
+        "<details>",
+        "<summary>Migration details</summary>",
+        "\t- Migrated the live path.",
+        "\t- Verified REST reconciliation.",
+        "</details>",
+    ])) == [
+        {
+            "type": "toggle",
+            "text": "Migration details",
+            "children": [
+                {"type": "bulleted_list_item", "depth": 0, "text": "Migrated the live path."},
+                {"type": "bulleted_list_item", "depth": 0, "text": "Verified REST reconciliation."},
+            ],
+        }
+    ]
+
+
+def test_markdown_from_rest_blocks_preserves_date_mentions():
+    markdown = _markdown_from_rest_blocks([
+        {
+            "type": "heading_3",
+            "heading_3": {
+                "rich_text": [
+                    {
+                        "type": "mention",
+                        "mention": {
+                            "type": "date",
+                            "date": {"start": "2026-05-26"},
+                        },
+                        "plain_text": "2026-05-26",
+                    }
+                ]
+            },
+        }
+    ])
+
+    assert markdown == '### <mention-date start="2026-05-26"/>'
 
 
 def test_notion_rest_error_message_includes_request_context():
@@ -353,6 +392,23 @@ class _FakeNotionRestClient(NotionRestClient):
     async def _send_json(self, method: str, path: str, body: dict | None):
         self.requests.append((method, path, body))
         return self.responses.pop(0)
+
+
+def _page_registry() -> NotionPageRegistry:
+    return NotionPageRegistry(
+        pages={
+            "landing_page": NotionPageReference(
+                local_page_key="landing_page",
+                title="Landing page",
+                notion_page_id="11111111111111111111111111111111",
+            ),
+            "task:ALOVYA-1": NotionPageReference(
+                local_page_key="task:ALOVYA-1",
+                title="Root task",
+                notion_page_id="22222222222222222222222222222222",
+            ),
+        }
+    )
 
 
 def _task_properties(ticket_number: int) -> dict:

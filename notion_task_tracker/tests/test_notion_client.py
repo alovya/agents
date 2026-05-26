@@ -464,12 +464,13 @@ def test_execute_database_task_creation_command_creates_database_row_then_refres
     assert updated_tracker_state["tasks"]["ALOVYA-72"]["parent_task_id"] == "ALOVYA-1"
     assert updated_tracker_state["tasks"]["ALOVYA-72"]["notion_page_id"] == "33333333333333333333333333333333"
     assert updated_tracker_state["tasks"]["ALOVYA-72"]["timeline_entries"] == [
-        {
-            "entry_date": "2026-05-25",
-            "heading": '<mention-date start="2026-05-25"/>',
-            "lines": [],
-        }
-    ]
+            {
+                "entry_date": "2026-05-25",
+                "heading": '<mention-date start="2026-05-25"/>',
+                "lines": [],
+                "blocks": [],
+            }
+        ]
     assert completed_operation_keys == [
         "create_database_task:create_child_task",
         "update_properties:task:ALOVYA-72",

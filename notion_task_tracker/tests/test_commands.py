@@ -24,6 +24,7 @@ class TestApplyCommandToTrackerState:
                 "entry_date": "2026-05-24",
                 "heading": '<mention-date start="2026-05-24"/>',
                 "lines": [],
+                "blocks": [],
             }
         ]
         assert [call.tool_name for call in command_result.call_plan.calls] == ["notion-update-page"]
@@ -107,6 +108,7 @@ class TestApplyCommandToTrackerState:
                 "entry_date": "2026-05-24",
                 "heading": '<mention-date start="2026-05-24"/>',
                 "lines": [],
+                "blocks": [],
             }
         ]
 
@@ -159,6 +161,7 @@ class TestApplyCommandToTrackerState:
                 "entry_date": "2026-05-24",
                 "heading": '<mention-date start="2026-05-24"/>',
                 "lines": [],
+                "blocks": [],
             }
         ]
         assert [call.operation_key for call in command_result.call_plan.calls] == [

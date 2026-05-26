@@ -298,6 +298,32 @@ async def _create_task_database_row(
     notion_client: "_NotionClient",
 ) -> tuple[str, str, list[str]]:
     create_operation_key = f"create_database_task:{command_name}"
+    if hasattr(notion_client, "create_database_page"):
+        created_page = await notion_client.create_database_page(
+            data_source_id=task_database_data_source_id_from_tracker_state(tracker_state),
+            properties=_new_task_database_row_properties(
+                task_title=task_title,
+                configured_priority=configured_priority,
+                status=status,
+                parent_task_id=parent_task_id,
+                work_graph=work_graph,
+            ),
+            blocks=_new_task_page_initial_blocks(
+                initial_timeline_entry=initial_timeline_entry,
+                parent_task_id=parent_task_id,
+                work_graph=work_graph,
+            ),
+        )
+        created_page_id = created_page["id"]
+        fetched_page_content = await notion_client.fetch_task_page_content(created_page_id)
+        created_task_id = task_id_from_fetched_task_database_page(fetched_page_content)
+        update_title_operation_key = f"update_properties:task:{created_task_id}"
+        await notion_client.update_page_properties(
+            page_id=created_page_id,
+            properties={TASK_DATABASE_TITLE_PROPERTY: task_title},
+        )
+        return created_page_id, created_task_id, [create_operation_key, update_title_operation_key]
+
     create_result = await notion_client.send_call(
         NotionMcpToolCall(
             operation_key=create_operation_key,
@@ -478,10 +504,16 @@ async def _execute_command_result_writes(
     command_result: CommandResult,
     notion_client: "_NotionClient",
 ) -> tuple[dict[str, Any], list[str]]:
-    completed_operation_keys, captured_page_ids = await _execute_available_calls_with_notion_client(
-        command_result.call_plan,
-        notion_client,
-    )
+    if _should_execute_write_intents_with_rest(command_result, notion_client):
+        completed_operation_keys, captured_page_ids = await _execute_write_intents_with_notion_rest_client(
+            command_result,
+            notion_client,
+        )
+    else:
+        completed_operation_keys, captured_page_ids = await _execute_available_calls_with_notion_client(
+            command_result.call_plan,
+            notion_client,
+        )
     tracker_state_with_page_ids = _record_captured_page_ids(command_result.tracker_state, captured_page_ids)
     if not command_result.call_plan.blocked_operations:
         return tracker_state_with_page_ids, completed_operation_keys
@@ -492,6 +524,31 @@ async def _execute_command_result_writes(
     )
     refresh_tracker_state, refresh_operation_keys = await _execute_command_result_writes(refresh_result, notion_client)
     return refresh_tracker_state, completed_operation_keys + refresh_operation_keys
+
+
+def _should_execute_write_intents_with_rest(
+    command_result: CommandResult,
+    notion_client: "_NotionClient",
+) -> bool:
+    return bool(command_result.write_intents) and hasattr(notion_client, "execute_write_intent")
+
+
+async def _execute_write_intents_with_notion_rest_client(
+    command_result: CommandResult,
+    notion_client: "_NotionClient",
+) -> tuple[list[str], dict[str, str]]:
+    if command_result.page_registry is None:
+        raise ValueError("REST write execution requires a page registry")
+
+    completed_operation_keys = []
+    captured_page_ids = {}
+    for write_intent in command_result.write_intents:
+        write_result = await notion_client.execute_write_intent(write_intent, command_result.page_registry)
+        completed_operation_keys.append(write_result["operation_key"])
+        if write_result.get("captured_page_key") is not None:
+            captured_page_ids[write_result["captured_page_key"]] = write_result["captured_page_id"]
+
+    return completed_operation_keys, captured_page_ids
 
 
 def _raise_if_call_plan_has_blocked_operations(call_plan: NotionMcpCallPlan) -> None:
@@ -700,6 +757,30 @@ def _new_task_page_initial_content(
             f'- Spawned from parent task: <mention-page url="{parent_page_url}"/>.',
         ]
     )
+
+
+def _new_task_page_initial_blocks(
+    initial_timeline_entry: dict[str, Any] | None,
+    parent_task_id: str | None,
+    work_graph: TaskDependencyGraph,
+) -> list[dict[str, Any]]:
+    blocks = [{"type": "heading_2", "text": TASK_PAGE_TIMELINE_LOG_HEADING}]
+    if initial_timeline_entry is None or parent_task_id is None:
+        return blocks
+
+    parent_page_url = _task_notion_url(work_graph, parent_task_id)
+    blocks.extend([
+        {
+            "type": "heading_3",
+            "text": _timeline_entry_for_date(initial_timeline_entry["entry_date"])["heading"],
+        },
+        {
+            "type": "bulleted_list_item",
+            "depth": 0,
+            "text": f'Spawned from parent task: <mention-page url="{parent_page_url}"/>.',
+        },
+    ])
+    return blocks
 
 
 def _new_task_database_row_properties(

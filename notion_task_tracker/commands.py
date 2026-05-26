@@ -7,7 +7,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from notion_task_tracker.common import NotionPageRegistry, NotionMcpCallPlanningError, write_json_snapshot
+from notion_task_tracker.common import (
+    NotionPageRegistry,
+    NotionMcpCallPlanningError,
+    NotionWriteIntent,
+    write_json_snapshot,
+)
 from notion_task_tracker.notion_mcp_calls import NotionMcpCallPlan, NotionMcpCallPlanner
 from notion_task_tracker.miscellaneous_pages import MiscellaneousNotesMetadata
 from notion_task_tracker.synthesis_pages import SynthesisNotesMetadata, SynthesisPageMetadata, SynthesisSource
@@ -24,16 +29,22 @@ class CommandResult:
 
     tracker_state: dict[str, Any]
     call_plan: NotionMcpCallPlan
+    write_intents: list[NotionWriteIntent]
+    page_registry: NotionPageRegistry | None
     warnings: list[dict[str, str]] | None = None
 
     def __init__(
         self,
         tracker_state: dict[str, Any],
         call_plan: NotionMcpCallPlan | None = None,
+        write_intents: list[NotionWriteIntent] | None = None,
+        page_registry: NotionPageRegistry | None = None,
         warnings: list[dict[str, str]] | None = None,
     ) -> None:
         object.__setattr__(self, "tracker_state", tracker_state)
         object.__setattr__(self, "call_plan", call_plan or NotionMcpCallPlan())
+        object.__setattr__(self, "write_intents", list(write_intents or []))
+        object.__setattr__(self, "page_registry", page_registry)
         object.__setattr__(self, "warnings", warnings)
 
     @classmethod
@@ -41,6 +52,8 @@ class CommandResult:
         return cls(
             tracker_state=dict(call["tracker_state"]),
             call_plan=NotionMcpCallPlan.from_snapshot(call.get("call_plan", {})),
+            write_intents=[],
+            page_registry=None,
             warnings=list(call.get("warnings", [])),
         )
 
@@ -141,8 +154,14 @@ def _apply_task_command(
 ) -> CommandResult:
     work_graph = TaskDependencyGraph.from_snapshot(tracker_state)
     write_intents = _write_intents_from_task_command(command_handler(work_graph, command))
-    call_plan = NotionMcpCallPlanner(work_graph.page_registry()).compile_write_intents(write_intents)
-    return CommandResult(tracker_state=_replace_task_pages_in_tracker_state(tracker_state, work_graph), call_plan=call_plan)
+    page_registry = work_graph.page_registry()
+    call_plan = NotionMcpCallPlanner(page_registry).compile_write_intents(write_intents)
+    return CommandResult(
+        tracker_state=_replace_task_pages_in_tracker_state(tracker_state, work_graph),
+        call_plan=call_plan,
+        write_intents=write_intents,
+        page_registry=page_registry,
+    )
 
 
 def _write_intents_from_task_command(command_result) -> list:
@@ -175,8 +194,14 @@ def _complete_task(
 def _refresh_task_pages(command: dict[str, Any], tracker_state: dict[str, Any]) -> CommandResult:
     work_graph = TaskDependencyGraph.from_snapshot(tracker_state)
     write_intents = _filter_write_intents(work_graph.build_notion_write_plan(), command.get("operation_keys"))
-    call_plan = NotionMcpCallPlanner(work_graph.page_registry()).compile_write_intents(write_intents)
-    return CommandResult(tracker_state=_replace_task_pages_in_tracker_state(tracker_state, work_graph), call_plan=call_plan)
+    page_registry = work_graph.page_registry()
+    call_plan = NotionMcpCallPlanner(page_registry).compile_write_intents(write_intents)
+    return CommandResult(
+        tracker_state=_replace_task_pages_in_tracker_state(tracker_state, work_graph),
+        call_plan=call_plan,
+        write_intents=write_intents,
+        page_registry=page_registry,
+    )
 
 
 def _apply_miscellaneous_command(command: dict[str, Any], tracker_state: dict[str, Any]) -> CommandResult:
@@ -187,8 +212,14 @@ def _apply_miscellaneous_command(command: dict[str, Any], tracker_state: dict[st
         source_page_id=command.get("source_page_id"),
         source_block_id=command.get("source_block_id"),
     )
-    call_plan = NotionMcpCallPlanner(miscellaneous_notes.page_registry()).compile_write_intent(write_intent)
-    return CommandResult(tracker_state=_replace_miscellaneous_notes_in_tracker_state(tracker_state, miscellaneous_notes), call_plan=call_plan)
+    page_registry = miscellaneous_notes.page_registry()
+    call_plan = NotionMcpCallPlanner(page_registry).compile_write_intent(write_intent)
+    return CommandResult(
+        tracker_state=_replace_miscellaneous_notes_in_tracker_state(tracker_state, miscellaneous_notes),
+        call_plan=call_plan,
+        write_intents=[write_intent],
+        page_registry=page_registry,
+    )
 
 
 def _refresh_miscellaneous_pages(command: dict[str, Any], tracker_state: dict[str, Any]) -> CommandResult:
@@ -197,8 +228,14 @@ def _refresh_miscellaneous_pages(command: dict[str, Any], tracker_state: dict[st
         miscellaneous_notes.build_notion_write_plan(),
         command.get("operation_keys"),
     )
-    call_plan = NotionMcpCallPlanner(miscellaneous_notes.page_registry()).compile_write_intents(write_intents)
-    return CommandResult(tracker_state=_replace_miscellaneous_notes_in_tracker_state(tracker_state, miscellaneous_notes), call_plan=call_plan)
+    page_registry = miscellaneous_notes.page_registry()
+    call_plan = NotionMcpCallPlanner(page_registry).compile_write_intents(write_intents)
+    return CommandResult(
+        tracker_state=_replace_miscellaneous_notes_in_tracker_state(tracker_state, miscellaneous_notes),
+        call_plan=call_plan,
+        write_intents=write_intents,
+        page_registry=page_registry,
+    )
 
 
 def _apply_synthesis_command(command: dict[str, Any], tracker_state: dict[str, Any]) -> CommandResult:
@@ -215,10 +252,14 @@ def _apply_synthesis_command(command: dict[str, Any], tracker_state: dict[str, A
             ],
         )
     )
-    call_plan = NotionMcpCallPlanner(
-        _page_registry_for_synthesis_command(tracker_state, synthesis_notes)
-    ).compile_write_intent(write_intent)
-    return CommandResult(tracker_state=_replace_synthesis_notes_in_tracker_state(tracker_state, synthesis_notes), call_plan=call_plan)
+    page_registry = _page_registry_for_synthesis_command(tracker_state, synthesis_notes)
+    call_plan = NotionMcpCallPlanner(page_registry).compile_write_intent(write_intent)
+    return CommandResult(
+        tracker_state=_replace_synthesis_notes_in_tracker_state(tracker_state, synthesis_notes),
+        call_plan=call_plan,
+        write_intents=[write_intent],
+        page_registry=page_registry,
+    )
 
 
 def _reconcile_synthesis_root_page_mentions(command: dict[str, Any], tracker_state: dict[str, Any]) -> CommandResult:
@@ -239,10 +280,14 @@ def _refresh_synthesis_pages(command: dict[str, Any], tracker_state: dict[str, A
         synthesis_notes.build_notion_write_plan(),
         command.get("operation_keys"),
     )
-    call_plan = NotionMcpCallPlanner(
-        _page_registry_for_synthesis_command(tracker_state, synthesis_notes)
-    ).compile_write_intents(write_intents)
-    return CommandResult(tracker_state=_replace_synthesis_notes_in_tracker_state(tracker_state, synthesis_notes), call_plan=call_plan)
+    page_registry = _page_registry_for_synthesis_command(tracker_state, synthesis_notes)
+    call_plan = NotionMcpCallPlanner(page_registry).compile_write_intents(write_intents)
+    return CommandResult(
+        tracker_state=_replace_synthesis_notes_in_tracker_state(tracker_state, synthesis_notes),
+        call_plan=call_plan,
+        write_intents=write_intents,
+        page_registry=page_registry,
+    )
 
 
 def _record_miscellaneous_notes_page_id(tracker_state: dict[str, Any], notion_page_id: str) -> None:
