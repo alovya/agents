@@ -338,7 +338,7 @@ def _combined_tracker_state():
 
 def _task_tracker_state():
     work_graph = TaskDependencyGraph()
-    work_graph.landing_page.notion_page_id = "11111111111111111111111111111111"
+    work_graph.ongoing_tasks_landing_page.page.notion_page_id = "11111111111111111111111111111111"
     work_graph.add_task(
         Task(
             task_id="ALOVYA-1",

@@ -90,8 +90,8 @@ class TestTaskDependencyGraphFromSnapshot:
             }
         )
 
-        assert work_graph.completed_landing_page.title == COMPLETED_LANDING_PAGE_TITLE
-        assert work_graph.completed_landing_page.notion_page_id is None
+        assert work_graph.completed_tasks_landing_page.page.title == COMPLETED_LANDING_PAGE_TITLE
+        assert work_graph.completed_tasks_landing_page.page.notion_page_id is None
 
 
 class TestTaskDependencyGraphTaskIdsGroupedForLandingPage:
@@ -203,7 +203,7 @@ class TestTaskDependencyGraphBuildNotionWritePlan:
 
     def test_renders_completed_page_from_completed_top_level_tasks_only(self):
         work_graph = _build_recursive_work_graph()
-        work_graph.completed_landing_page.notion_page_id = "completed-landing-page-id"
+        work_graph.completed_tasks_landing_page.page.notion_page_id = "completed-landing-page-id"
 
         completed_landing_refresh_intent = next(
             write_intent
@@ -408,5 +408,5 @@ class TestTaskDependencyGraphSnapshot:
 
         loaded_work_graph = TaskDependencyGraph.from_snapshot_path(snapshot_path)
 
-        assert loaded_work_graph.landing_page.title == LANDING_PAGE_TITLE
-        assert loaded_work_graph.landing_page.notion_page_id == "landing-page-id"
+        assert loaded_work_graph.ongoing_tasks_landing_page.page.title == LANDING_PAGE_TITLE
+        assert loaded_work_graph.ongoing_tasks_landing_page.page.notion_page_id == "landing-page-id"

@@ -66,7 +66,7 @@ class TestTaskDependencyGraphFromDatabaseQueryResults:
 
     def test_preserves_completed_landing_page_from_previous_graph(self):
         previous_work_graph = TaskDependencyGraph()
-        previous_work_graph.completed_landing_page.notion_page_id = "completed-landing-page-id"
+        previous_work_graph.completed_tasks_landing_page.page.notion_page_id = "completed-landing-page-id"
 
         work_graph = task_dependency_graph_from_database_query_results(
             query_results=[],
@@ -78,8 +78,8 @@ class TestTaskDependencyGraphFromDatabaseQueryResults:
             previous_work_graph=previous_work_graph,
         )
 
-        assert work_graph.completed_landing_page.title == COMPLETED_LANDING_PAGE_TITLE
-        assert work_graph.completed_landing_page.notion_page_id == "completed-landing-page-id"
+        assert work_graph.completed_tasks_landing_page.page.title == COMPLETED_LANDING_PAGE_TITLE
+        assert work_graph.completed_tasks_landing_page.page.notion_page_id == "completed-landing-page-id"
 
     def test_uses_notion_ticket_id_for_task_id(self):
         work_graph = task_dependency_graph_from_database_query_results(

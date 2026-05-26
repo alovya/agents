@@ -1,8 +1,7 @@
-"""Task graph metadata and task-page write planning."""
+"""Task dependency graph metadata."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -20,33 +19,20 @@ from notion_task_tracker.common import (
     external_link_from_snapshot,
     external_link_to_snapshot,
     fixed_page_pointer_from_snapshot,
-    heading_block,
     page_pointer_to_snapshot,
-    paragraph_block,
     validate_fixed_page_pointer,
     write_json_snapshot,
 )
 
 
+from notion_task_tracker.tasks.landing_pages import CompletedTasksLandingPage, OngoingTasksLandingPage
 from notion_task_tracker.tasks.task import (
-    LANDING_HEADING_BY_PRIORITY,
     Priority,
-    TASK_DATABASE_PRIORITY_PROPERTY,
-    TASK_DATABASE_STATUS_PROPERTY,
-    TASK_DATABASE_TITLE_PROPERTY,
-    TASK_PAGE_TIMELINE_LOG_HEADING,
-    UPDATE_TIMELINE_LOG_OPERATION_NAME,
     Task,
     TaskStatus,
     TimelineEntry,
     _PRIORITY_RANK_BY_VALUE,
-)
-from notion_task_tracker.tasks.rendering import (
-    _format_landing_task_text,
-    _landing_color_for_task,
-    _render_task_page_title,
-    _render_timeline_entry_content_blocks,
-    _render_timeline_blocks,
+    task_id_sort_key,
 )
 
 
@@ -54,16 +40,20 @@ from notion_task_tracker.tasks.rendering import (
 class TaskDependencyGraph:
     """Task graph and task landing-page registry."""
 
-    landing_page: PagePointer = field(
-        default_factory=lambda: PagePointer(
-            local_page_key=LANDING_PAGE_LOCAL_KEY,
-            title=LANDING_PAGE_TITLE,
+    ongoing_tasks_landing_page: OngoingTasksLandingPage = field(
+        default_factory=lambda: OngoingTasksLandingPage(
+            page=PagePointer(
+                local_page_key=LANDING_PAGE_LOCAL_KEY,
+                title=LANDING_PAGE_TITLE,
+            )
         )
     )
-    completed_landing_page: PagePointer = field(
-        default_factory=lambda: PagePointer(
-            local_page_key=COMPLETED_LANDING_PAGE_LOCAL_KEY,
-            title=COMPLETED_LANDING_PAGE_TITLE,
+    completed_tasks_landing_page: CompletedTasksLandingPage = field(
+        default_factory=lambda: CompletedTasksLandingPage(
+            page=PagePointer(
+                local_page_key=COMPLETED_LANDING_PAGE_LOCAL_KEY,
+                title=COMPLETED_LANDING_PAGE_TITLE,
+            )
         )
     )
     tasks: dict[str, Task] = field(default_factory=dict)
@@ -77,20 +67,24 @@ class TaskDependencyGraph:
     @classmethod
     def from_snapshot(cls, snapshot: dict[str, Any]) -> TaskDependencyGraph:
         work_graph = cls(
-            landing_page=fixed_page_pointer_from_snapshot(
-                snapshot=snapshot["landing_page"],
-                local_page_key=LANDING_PAGE_LOCAL_KEY,
-                title=LANDING_PAGE_TITLE,
+            ongoing_tasks_landing_page=OngoingTasksLandingPage(
+                page=fixed_page_pointer_from_snapshot(
+                    snapshot=snapshot["landing_page"],
+                    local_page_key=LANDING_PAGE_LOCAL_KEY,
+                    title=LANDING_PAGE_TITLE,
+                )
             ),
-            completed_landing_page=fixed_page_pointer_from_snapshot(
-                snapshot=snapshot.get("completed_landing_page") or {},
-                local_page_key=COMPLETED_LANDING_PAGE_LOCAL_KEY,
-                title=COMPLETED_LANDING_PAGE_TITLE,
+            completed_tasks_landing_page=CompletedTasksLandingPage(
+                page=fixed_page_pointer_from_snapshot(
+                    snapshot=snapshot.get("completed_landing_page") or {},
+                    local_page_key=COMPLETED_LANDING_PAGE_LOCAL_KEY,
+                    title=COMPLETED_LANDING_PAGE_TITLE,
+                )
             ),
         )
         for task_snapshot in snapshot.get("tasks", {}).values():
             work_graph.tasks[task_snapshot["task_id"]] = _task_from_snapshot(task_snapshot)
-        work_graph._normalize_task_timelines()
+        work_graph._normalise_task_timelines()
         work_graph.validate()
         work_graph.recalculate_display_priorities()
         return work_graph
@@ -100,11 +94,11 @@ class TaskDependencyGraph:
 
     def to_snapshot(self) -> dict[str, Any]:
         return {
-            "landing_page": page_pointer_to_snapshot(self.landing_page),
-            "completed_landing_page": page_pointer_to_snapshot(self.completed_landing_page),
+            "landing_page": page_pointer_to_snapshot(self.ongoing_tasks_landing_page.page),
+            "completed_landing_page": page_pointer_to_snapshot(self.completed_tasks_landing_page.page),
             "tasks": {
                 task_id: _task_to_snapshot(task)
-                for task_id, task in sorted(self.tasks.items(), key=lambda item: _task_id_sort_key(item[0]))
+                for task_id, task in sorted(self.tasks.items(), key=lambda item: task_id_sort_key(item[0]))
             },
         }
 
@@ -133,7 +127,7 @@ class TaskDependencyGraph:
             self.link_parent_to_child(parent_task_id=parent_task_id, child_task_id=task_id)
 
         for task in self.tasks.values():
-            task.child_task_ids.sort(key=_task_id_sort_key)
+            task.child_task_ids.sort(key=task_id_sort_key)
 
     def build_notion_write_plan(self) -> list[NotionWriteIntent]:
         self.validate()
@@ -152,19 +146,10 @@ class TaskDependencyGraph:
         timeline_entry: TimelineEntry,
     ) -> NotionWriteIntent:
         task = self.tasks[task_id]
-        task.timeline_entries = _merged_timeline_entries_by_date(task.timeline_entries)
-        existing_entry = _timeline_entry_for_date(task.timeline_entries, timeline_entry.entry_date)
-        existing_entry_before_append = _copy_timeline_entry(existing_entry) if existing_entry is not None else None
-        appended_entry = _copy_timeline_entry(timeline_entry)
-        timeline_entry_to_render = _upsert_timeline_entry(task, timeline_entry)
+        write_intent = task.append_timeline_log(timeline_entry)
         self.validate()
         self.recalculate_display_priorities()
-        return self._plan_task_timeline_log_update(
-            task,
-            existing_entry_before_append,
-            appended_entry,
-            timeline_entry_to_render,
-        )
+        return write_intent
 
     def complete_task(
         self,
@@ -172,40 +157,25 @@ class TaskDependencyGraph:
         timeline_entry: TimelineEntry,
     ) -> list[NotionWriteIntent]:
         task = self.tasks[task_id]
-        task.timeline_entries = _merged_timeline_entries_by_date(task.timeline_entries)
-        existing_entry = _timeline_entry_for_date(task.timeline_entries, timeline_entry.entry_date)
-        existing_entry_before_append = _copy_timeline_entry(existing_entry) if existing_entry is not None else None
-        appended_entry = _copy_timeline_entry(timeline_entry)
-        task.status = TaskStatus.COMPLETE
-        timeline_entry_to_render = _upsert_timeline_entry(task, timeline_entry)
+        task_property_intent, timeline_log_intent = task.complete_with_timeline_log(timeline_entry)
         self.validate()
         self.recalculate_display_priorities()
         return [
-            *self._plan_task_completion_update(task_id),
-            self._plan_task_timeline_log_update(
-                task,
-                existing_entry_before_append,
-                appended_entry,
-                timeline_entry_to_render,
-            ),
+            task_property_intent,
+            self._plan_landing_page_refresh(),
+            *self._plan_completed_landing_page_refresh(),
+            timeline_log_intent,
         ]
 
     def task_ids_grouped_for_landing_page(self) -> dict[Priority, list[str]]:
         self.recalculate_display_priorities()
-        return {
-            priority: [
-                task_id
-                for task_id in self._landing_root_task_ids_matching(_task_should_start_ongoing_landing_tree)
-                if self.tasks[task_id].displayed_priority == priority
-            ]
-            for priority in Priority
-        }
+        return self.ongoing_tasks_landing_page.task_ids_grouped_by_priority(self.tasks)
 
     def completed_task_ids_for_landing_page(self) -> list[str]:
-        return self._top_level_task_ids_matching(lambda task: task.status == TaskStatus.COMPLETE)
+        return self.completed_tasks_landing_page.completed_top_level_task_ids(self.tasks)
 
     def cancelled_task_ids_for_landing_page(self) -> list[str]:
-        return self._top_level_task_ids_matching(lambda task: task.status == TaskStatus.CANCELLED)
+        return self.completed_tasks_landing_page.cancelled_top_level_task_ids(self.tasks)
 
     def validate(self) -> None:
         self._validate_fixed_page_keys_and_titles()
@@ -216,215 +186,69 @@ class TaskDependencyGraph:
     def recalculate_display_priorities(self) -> None:
         for task in self.tasks.values():
             task.displayed_priority = task.configured_priority
-        for task_id in sorted(self.tasks, key=_task_id_sort_key, reverse=True):
+        for task_id in sorted(self.tasks, key=task_id_sort_key, reverse=True):
             self.tasks[task_id].displayed_priority = self._calculate_priority_visible_on_task(self.tasks[task_id])
 
     def _plan_missing_page_creation(self) -> list[NotionWriteIntent]:
         write_intents = []
-        for page in [self.landing_page, self.completed_landing_page]:
-            if page.notion_page_id is None:
-                write_intents.append(
-                    NotionWriteIntent(
-                        operation_key=f"create:{page.local_page_key}",
-                        operation_name="create_page",
-                        target_page_key=None,
-                        arguments={
-                            "local_page_key": page.local_page_key,
-                            "title": page.title,
-                            "parent_page_key": page.parent_page_key,
-                            "blocks": self._page_creation_blocks(page.local_page_key),
-                        },
-                    )
-                )
+        ongoing_page_creation = self.ongoing_tasks_landing_page.creation_intent(
+            self.ongoing_tasks_landing_page.render_blocks(self.tasks)
+        )
+        completed_page_creation = self.completed_tasks_landing_page.creation_intent(
+            self.completed_tasks_landing_page.render_blocks(self.tasks)
+        )
+        for page_creation in [ongoing_page_creation, completed_page_creation]:
+            if page_creation is not None:
+                write_intents.append(page_creation)
         return write_intents
 
     def _plan_fixed_page_title_refreshes(self) -> list[NotionWriteIntent]:
         return [
-            NotionWriteIntent(
-                operation_key=f"update_properties:{page.local_page_key}",
-                operation_name="update_page_properties",
-                target_page_key=page.local_page_key,
-                arguments={"properties": {"title": page.title}},
-            )
-            for page in [self.landing_page, self.completed_landing_page]
-            if page.notion_page_id is not None
+            title_refresh
+            for title_refresh in [
+                self.ongoing_tasks_landing_page.title_refresh_intent(),
+                self.completed_tasks_landing_page.title_refresh_intent(),
+            ]
+            if title_refresh is not None
         ]
 
     def _plan_existing_task_property_refreshes(self) -> list[NotionWriteIntent]:
         return [
-            self._plan_task_page_property_refresh(task)
-            for task in sorted(self.tasks.values(), key=lambda task: _task_id_sort_key(task.task_id))
+            task.database_property_refresh_intent()
+            for task in sorted(self.tasks.values(), key=lambda task: task_id_sort_key(task.task_id))
             if task.notion_page_id is not None
         ]
 
-    def _plan_task_page_property_refresh(self, task: Task) -> NotionWriteIntent:
-        return NotionWriteIntent(
-            operation_key=f"update_properties:{task.local_page_key}",
-            operation_name="update_page_properties",
-            target_page_key=task.local_page_key,
-            arguments={
-                "properties": {
-                    TASK_DATABASE_TITLE_PROPERTY: _render_task_page_title(task),
-                    TASK_DATABASE_PRIORITY_PROPERTY: task.configured_priority.value,
-                    TASK_DATABASE_STATUS_PROPERTY: task.status.value,
-                }
-            },
-        )
-
-    def _plan_task_timeline_log_update(
-        self,
-        task: Task,
-        existing_timeline_entry: TimelineEntry | None,
-        appended_timeline_entry: TimelineEntry,
-        timeline_entry: TimelineEntry,
-    ) -> NotionWriteIntent:
-        arguments = {
-            "task_id": task.task_id,
-            "timeline_log_heading": TASK_PAGE_TIMELINE_LOG_HEADING,
-            "timeline_entry": _timeline_entry_to_snapshot(timeline_entry),
-            "blocks": _render_timeline_blocks([timeline_entry]),
-        }
-        if existing_timeline_entry is not None:
-            arguments["existing_timeline_heading"] = existing_timeline_entry.heading
-            arguments["existing_blocks"] = _render_timeline_blocks([existing_timeline_entry])
-            arguments["append_blocks"] = _render_timeline_line_blocks(appended_timeline_entry)
-
-        return NotionWriteIntent(
-            operation_key=f"{UPDATE_TIMELINE_LOG_OPERATION_NAME}:{task.local_page_key}:{timeline_entry.entry_date}",
-            operation_name=UPDATE_TIMELINE_LOG_OPERATION_NAME,
-            target_page_key=task.local_page_key,
-            arguments=arguments,
-        )
-
-    def _plan_task_completion_update(self, task_id: str) -> list[NotionWriteIntent]:
-        task = self.tasks[task_id]
-        return [
-            self._plan_task_page_property_refresh(task),
-            self._plan_landing_page_refresh(),
-            *self._plan_completed_landing_page_refresh(),
-        ]
-
     def _plan_landing_page_refresh(self) -> NotionWriteIntent:
-        return NotionWriteIntent(
-            operation_key="replace:landing_page",
-            operation_name="replace_page_children",
-            target_page_key=self.landing_page.local_page_key,
-            arguments={"blocks": self._render_landing_page_blocks()},
-        )
+        return self.ongoing_tasks_landing_page.refresh_intent(self.tasks)
 
     def _plan_completed_landing_page_refresh(self) -> list[NotionWriteIntent]:
-        if self.completed_landing_page.notion_page_id is None:
-            return []
-
-        return [
-            NotionWriteIntent(
-                operation_key="replace:completed_landing_page",
-                operation_name="replace_page_children",
-                target_page_key=self.completed_landing_page.local_page_key,
-                arguments={"blocks": self._render_completed_landing_page_blocks()},
-            )
-        ]
+        return self.completed_tasks_landing_page.refresh_intents(self.tasks)
 
     def _pages_that_should_exist(self) -> list[PagePointer]:
-        pages = [self.landing_page, self.completed_landing_page]
+        pages = [
+            self.ongoing_tasks_landing_page.page,
+            self.completed_tasks_landing_page.page,
+        ]
         for task in self.tasks.values():
             pages.append(
                 PagePointer(
                     local_page_key=task.local_page_key,
-                    title=_render_task_page_title(task),
+                    title=task.page_title(),
                     notion_page_id=task.notion_page_id,
                     parent_page_key=None,
                 )
             )
         return pages
 
-    def _render_landing_page_blocks(self) -> list[dict[str, Any]]:
-        blocks = []
-        self._append_priority_landing_sections(blocks)
-        return blocks
-
-    def _render_completed_landing_page_blocks(self) -> list[dict[str, Any]]:
-        blocks = []
-        self._append_status_landing_section(TaskStatus.COMPLETE, "Completed", blocks)
-        self._append_status_landing_section(TaskStatus.CANCELLED, "Cancelled", blocks)
-        return blocks or [paragraph_block(text="No completed tasks yet.")]
-
-    def _append_priority_landing_sections(self, blocks: list[dict[str, Any]]) -> None:
-        for priority, task_ids in self.task_ids_grouped_for_landing_page().items():
-            if task_ids:
-                blocks.append(heading_block(level=2, text=LANDING_HEADING_BY_PRIORITY[priority]))
-                for task_id in task_ids:
-                    blocks.extend(
-                        self._render_task_tree_blocks(
-                            task_id,
-                            depth=0,
-                            task_should_be_visible=_task_should_appear_inside_ongoing_landing_tree,
-                        )
-                    )
-
-    def _append_status_landing_section(
-        self,
-        status: TaskStatus,
-        section_title: str,
-        blocks: list[dict[str, Any]],
-    ) -> None:
-        task_should_be_visible = lambda task: task.status == status
-        task_ids = self._top_level_task_ids_matching(task_should_be_visible)
-        if task_ids:
-            blocks.append(heading_block(level=2, text=section_title))
-            for task_id in task_ids:
-                blocks.extend(
-                    self._render_task_tree_blocks(
-                        task_id,
-                        depth=0,
-                        task_should_be_visible=task_should_be_visible,
-                    )
-                )
-
-    def _render_task_tree_blocks(
-        self,
-        task_id: str,
-        depth: int,
-        task_should_be_visible: Callable[[Task], bool],
-    ) -> list[dict[str, Any]]:
-        task = self.tasks[task_id]
-        displayed_priority = task.displayed_priority or task.configured_priority
-        blocks = [
-            {
-                "type": "bulleted_list_item",
-                "depth": depth,
-                "text": _format_landing_task_text(task, displayed_priority),
-                "page_key": task.local_page_key,
-                "color": _landing_color_for_task(task, displayed_priority),
-            }
-        ]
-        for child_task_id in sorted(task.child_task_ids, key=_task_id_sort_key):
-            child_task = self.tasks[child_task_id]
-            if task_should_be_visible(child_task):
-                blocks.extend(
-                    self._render_task_tree_blocks(
-                        child_task_id,
-                        depth=depth + 1,
-                        task_should_be_visible=task_should_be_visible,
-                    )
-                )
-        return blocks
-
-    def _page_creation_blocks(self, local_page_key: str) -> list[dict[str, Any]]:
-        if local_page_key == self.landing_page.local_page_key:
-            return self._render_landing_page_blocks()
-        if local_page_key == self.completed_landing_page.local_page_key:
-            return self._render_completed_landing_page_blocks()
-        raise NotionPlanningError(f"Task graph cannot create dynamic page {local_page_key!r}")
-
     def _validate_fixed_page_keys_and_titles(self) -> None:
         validate_fixed_page_pointer(
-            page=self.landing_page,
+            page=self.ongoing_tasks_landing_page.page,
             expected_local_page_key=LANDING_PAGE_LOCAL_KEY,
             expected_title=LANDING_PAGE_TITLE,
         )
         validate_fixed_page_pointer(
-            page=self.completed_landing_page,
+            page=self.completed_tasks_landing_page.page,
             expected_local_page_key=COMPLETED_LANDING_PAGE_LOCAL_KEY,
             expected_title=COMPLETED_LANDING_PAGE_TITLE,
         )
@@ -465,34 +289,6 @@ class TaskDependencyGraph:
                 visited_task_ids.add(current_task_id)
                 current_task_id = self.tasks[current_task_id].parent_task_id
 
-    def _landing_root_task_ids_matching(
-        self,
-        task_should_be_visible: Callable[[Task], bool],
-    ) -> list[str]:
-        return [
-            task.task_id
-            for task in sorted(self.tasks.values(), key=lambda task: _task_id_sort_key(task.task_id))
-            if task_should_be_visible(task)
-            and self._parent_is_not_visible_on_same_landing(task, task_should_be_visible)
-        ]
-
-    def _parent_is_not_visible_on_same_landing(
-        self,
-        task: Task,
-        task_should_be_visible: Callable[[Task], bool],
-    ) -> bool:
-        return task.parent_task_id is None or not task_should_be_visible(self.tasks[task.parent_task_id])
-
-    def _top_level_task_ids_matching(
-        self,
-        task_should_be_visible: Callable[[Task], bool],
-    ) -> list[str]:
-        return [
-            task.task_id
-            for task in sorted(self.tasks.values(), key=lambda task: _task_id_sort_key(task.task_id))
-            if task.parent_task_id is None and task_should_be_visible(task)
-        ]
-
     def _calculate_priority_visible_on_task(self, task: Task) -> Priority:
         priorities_visible_in_subtree = [task.configured_priority]
         for child_task_id in task.child_task_ids:
@@ -501,88 +297,13 @@ class TaskDependencyGraph:
                 priorities_visible_in_subtree.append(child_task.displayed_priority or child_task.configured_priority)
         return _highest_priority(priorities_visible_in_subtree)
 
-    def _normalize_task_timelines(self) -> None:
+    def _normalise_task_timelines(self) -> None:
         for task in self.tasks.values():
-            task.timeline_entries = _merged_timeline_entries_by_date(task.timeline_entries)
-
-
-def _task_should_start_ongoing_landing_tree(task: Task) -> bool:
-    return task.status not in {TaskStatus.COMPLETE, TaskStatus.CANCELLED}
-
-
-def _task_should_appear_inside_ongoing_landing_tree(task: Task) -> bool:
-    return True
-
-
-def _upsert_timeline_entry(
-    task: Task,
-    timeline_entry: TimelineEntry,
-) -> TimelineEntry:
-    task.timeline_entries = _merged_timeline_entries_by_date(task.timeline_entries)
-    existing_entry = _timeline_entry_for_date(task.timeline_entries, timeline_entry.entry_date)
-
-    if existing_entry is None:
-        task.timeline_entries.append(timeline_entry)
-        return timeline_entry
-
-    existing_entry.lines.extend(timeline_entry.lines)
-    existing_entry.blocks.extend(timeline_entry.blocks)
-    return existing_entry
-
-
-def _copy_timeline_entry(timeline_entry: TimelineEntry) -> TimelineEntry:
-    return TimelineEntry(
-        entry_date=timeline_entry.entry_date,
-        heading=timeline_entry.heading,
-        lines=list(timeline_entry.lines),
-        blocks=[dict(block) for block in timeline_entry.blocks],
-        subheading=timeline_entry.subheading,
-    )
-
-
-def _render_timeline_line_blocks(timeline_entry: TimelineEntry) -> list[dict[str, Any]]:
-    return _render_timeline_entry_content_blocks(timeline_entry)
-
-
-def _merged_timeline_entries_by_date(timeline_entries: list[TimelineEntry]) -> list[TimelineEntry]:
-    merged_entries_by_date = {}
-    merged_entries = []
-
-    for timeline_entry in timeline_entries:
-        existing_entry = merged_entries_by_date.get(timeline_entry.entry_date)
-        if existing_entry is None:
-            merged_entries_by_date[timeline_entry.entry_date] = timeline_entry
-            merged_entries.append(timeline_entry)
-            continue
-
-        existing_entry.lines.extend(timeline_entry.lines)
-        existing_entry.blocks.extend(timeline_entry.blocks)
-
-    return merged_entries
-
-
-def _timeline_entry_for_date(
-    timeline_entries: list[TimelineEntry],
-    entry_date: str,
-) -> TimelineEntry | None:
-    for timeline_entry in timeline_entries:
-        if timeline_entry.entry_date == entry_date:
-            return timeline_entry
-
-    return None
+            task.normalise_timeline_entries()
 
 
 def _highest_priority(priorities: list[Priority]) -> Priority:
     return min(priorities, key=lambda priority: _PRIORITY_RANK_BY_VALUE[priority])
-
-
-def _task_id_sort_key(task_id: str) -> tuple[str, int, str]:
-    task_prefix, separator, task_number_text = task_id.rpartition("-")
-
-    if separator and task_number_text.isdigit():
-        return task_prefix, int(task_number_text), ""
-
-    return task_id, -1, task_id
 
 
 def _task_to_snapshot(task: Task) -> dict[str, Any]:
@@ -596,7 +317,7 @@ def _task_to_snapshot(task: Task) -> dict[str, Any]:
         "parent_task_id": task.parent_task_id,
         "child_task_ids": list(task.child_task_ids),
         "timeline_entries": [
-            _timeline_entry_to_snapshot(timeline_entry)
+            timeline_entry.to_snapshot()
             for timeline_entry in task.timeline_entries
         ],
         "links": [
@@ -604,15 +325,6 @@ def _task_to_snapshot(task: Task) -> dict[str, Any]:
             for link in task.links
         ],
         "notion_page_id": task.notion_page_id,
-    }
-
-
-def _timeline_entry_to_snapshot(timeline_entry: TimelineEntry) -> dict[str, Any]:
-    return {
-        "entry_date": timeline_entry.entry_date,
-        "heading": timeline_entry.heading,
-        "lines": [],
-        "blocks": [],
     }
 
 
@@ -629,7 +341,7 @@ def _task_from_snapshot(snapshot: dict[str, Any]) -> Task:
         parent_task_id=snapshot.get("parent_task_id"),
         child_task_ids=list(snapshot.get("child_task_ids", [])),
         timeline_entries=[
-            _timeline_entry_from_snapshot(timeline_snapshot)
+            TimelineEntry.from_snapshot(timeline_snapshot)
             for timeline_snapshot in snapshot.get("timeline_entries", [])
         ],
         links=[
@@ -637,13 +349,4 @@ def _task_from_snapshot(snapshot: dict[str, Any]) -> Task:
             for link_snapshot in snapshot.get("links", [])
         ],
         notion_page_id=snapshot.get("notion_page_id"),
-    )
-
-
-def _timeline_entry_from_snapshot(snapshot: dict[str, Any]) -> TimelineEntry:
-    return TimelineEntry(
-        entry_date=snapshot["entry_date"],
-        heading=snapshot["heading"],
-        lines=[],
-        blocks=[],
     )

@@ -14,6 +14,7 @@ from notion_task_tracker.common import (
     notion_page_id_from_url,
 )
 from notion_task_tracker.tasks.dependency_graph import TaskDependencyGraph
+from notion_task_tracker.tasks.landing_pages import CompletedTasksLandingPage, OngoingTasksLandingPage
 from notion_task_tracker.tasks.task import (
     PROPERTIES_BLOCK_PATTERN,
     TASK_DATABASE_PRIORITY_PROPERTY,
@@ -22,6 +23,7 @@ from notion_task_tracker.tasks.task import (
     Priority,
     Task,
     TaskStatus,
+    task_id_sort_key,
 )
 
 
@@ -46,8 +48,10 @@ def task_dependency_graph_from_database_query_results(
     database_rows = _database_rows_from_query_results(query_results)
     database_rows = _database_rows_that_belong_to_task_graph(database_rows)
     work_graph = TaskDependencyGraph(
-        landing_page=landing_page,
-        completed_landing_page=completed_landing_page or _previous_completed_landing_page(previous_work_graph),
+        ongoing_tasks_landing_page=OngoingTasksLandingPage(page=landing_page),
+        completed_tasks_landing_page=CompletedTasksLandingPage(
+            page=completed_landing_page or _previous_completed_landing_page(previous_work_graph)
+        ),
     )
 
     for database_row in database_rows:
@@ -235,7 +239,7 @@ def _link_database_parent_rows(
 
 def _sort_child_task_ids(work_graph: TaskDependencyGraph) -> None:
     for task in work_graph.tasks.values():
-        task.child_task_ids.sort(key=_task_id_sort_key)
+        task.child_task_ids.sort(key=task_id_sort_key)
 
 
 def _query_result_has_task_identity(query_result: dict[str, Any]) -> bool:
@@ -320,9 +324,9 @@ def _previous_tasks_by_task_id(previous_work_graph: TaskDependencyGraph | None) 
 
 def _previous_completed_landing_page(previous_work_graph: TaskDependencyGraph | None) -> PagePointer:
     if previous_work_graph is None:
-        return TaskDependencyGraph().completed_landing_page
+        return TaskDependencyGraph().completed_tasks_landing_page.page
 
-    return previous_work_graph.completed_landing_page
+    return previous_work_graph.completed_tasks_landing_page.page
 
 
 def _previous_tasks_by_page_id(previous_work_graph: TaskDependencyGraph | None) -> dict[str, Task]:
@@ -335,11 +339,3 @@ def _previous_tasks_by_page_id(previous_work_graph: TaskDependencyGraph | None) 
         if task.notion_page_id is not None
     }
 
-
-def _task_id_sort_key(task_id: str) -> tuple[str, int, str]:
-    task_prefix, separator, task_number_text = task_id.rpartition("-")
-
-    if separator and task_number_text.isdigit():
-        return task_prefix, int(task_number_text), ""
-
-    return task_id, -1, task_id

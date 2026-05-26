@@ -12,6 +12,7 @@ from notion_task_tracker.tasks.database import (
     task_database_row_from_fetched_task_database_page,
     task_dependency_graph_from_database_query_results,
 )
+from notion_task_tracker.tasks.task import task_id_sort_key
 
 
 async def reconcile_tracker_state_from_notion_pages(
@@ -88,7 +89,7 @@ def task_graph_changes(before_tracker_state: dict[str, Any], after_tracker_state
     before_tasks = before_tracker_state["tasks"]
     after_tasks = after_tracker_state["tasks"]
 
-    for task_id in sorted(set(before_tasks) | set(after_tasks), key=_task_id_sort_key):
+    for task_id in sorted(set(before_tasks) | set(after_tasks), key=task_id_sort_key):
         before_task = before_tasks.get(task_id)
         after_task = after_tasks.get(task_id)
 
@@ -127,7 +128,7 @@ def repair_operation_keys_for_reconciled_task_pages(
         "replace:completed_landing_page",
         *[
             operation_key
-            for task_id in sorted(task_ids_to_repair, key=_task_id_sort_key)
+            for task_id in sorted(task_ids_to_repair, key=task_id_sort_key)
             for operation_key in [f"update_properties:task:{task_id}"]
             if task_id in tracker_state["tasks"]
         ],
@@ -154,8 +155,8 @@ async def _reconcile_tracker_state_from_task_database(
     database_rows = await notion_client.query_task_database_rows(tracker_state)
     work_graph = task_dependency_graph_from_database_query_results(
         query_results=database_rows,
-        landing_page=previous_work_graph.landing_page,
-        completed_landing_page=previous_work_graph.completed_landing_page,
+        landing_page=previous_work_graph.ongoing_tasks_landing_page.page,
+        completed_landing_page=previous_work_graph.completed_tasks_landing_page.page,
         previous_work_graph=previous_work_graph,
     )
     return CommandResult(
@@ -290,11 +291,3 @@ def _changed_task_graph_fields(
             }
     return changed_fields
 
-
-def _task_id_sort_key(task_id: str) -> tuple[str, int, str]:
-    task_prefix, separator, task_number_text = task_id.rpartition("-")
-
-    if separator and task_number_text.isdigit():
-        return task_prefix, int(task_number_text), ""
-
-    return task_id, -1, task_id

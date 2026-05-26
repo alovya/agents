@@ -942,7 +942,7 @@ class _FakeNotionMcpClient:
 
 def _tracker_state_with_root_task() -> dict:
     work_graph = TaskDependencyGraph()
-    work_graph.landing_page.notion_page_id = "11111111111111111111111111111111"
+    work_graph.ongoing_tasks_landing_page.page.notion_page_id = "11111111111111111111111111111111"
     work_graph.add_task(
         Task(
             task_id="ALOVYA-1",
@@ -957,7 +957,7 @@ def _tracker_state_with_root_task() -> dict:
 
 def _tracker_state_with_root_and_child_task() -> dict:
     work_graph = TaskDependencyGraph()
-    work_graph.landing_page.notion_page_id = "11111111111111111111111111111111"
+    work_graph.ongoing_tasks_landing_page.page.notion_page_id = "11111111111111111111111111111111"
     work_graph.add_task(
         Task(
             task_id="ALOVYA-1",

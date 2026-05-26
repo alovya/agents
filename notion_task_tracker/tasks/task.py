@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from notion_task_tracker.common import ExternalLink
+from notion_task_tracker.common import ExternalLink, NotionWriteIntent, heading_block, toggle_block
 
 
 COMPLETED_TASK_PRIORITY_LABEL = "N/A"
@@ -85,6 +85,36 @@ class TimelineEntry:
     blocks: list[dict[str, Any]] = field(default_factory=list)
     subheading: str | None = None
 
+    def to_content_blocks(self) -> list[dict[str, Any]]:
+        line_blocks = self.blocks or [_timeline_line_block(line) for line in self.lines]
+        if self.subheading:
+            return [toggle_block(text=self.subheading, children=line_blocks)]
+
+        return line_blocks
+
+    def to_timeline_section_blocks(self) -> list[dict[str, Any]]:
+        return [
+            heading_block(level=3, text=self.heading),
+            *self.to_content_blocks(),
+        ]
+
+    def to_snapshot(self) -> dict[str, Any]:
+        return {
+            "entry_date": self.entry_date,
+            "heading": self.heading,
+            "lines": [],
+            "blocks": [],
+        }
+
+    @classmethod
+    def from_snapshot(cls, snapshot: dict[str, Any]) -> "TimelineEntry":
+        return cls(
+            entry_date=snapshot["entry_date"],
+            heading=snapshot["heading"],
+            lines=[],
+            blocks=[],
+        )
+
 
 @dataclass
 class Task:
@@ -108,3 +138,142 @@ class Task:
 
     def should_contribute_priority_to_ancestors(self) -> bool:
         return self.status in _STATUS_VALUES_THAT_PROPAGATE_PRIORITY
+
+    def page_title(self) -> str:
+        if self.status == TaskStatus.COMPLETE:
+            return _render_visible_strikethrough_text(self.title)
+
+        return self.title
+
+    def database_property_refresh_intent(self) -> NotionWriteIntent:
+        return NotionWriteIntent(
+            operation_key=f"update_properties:{self.local_page_key}",
+            operation_name="update_page_properties",
+            target_page_key=self.local_page_key,
+            arguments={
+                "properties": {
+                    TASK_DATABASE_TITLE_PROPERTY: self.page_title(),
+                    TASK_DATABASE_PRIORITY_PROPERTY: self.configured_priority.value,
+                    TASK_DATABASE_STATUS_PROPERTY: self.status.value,
+                }
+            },
+        )
+
+    def append_timeline_log(self, timeline_entry: TimelineEntry) -> NotionWriteIntent:
+        self.timeline_entries = _merged_timeline_entries_by_date(self.timeline_entries)
+        existing_entry = _timeline_entry_for_date(self.timeline_entries, timeline_entry.entry_date)
+        existing_entry_before_append = _copy_timeline_entry(existing_entry) if existing_entry is not None else None
+        appended_entry = _copy_timeline_entry(timeline_entry)
+        timeline_entry_to_render = _upsert_timeline_entry(self, timeline_entry)
+        return self._timeline_log_update_intent(
+            existing_timeline_entry=existing_entry_before_append,
+            appended_timeline_entry=appended_entry,
+            timeline_entry=timeline_entry_to_render,
+        )
+
+    def complete_with_timeline_log(self, timeline_entry: TimelineEntry) -> tuple[NotionWriteIntent, NotionWriteIntent]:
+        self.status = TaskStatus.COMPLETE
+        timeline_log_update_intent = self.append_timeline_log(timeline_entry)
+        return self.database_property_refresh_intent(), timeline_log_update_intent
+
+    def normalise_timeline_entries(self) -> None:
+        self.timeline_entries = _merged_timeline_entries_by_date(self.timeline_entries)
+
+    def _timeline_log_update_intent(
+        self,
+        existing_timeline_entry: TimelineEntry | None,
+        appended_timeline_entry: TimelineEntry,
+        timeline_entry: TimelineEntry,
+    ) -> NotionWriteIntent:
+        arguments = {
+            "task_id": self.task_id,
+            "timeline_log_heading": TASK_PAGE_TIMELINE_LOG_HEADING,
+            "timeline_entry": timeline_entry.to_snapshot(),
+            "blocks": timeline_entry.to_timeline_section_blocks(),
+        }
+        if existing_timeline_entry is not None:
+            arguments["existing_timeline_heading"] = existing_timeline_entry.heading
+            arguments["existing_blocks"] = existing_timeline_entry.to_timeline_section_blocks()
+            arguments["append_blocks"] = appended_timeline_entry.to_content_blocks()
+
+        return NotionWriteIntent(
+            operation_key=f"{UPDATE_TIMELINE_LOG_OPERATION_NAME}:{self.local_page_key}:{timeline_entry.entry_date}",
+            operation_name=UPDATE_TIMELINE_LOG_OPERATION_NAME,
+            target_page_key=self.local_page_key,
+            arguments=arguments,
+        )
+
+
+def task_id_sort_key(task_id: str) -> tuple[str, int, str]:
+    task_prefix, separator, task_number_text = task_id.rpartition("-")
+
+    if separator and task_number_text.isdigit():
+        return task_prefix, int(task_number_text), ""
+
+    return task_id, -1, task_id
+
+
+def _upsert_timeline_entry(
+    task: Task,
+    timeline_entry: TimelineEntry,
+) -> TimelineEntry:
+    task.timeline_entries = _merged_timeline_entries_by_date(task.timeline_entries)
+    existing_entry = _timeline_entry_for_date(task.timeline_entries, timeline_entry.entry_date)
+
+    if existing_entry is None:
+        task.timeline_entries.append(timeline_entry)
+        return timeline_entry
+
+    existing_entry.lines.extend(timeline_entry.lines)
+    existing_entry.blocks.extend(timeline_entry.blocks)
+    return existing_entry
+
+
+def _copy_timeline_entry(timeline_entry: TimelineEntry) -> TimelineEntry:
+    return TimelineEntry(
+        entry_date=timeline_entry.entry_date,
+        heading=timeline_entry.heading,
+        lines=list(timeline_entry.lines),
+        blocks=[dict(block) for block in timeline_entry.blocks],
+        subheading=timeline_entry.subheading,
+    )
+
+
+def _merged_timeline_entries_by_date(timeline_entries: list[TimelineEntry]) -> list[TimelineEntry]:
+    merged_entries_by_date = {}
+    merged_entries = []
+
+    for timeline_entry in timeline_entries:
+        existing_entry = merged_entries_by_date.get(timeline_entry.entry_date)
+        if existing_entry is None:
+            merged_entries_by_date[timeline_entry.entry_date] = timeline_entry
+            merged_entries.append(timeline_entry)
+            continue
+
+        existing_entry.lines.extend(timeline_entry.lines)
+        existing_entry.blocks.extend(timeline_entry.blocks)
+
+    return merged_entries
+
+
+def _timeline_entry_for_date(
+    timeline_entries: list[TimelineEntry],
+    entry_date: str,
+) -> TimelineEntry | None:
+    for timeline_entry in timeline_entries:
+        if timeline_entry.entry_date == entry_date:
+            return timeline_entry
+
+    return None
+
+
+def _timeline_line_block(line: str) -> dict[str, Any]:
+    return {
+        "type": "bulleted_list_item",
+        "depth": 0,
+        "text": line,
+    }
+
+
+def _render_visible_strikethrough_text(text: str) -> str:
+    return "".join(f"{character}\u0336" for character in text)

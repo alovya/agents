@@ -259,15 +259,15 @@ The package is Python metadata and Notion write execution code. Live fetch/write
 - `__main__.py`: CLI for command JSON and direct task database reconciliation.
 - `commands.py`: command dispatcher from JSON to tracker-state updates and Notion writes.
 - `tasks/workflow.py`: top-level task command and reconciliation workflow.
-- `tasks/dependency_graph.py`: task dependency graph and derived landing-page write planning.
+- `tasks/dependency_graph.py`: task dependency graph validation, priority rollup, and task-write orchestration.
+- `tasks/landing_pages.py`: ongoing and completed task landing-page rendering and refresh intents.
 - `tasks/database.py`: task database projection and database-row parsing.
-- `tasks/task.py`: task, priority, status, and timeline-entry data.
+- `tasks/task.py`: task, priority, status, timeline-entry data, task property refresh intents, and timeline-log update intents.
 - `tasks/page_content.py`: task page body parsing for timeline logs.
-- `tasks/rendering.py`: task title, landing-page, and timeline block rendering.
 - `tasks/actions/`: task actions such as timeline logging, completion, database-backed creation, and dependency reconciliation.
 - `notion_rest_client.py`: Notion REST client.
 - `notion_mcp_client.py`: temporary Notion MCP fallback client and call compiler.
-- `notion_client.py`: compatibility imports for the public task workflow.
+- `notion_client.py`: workflow-facing Notion client protocol and client factory.
 - `miscellaneous_pages.py`: dated miscellaneous notes.
 - `synthesis_pages.py`: flat synthesis root mentions and synthesis subpages with sources.
 - `notion_enhanced_markdown.py`: renderer from internal blocks to Notion enhanced Markdown.
