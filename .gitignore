@@ -1,0 +1,15 @@
+__pycache__/
+.pytest_cache/
+*.pyc
+
+# Runtime state, generated command outputs, and local backups.
+notion_tasks_graph.json
+*_result.json
+notion_tasks_graph_before_*.json
+
+# Local auth and secrets.
+.credentials.json
+*.token
+*.secret
+.env
+

@@ -1,0 +1,84 @@
+from notion_task_tracker.miscellaneous_pages import MiscellaneousNotesMetadata
+
+
+class TestMiscellaneousNotesMetadataAppendToDatedPage:
+    def test_appends_context_to_one_dated_subpage(self):
+        miscellaneous_notes = MiscellaneousNotesMetadata()
+
+        write_intent = miscellaneous_notes.append_to_dated_page(
+            note_date="2026-05-24",
+            lines=["Random thought not yet tied to a task."],
+            source_page_id="source-page",
+            source_block_id="source-block",
+        )
+
+        assert list(miscellaneous_notes.dated_pages) == ["2026-05-24"]
+        assert miscellaneous_notes.dated_pages["2026-05-24"].entries[0].lines == [
+            "Random thought not yet tied to a task."
+        ]
+        assert write_intent.operation_name == "append_miscellaneous_context"
+        assert write_intent.target_page_key == "miscellaneous:2026-05-24"
+        assert write_intent.arguments["root_page_key"] == "miscellaneous_notes"
+        assert write_intent.arguments["dated_page"]["parent_page_key"] == "miscellaneous_notes"
+        assert write_intent.arguments["blocks"] == [
+            {
+                "type": "bulleted_list_item",
+                "depth": 0,
+                "text": "Random thought not yet tied to a task.",
+                "source_page_id": "source-page",
+                "source_block_id": "source-block",
+            }
+        ]
+
+
+class TestMiscellaneousNotesMetadataBuildNotionWritePlan:
+    def test_creates_root_page_and_dated_subpages_without_touching_tasks(self):
+        miscellaneous_notes = MiscellaneousNotesMetadata()
+        miscellaneous_notes.append_to_dated_page(
+            note_date="2026-05-24",
+            lines=["Meeting fragment that may become work later."],
+        )
+
+        write_intents = miscellaneous_notes.build_notion_write_plan()
+
+        create_page_keys = {
+            write_intent.arguments["local_page_key"]
+            for write_intent in write_intents
+            if write_intent.operation_name == "create_page"
+        }
+        root_refresh_intent = next(
+            write_intent
+            for write_intent in write_intents
+            if write_intent.operation_key == "replace:miscellaneous_notes"
+        )
+        dated_page_refresh_intent = next(
+            write_intent
+            for write_intent in write_intents
+            if write_intent.operation_key == "replace:miscellaneous:2026-05-24"
+        )
+
+        assert create_page_keys == {"miscellaneous_notes", "miscellaneous:2026-05-24"}
+        assert root_refresh_intent.arguments["blocks"] == [
+            {
+                "type": "bulleted_list_item",
+                "depth": 0,
+                "text": "2026-05-24",
+                "page_key": "miscellaneous:2026-05-24",
+            }
+        ]
+        assert dated_page_refresh_intent.arguments["blocks"][0]["text"] == (
+            "Meeting fragment that may become work later."
+        )
+
+
+class TestMiscellaneousNotesMetadataSnapshot:
+    def test_preserves_dated_subpages(self):
+        miscellaneous_notes = MiscellaneousNotesMetadata()
+        miscellaneous_notes.append_to_dated_page(
+            note_date="2026-05-24",
+            lines=["Meeting fragment that may become work later."],
+        )
+
+        loaded_miscellaneous_notes = MiscellaneousNotesMetadata.from_snapshot(miscellaneous_notes.to_snapshot())
+
+        assert loaded_miscellaneous_notes.to_snapshot() == miscellaneous_notes.to_snapshot()
