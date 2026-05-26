@@ -22,7 +22,7 @@ from notion_task_tracker.notion_rest_client import NotionRestClient
 from notion_task_tracker.tasks.workflow import repair_and_write_reconciled_tracker_state
 from notion_task_tracker.notion_client import notion_client_from_credentials_path
 from notion_task_tracker.notion_write_executor import execute_command_result_writes
-from notion_task_tracker.tasks.actions.write_log import (
+from notion_task_tracker.tasks.actions.write_task_log import (
     command_result_with_context_repairs,
     repair_result_for_command_context,
     timeline_state_for_task_command,
@@ -30,10 +30,9 @@ from notion_task_tracker.tasks.actions.write_log import (
 )
 from notion_task_tracker.tasks.actions.create_task_page_in_database import execute_task_creation_command
 from notion_task_tracker.tasks.pages.timeline_log import timeline_entries_from_fetched_task_page_content
-from notion_task_tracker.tasks.actions.update_task_dependencies import (
+from notion_task_tracker.tasks.actions.reconcile_task_dependencies_from_notion import (
     reconcile_tracker_state_for_command_targets,
     reconcile_tracker_state_from_notion_pages,
-    repair_operation_keys_for_reconciled_task_pages,
 )
 from notion_task_tracker.tasks import Priority, TaskDependencyGraph, Task, TaskStatus
 from notion_task_tracker.tasks.database import default_task_database_tracker_state
@@ -778,48 +777,6 @@ def test_raise_if_call_plan_has_blocked_operations_rejects_plan_before_writes():
 
     with pytest.raises(ValueError, match="blocked_operations"):
         _raise_if_call_plan_has_blocked_operations(call_plan)
-
-
-def test_repair_operation_keys_include_changed_tasks_ancestors_and_landing_page():
-    tracker_state = {
-        "tasks": {
-            "ALOVYA-1": {
-                "task_id": "ALOVYA-1",
-                "parent_task_id": None,
-            },
-            "ALOVYA-2": {
-                "task_id": "ALOVYA-2",
-                "parent_task_id": "ALOVYA-1",
-            },
-            "ALOVYA-3": {
-                "task_id": "ALOVYA-3",
-                "parent_task_id": "ALOVYA-2",
-            },
-        }
-    }
-
-    operation_keys = repair_operation_keys_for_reconciled_task_pages(
-        tracker_state=tracker_state,
-        task_graph_changes=[
-            {
-                "task_id": "ALOVYA-3",
-                "fields": {
-                    "configured_priority": {
-                        "before": "P2",
-                        "after": "P1",
-                    }
-                },
-            }
-        ],
-    )
-
-    assert operation_keys == [
-        "replace:landing_page",
-        "replace:completed_landing_page",
-        "update_properties:task:ALOVYA-1",
-        "update_properties:task:ALOVYA-2",
-        "update_properties:task:ALOVYA-3",
-    ]
 
 
 class _FakeNotionMcpClient:

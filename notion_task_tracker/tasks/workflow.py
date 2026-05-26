@@ -11,7 +11,7 @@ from typing import Any
 
 from notion_task_tracker.notion_client import notion_client_from_credentials_path
 from notion_task_tracker.notion_write_executor import execute_command_result_writes
-from notion_task_tracker.tasks.actions.write_log import (
+from notion_task_tracker.tasks.actions.write_task_log import (
     command_result_from_current_notion_state,
     command_result_with_context_repairs,
     repair_result_for_command_context,
@@ -21,11 +21,11 @@ from notion_task_tracker.tasks.actions.create_task_page_in_database import (
     command_creates_task_page_in_database,
     execute_task_creation_command,
 )
-from notion_task_tracker.tasks.actions.update_task_dependencies import (
+from notion_task_tracker.tasks.actions.reconcile_task_dependencies_from_notion import (
     maybe_repair_reconciled_task_pages,
     reconcile_tracker_state_from_notion_pages,
-    task_graph_changes,
 )
+from notion_task_tracker.tasks import TaskDependencyGraph
 
 
 DEFAULT_CODEX_HOME_PATH = Path.home() / ".codex"
@@ -89,7 +89,7 @@ async def _execute_command_file(
     command_ready_result = await tracker_state_ready_for_command(
         command=command,
         tracker_state=tracker_state,
-        notion_client=transport,
+        notion_client=client,
     )
     command_ready_tracker_state = command_ready_result.tracker_state
 
@@ -97,7 +97,7 @@ async def _execute_command_file(
         command_tracker_state, command_operation_keys = await execute_task_creation_command(
             command=command,
             tracker_state=command_ready_tracker_state,
-            notion_client=transport,
+            notion_client=client,
         )
         command_warnings = []
     else:
@@ -108,10 +108,10 @@ async def _execute_command_file(
         command_result = await command_result_from_current_notion_state(
             command=command,
             tracker_state=command_ready_tracker_state,
-            notion_client=transport,
+            notion_client=client,
         )
         command_result = command_result_with_context_repairs(context_repair_result, command_result)
-        command_tracker_state, command_operation_keys = await execute_command_result_writes(command_result, transport)
+        command_tracker_state, command_operation_keys = await execute_command_result_writes(command_result, client)
         command_warnings = command_result.warnings or []
 
     _write_json(source_tracker_state_path, command_tracker_state)
@@ -142,14 +142,14 @@ async def _reconcile_task_dependency_graph_from_notion(
     _write_json(destination_backup_path, tracker_state)
 
     client = notion_client_from_credentials_path(Path(credentials_path), notion_client)
-    reconcile_result = await reconcile_tracker_state_from_notion_pages(tracker_state, transport)
+    reconcile_result = await reconcile_tracker_state_from_notion_pages(tracker_state, client)
     return await repair_and_write_reconciled_tracker_state(
         source_tracker_state_path=source_tracker_state_path,
         destination_output_path=destination_output_path,
         destination_backup_path=destination_backup_path,
         before_tracker_state=tracker_state,
         reconcile_result=reconcile_result,
-        notion_client=transport,
+        notion_client=client,
     )
 
 
@@ -161,7 +161,10 @@ async def repair_and_write_reconciled_tracker_state(
     reconcile_result,
     notion_client,
 ) -> "NotionTaskReconcileSummary":
-    task_changes = task_graph_changes(before_tracker_state, reconcile_result.tracker_state)
+    task_changes = TaskDependencyGraph.changes_between_tracker_states(
+        before_tracker_state,
+        reconcile_result.tracker_state,
+    )
     repair_result = maybe_repair_reconciled_task_pages(
         reconcile_result=reconcile_result,
         task_graph_changes=task_changes,

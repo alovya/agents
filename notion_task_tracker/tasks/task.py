@@ -115,6 +115,17 @@ class TimelineEntry:
             blocks=[],
         )
 
+    @classmethod
+    def from_command(cls, command: dict[str, Any]) -> "TimelineEntry":
+        entry_date = command["entry_date"]
+        return cls(
+            entry_date=entry_date,
+            heading=_date_only_timeline_heading(command.get("heading", ""), entry_date),
+            lines=list(command.get("lines", [])),
+            blocks=list(command.get("blocks", [])),
+            subheading=command.get("subheading"),
+        )
+
 
 @dataclass
 class Task:
@@ -273,6 +284,14 @@ def _timeline_line_block(line: str) -> dict[str, Any]:
         "depth": 0,
         "text": line,
     }
+
+
+def _date_only_timeline_heading(raw_heading: str, entry_date: str) -> str:
+    date_match = MENTION_DATE_START_PATTERN.search(raw_heading)
+    if date_match is not None:
+        return f'<mention-date start="{date_match.group(1)}"/>'
+
+    return f'<mention-date start="{entry_date}"/>'
 
 
 def _render_visible_strikethrough_text(text: str) -> str:

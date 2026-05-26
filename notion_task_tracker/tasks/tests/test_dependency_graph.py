@@ -231,6 +231,59 @@ class TestTaskDependencyGraphBuildNotionWritePlan:
         }
 
 
+class TestTaskDependencyGraphRepairOperationKeysForChanges:
+    def test_includes_changed_tasks_ancestors_and_landing_pages(self):
+        work_graph = TaskDependencyGraph()
+        work_graph.add_task(
+            Task(
+                task_id="ALOVYA-1",
+                title="Root",
+                configured_priority=Priority.P1,
+                status=TaskStatus.ACTIVE,
+            )
+        )
+        work_graph.add_task(
+            Task(
+                task_id="ALOVYA-2",
+                title="Child",
+                configured_priority=Priority.P1,
+                status=TaskStatus.ACTIVE,
+            )
+        )
+        work_graph.add_task(
+            Task(
+                task_id="ALOVYA-3",
+                title="Grandchild",
+                configured_priority=Priority.P2,
+                status=TaskStatus.ACTIVE,
+            )
+        )
+        work_graph.link_parent_to_child("ALOVYA-1", "ALOVYA-2")
+        work_graph.link_parent_to_child("ALOVYA-2", "ALOVYA-3")
+
+        operation_keys = work_graph.repair_operation_keys_for_changes(
+            [
+                {
+                    "task_id": "ALOVYA-3",
+                    "fields": {
+                        "configured_priority": {
+                            "before": "P2",
+                            "after": "P1",
+                        }
+                    },
+                }
+            ]
+        )
+
+        assert operation_keys == [
+            "replace:landing_page",
+            "replace:completed_landing_page",
+            "update_properties:task:ALOVYA-1",
+            "update_properties:task:ALOVYA-2",
+            "update_properties:task:ALOVYA-3",
+        ]
+
+
 class TestTaskDependencyGraphAppendTaskTimelineLog:
     def test_returns_single_timeline_update_intent(self):
         work_graph = _build_recursive_work_graph()

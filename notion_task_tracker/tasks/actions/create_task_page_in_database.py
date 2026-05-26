@@ -9,7 +9,7 @@ from typing import Any
 from notion_task_tracker.commands import apply_command_to_tracker_state
 from notion_task_tracker.notion_client import NotionClient
 from notion_task_tracker.notion_write_executor import execute_command_result_writes
-from notion_task_tracker.tasks.actions.write_log import command_result_from_current_notion_state
+from notion_task_tracker.tasks.actions.write_task_log import command_result_from_current_notion_state
 from notion_task_tracker.tasks import TaskDependencyGraph, Task, TimelineEntry
 from notion_task_tracker.tasks.database import (
     TASK_DATABASE_PARENT_PROPERTY,
@@ -25,7 +25,6 @@ from notion_task_tracker.tasks.task import (
     TaskStatus,
 )
 from notion_task_tracker.tasks.pages.timeline_log import timeline_entry_for_date
-from notion_task_tracker.tasks.actions.update_task_dependencies import replace_task_graph_in_tracker_state
 
 
 async def execute_task_creation_command(
@@ -48,7 +47,7 @@ async def execute_task_creation_command(
         created_task_id=created_task_id,
         created_page_id=created_page_id,
     )
-    updated_tracker_state = replace_task_graph_in_tracker_state(tracker_state, work_graph)
+    updated_tracker_state = work_graph.replace_task_graph_in_tracker_state(tracker_state)
     timeline_tracker_state, timeline_operation_keys = await _write_task_creation_timeline_entry(
         task_creation=task_creation,
         tracker_state=updated_tracker_state,

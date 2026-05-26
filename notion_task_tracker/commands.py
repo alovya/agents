@@ -16,9 +16,9 @@ from notion_task_tracker.notion_pages import (
 from notion_task_tracker.miscellaneous_pages import MiscellaneousNotesMetadata
 from notion_task_tracker.synthesis_pages import SynthesisNotesMetadata, SynthesisPageMetadata, SynthesisSource
 from notion_task_tracker.tasks.actions.complete_task import complete_task_from_command
-from notion_task_tracker.tasks.actions.build_timeline_entry_from_command import timeline_entry_from_command
 from notion_task_tracker.tasks import (
     TaskDependencyGraph,
+    TimelineEntry,
 )
 
 
@@ -169,7 +169,7 @@ def _append_task_timeline_log(
 ):
     return work_graph.append_task_timeline_log(
         task_id=command["task_id"],
-        timeline_entry=timeline_entry_from_command(command["timeline_entry"]),
+        timeline_entry=TimelineEntry.from_command(command["timeline_entry"]),
     )
 
 

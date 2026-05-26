@@ -16,11 +16,11 @@ from notion_task_tracker.tasks.pages.timeline_log import (
     timeline_entries_from_fetched_task_page_content,
     timeline_entry_for_date,
 )
-from notion_task_tracker.tasks.actions.update_task_dependencies import (
+from notion_task_tracker.tasks.actions.reconcile_task_dependencies_from_notion import (
     maybe_repair_reconciled_task_pages,
     reconcile_tracker_state_for_command_targets,
-    task_graph_changes,
 )
+from notion_task_tracker.tasks import TaskDependencyGraph
 
 
 async def tracker_state_ready_for_command(
@@ -71,7 +71,10 @@ def repair_result_for_command_context(
 ) -> CommandResult:
     return maybe_repair_reconciled_task_pages(
         reconcile_result=command_ready_result,
-        task_graph_changes=task_graph_changes(before_tracker_state, command_ready_result.tracker_state),
+        task_graph_changes=TaskDependencyGraph.changes_between_tracker_states(
+            before_tracker_state,
+            command_ready_result.tracker_state,
+        ),
     )
 
 

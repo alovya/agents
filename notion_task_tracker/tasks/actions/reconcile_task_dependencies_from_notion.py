@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from notion_task_tracker.commands import CommandResult, apply_command_to_tracker_state
@@ -12,7 +11,6 @@ from notion_task_tracker.tasks.database import (
     task_database_row_from_fetched_task_database_page,
     task_dependency_graph_from_database_query_results,
 )
-from notion_task_tracker.tasks.task import task_id_sort_key
 
 
 async def reconcile_tracker_state_from_notion_pages(
@@ -45,7 +43,14 @@ async def reconcile_tracker_state_for_command_targets(
 
         database_row = await _fetch_known_task_database_row(task_id, work_graph, notion_client)
         parent_task_id = _parent_task_id_for_fetched_database_row(database_row, work_graph)
-        _refresh_task_from_fetched_database_row(task_id, database_row, parent_task_id, work_graph)
+        work_graph.refresh_task_from_database_row(
+            task_id=task_id,
+            title=database_row.title,
+            configured_priority=database_row.configured_priority,
+            status=database_row.status,
+            notion_page_id=database_row.notion_page_id,
+            parent_task_id=parent_task_id,
+        )
         refreshed_task_ids.add(task_id)
 
         if parent_task_id is not None and parent_task_id not in refreshed_task_ids:
@@ -54,7 +59,7 @@ async def reconcile_tracker_state_for_command_targets(
     work_graph.validate()
     work_graph.recalculate_display_priorities()
     return CommandResult(
-        tracker_state=replace_task_graph_in_tracker_state(tracker_state, work_graph),
+        tracker_state=work_graph.replace_task_graph_in_tracker_state(tracker_state),
         warnings=[],
     )
 
@@ -69,10 +74,9 @@ def maybe_repair_reconciled_task_pages(
     repair_result = apply_command_to_tracker_state(
         command={
             "command": "refresh_task_pages",
-            "operation_keys": repair_operation_keys_for_reconciled_task_pages(
-                tracker_state=reconcile_result.tracker_state,
-                task_graph_changes=task_graph_changes,
-            ),
+            "operation_keys": TaskDependencyGraph.from_snapshot(
+                reconcile_result.tracker_state
+            ).repair_operation_keys_for_changes(task_graph_changes),
         },
         tracker_state=reconcile_result.tracker_state,
     )
@@ -82,69 +86,6 @@ def maybe_repair_reconciled_task_pages(
         page_registry=repair_result.page_registry,
         warnings=reconcile_result.warnings,
     )
-
-
-def task_graph_changes(before_tracker_state: dict[str, Any], after_tracker_state: dict[str, Any]) -> list[dict[str, Any]]:
-    changes = []
-    before_tasks = before_tracker_state["tasks"]
-    after_tasks = after_tracker_state["tasks"]
-
-    for task_id in sorted(set(before_tasks) | set(after_tasks), key=task_id_sort_key):
-        before_task = before_tasks.get(task_id)
-        after_task = after_tasks.get(task_id)
-
-        if before_task is None:
-            changes.append({"task_id": task_id, "change": "added"})
-            continue
-
-        if after_task is None:
-            changes.append({"task_id": task_id, "change": "removed"})
-            continue
-
-        changed_fields = _changed_task_graph_fields(before_task, after_task)
-        if changed_fields:
-            changes.append({"task_id": task_id, "fields": changed_fields})
-
-    return changes
-
-
-def repair_operation_keys_for_reconciled_task_pages(
-    tracker_state: dict[str, Any],
-    task_graph_changes: list[dict[str, Any]],
-) -> list[str]:
-    task_ids_to_repair = set()
-
-    for task_graph_change in task_graph_changes:
-        task_id = task_graph_change["task_id"]
-        task_ids_to_repair.add(task_id)
-        task_ids_to_repair.update(_ancestor_task_ids(tracker_state, task_id))
-
-        changed_fields = set(task_graph_change.get("fields", {}))
-        if "parent_task_id" in changed_fields:
-            task_ids_to_repair.update(_parent_task_ids_from_change(task_graph_change))
-
-    return [
-        "replace:landing_page",
-        "replace:completed_landing_page",
-        *[
-            operation_key
-            for task_id in sorted(task_ids_to_repair, key=task_id_sort_key)
-            for operation_key in [f"update_properties:task:{task_id}"]
-            if task_id in tracker_state["tasks"]
-        ],
-    ]
-
-
-def replace_task_graph_in_tracker_state(
-    tracker_state: dict[str, Any],
-    work_graph: TaskDependencyGraph,
-) -> dict[str, Any]:
-    updated_tracker_state = json.loads(json.dumps(tracker_state))
-    task_graph_state = work_graph.to_snapshot()
-    updated_tracker_state["landing_page"] = task_graph_state["landing_page"]
-    updated_tracker_state["completed_landing_page"] = task_graph_state["completed_landing_page"]
-    updated_tracker_state["tasks"] = task_graph_state["tasks"]
-    return updated_tracker_state
 
 
 async def _reconcile_tracker_state_from_task_database(
@@ -160,7 +101,7 @@ async def _reconcile_tracker_state_from_task_database(
         previous_work_graph=previous_work_graph,
     )
     return CommandResult(
-        tracker_state=replace_task_graph_in_tracker_state(tracker_state, work_graph),
+        tracker_state=work_graph.replace_task_graph_in_tracker_state(tracker_state),
         warnings=[],
     )
 
@@ -215,7 +156,7 @@ def _parent_task_id_for_fetched_database_row(database_row, work_graph: TaskDepen
         return None
 
     parent_page_id = database_row.parent_notion_page_ids[0]
-    parent_task_id = _task_id_for_notion_page_id(parent_page_id, work_graph)
+    parent_task_id = work_graph.task_id_for_notion_page_id(parent_page_id)
     if parent_task_id is None:
         raise ValueError(
             f"Parent page {parent_page_id} for task {database_row.task_id} is not in local tracker state; "
@@ -223,71 +164,3 @@ def _parent_task_id_for_fetched_database_row(database_row, work_graph: TaskDepen
         )
 
     return parent_task_id
-
-
-def _refresh_task_from_fetched_database_row(
-    task_id: str,
-    database_row,
-    parent_task_id: str | None,
-    work_graph: TaskDependencyGraph,
-) -> None:
-    task = work_graph.tasks[task_id]
-    task.title = database_row.title
-    task.configured_priority = database_row.configured_priority
-    task.status = database_row.status
-    task.notion_page_id = database_row.notion_page_id
-    work_graph.set_task_parent(task_id, parent_task_id)
-
-
-def _task_id_for_notion_page_id(
-    notion_page_id: str,
-    work_graph: TaskDependencyGraph,
-) -> str | None:
-    target_page_id = _compact_notion_page_id(notion_page_id)
-    for task in work_graph.tasks.values():
-        if task.notion_page_id is None:
-            continue
-        if _compact_notion_page_id(task.notion_page_id) == target_page_id:
-            return task.task_id
-
-    return None
-
-
-def _compact_notion_page_id(notion_page_id: str) -> str:
-    return notion_page_id.replace("-", "").lower()
-
-
-def _ancestor_task_ids(tracker_state: dict[str, Any], task_id: str) -> list[str]:
-    ancestor_task_ids = []
-    current_task = tracker_state["tasks"].get(task_id)
-
-    while current_task and current_task.get("parent_task_id") is not None:
-        parent_task_id = current_task["parent_task_id"]
-        ancestor_task_ids.append(parent_task_id)
-        current_task = tracker_state["tasks"].get(parent_task_id)
-
-    return ancestor_task_ids
-
-
-def _parent_task_ids_from_change(task_graph_change: dict[str, Any]) -> list[str]:
-    parent_change = task_graph_change.get("fields", {}).get("parent_task_id", {})
-    return [
-        task_id
-        for task_id in [parent_change.get("before"), parent_change.get("after")]
-        if task_id is not None
-    ]
-
-
-def _changed_task_graph_fields(
-    before_task: dict[str, Any],
-    after_task: dict[str, Any],
-) -> dict[str, dict[str, Any]]:
-    changed_fields = {}
-    for field_name in ["parent_task_id", "child_task_ids", "configured_priority", "status", "title"]:
-        if before_task.get(field_name) != after_task.get(field_name):
-            changed_fields[field_name] = {
-                "before": before_task.get(field_name),
-                "after": after_task.get(field_name),
-            }
-    return changed_fields
-
