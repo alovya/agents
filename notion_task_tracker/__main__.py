@@ -38,7 +38,7 @@ def _run_requested_cli_action(parser: argparse.ArgumentParser, args: argparse.Na
             credentials_path=args.credentials_path or DEFAULT_CREDENTIALS_PATH,
             tracker_state_path=args.tracker_state_path or DEFAULT_TRACKER_STATE_PATH,
             output_path=args.output_path or DEFAULT_OUTPUT_PATH,
-            notion_client=args.notion_client,
+            notion_client=args.notion_transport,
         )
         print(json.dumps(reconcile_summary.to_json_summary(), indent=2, sort_keys=True))
         return
@@ -53,7 +53,7 @@ def _run_requested_cli_action(parser: argparse.ArgumentParser, args: argparse.Na
         tracker_state_path=args.tracker_state_path or DEFAULT_TRACKER_STATE_PATH,
         output_path=args.output_path or DEFAULT_OUTPUT_PATH,
         credentials_path=args.credentials_path or DEFAULT_CREDENTIALS_PATH,
-        notion_client=args.notion_client,
+        notion_client=args.notion_transport,
     )
     print(json.dumps(execution_summary.to_json_summary(), indent=2, sort_keys=True))
 
