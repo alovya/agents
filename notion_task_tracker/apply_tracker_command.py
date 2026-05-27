@@ -7,20 +7,20 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from notion_task_tracker.errors import NotionPlanningError
-from notion_task_tracker.notion_io.writes import NotionWriteIntent
-from notion_task_tracker.notion_io.page_registry import NotionPageRegistry
-from notion_task_tracker.notion_io.task_writes import (
-    completion_write_intents,
-    notion_write_plan_for_task_graph,
-    page_registry_for_task_graph,
-    timeline_log_write_intent,
+from notion_task_tracker.notion_operations.write_intent import NotionWriteIntent
+from notion_task_tracker.notion_operations.page_registry import NotionPageRegistry
+from notion_task_tracker.notion_operations.plan_task_page_write_intents import (
+    plan_completion_write_intents,
+    plan_notion_writes_for_task_graph,
+    build_page_registry_for_task_graph,
+    build_timeline_log_write_intent,
 )
-from notion_task_tracker.notion_io.miscellaneous_writes import (
+from notion_task_tracker.notion_operations.miscellaneous_writes import (
     miscellaneous_note_append_write_intent,
     notion_write_plan_for_miscellaneous_notes,
     page_registry_for_miscellaneous_notes,
 )
-from notion_task_tracker.notion_io.synthesis_writes import (
+from notion_task_tracker.notion_operations.synthesis_writes import (
     notion_write_plan_for_synthesis_notes,
     page_registry_for_synthesis_notes,
     synthesis_page_creation_write_intent,
@@ -120,7 +120,7 @@ def _apply_task_command(
     work_graph = TaskDependencyGraph.from_tracker_state(tracker_state)
     task_command_change = command_handler(work_graph, command)
     write_intents = _write_intents_from_task_command(work_graph, task_command_change)
-    page_registry = page_registry_for_task_graph(work_graph)
+    page_registry = build_page_registry_for_task_graph(work_graph)
     return TrackerCommandResult(
         tracker_state=_replace_task_pages_in_tracker_state(tracker_state, work_graph),
         write_intents=write_intents,
@@ -130,10 +130,10 @@ def _apply_task_command(
 
 def _write_intents_from_task_command(work_graph: TaskDependencyGraph, command_result) -> list[NotionWriteIntent]:
     if isinstance(command_result, TimelineLogChange):
-        return [timeline_log_write_intent(command_result)]
+        return [build_timeline_log_write_intent(command_result)]
 
     if isinstance(command_result, TaskCompletionChange):
-        return completion_write_intents(work_graph, command_result)
+        return plan_completion_write_intents(work_graph, command_result)
 
     raise NotionPlanningError(f"Unsupported task command result {command_result!r}")
 
@@ -160,8 +160,8 @@ def _complete_task(
 
 def _refresh_task_pages(command: dict[str, Any], tracker_state: dict[str, Any]) -> TrackerCommandResult:
     work_graph = TaskDependencyGraph.from_tracker_state(tracker_state)
-    write_intents = _filter_write_intents(notion_write_plan_for_task_graph(work_graph), command.get("operation_keys"))
-    page_registry = page_registry_for_task_graph(work_graph)
+    write_intents = _filter_write_intents(plan_notion_writes_for_task_graph(work_graph), command.get("operation_keys"))
+    page_registry = build_page_registry_for_task_graph(work_graph)
     return TrackerCommandResult(
         tracker_state=_replace_task_pages_in_tracker_state(tracker_state, work_graph),
         write_intents=write_intents,
@@ -304,7 +304,7 @@ def _page_registry_for_synthesis_command(
     synthesis_notes: SynthesisNotesMetadata,
 ) -> NotionPageRegistry:
     return _merge_page_registries(
-        page_registry_for_task_graph(TaskDependencyGraph.from_tracker_state(tracker_state)),
+        build_page_registry_for_task_graph(TaskDependencyGraph.from_tracker_state(tracker_state)),
         page_registry_for_miscellaneous_notes(
             MiscellaneousNotesMetadata.from_tracker_state(tracker_state["miscellaneous_notes"])
         ),

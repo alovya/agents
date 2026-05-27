@@ -11,11 +11,11 @@ from notion_task_tracker.fixed_pages import (
     SYNTHESIS_NOTES_PAGE_TITLE,
 )
 from notion_task_tracker.external_links import ExternalLink
-from notion_task_tracker.notion_io.page_registry import (
+from notion_task_tracker.notion_operations.page_registry import (
     NotionPageReference,
     NotionPageRegistry,
 )
-from notion_task_tracker.notion_io.writes import (
+from notion_task_tracker.notion_operations.write_intent import (
     NotionPlanningError,
     NotionWriteIntent,
 )

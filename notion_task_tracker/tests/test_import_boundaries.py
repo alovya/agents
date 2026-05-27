@@ -5,14 +5,14 @@ PACKAGE_PATH = Path(__file__).resolve().parents[1]
 
 
 def test_rest_client_does_not_import_mcp_symbols():
-    source = _source("notion_io/rest_client.py")
+    source = _source("notion_operations/rest_client.py")
 
     assert "notion_task_tracker.mcp" not in source
     assert "NotionMcp" not in source
 
 
 def test_mcp_client_does_not_import_rest_symbols():
-    source = _source("notion_io/mcp_client.py")
+    source = _source("notion_operations/mcp_client.py")
 
     assert "notion_task_tracker.rest" not in source
     assert "NotionRest" not in source
@@ -28,10 +28,7 @@ def test_workflow_modules_do_not_import_notion_protocol_details():
     ]
     workflow_files = [
         "tracker_cli_workflow.py",
-        "tasks/actions/write_task_log.py",
-        "tasks/actions/create_task_page_in_database.py",
-        "tasks/actions/refresh_task_tracker_state.py",
-        "notion_io/write_executor.py",
+        "notion_operations/write_executor.py",
     ]
 
     for workflow_file in workflow_files:
@@ -39,22 +36,30 @@ def test_workflow_modules_do_not_import_notion_protocol_details():
         assert not any(forbidden in source for forbidden in forbidden_text), workflow_file
 
 
-def test_tracker_metadata_modules_do_not_import_notion_io():
+def test_tracker_metadata_modules_do_not_import_notion_operations():
     metadata_files = [
         "tasks/task.py",
         "tasks/dependency_graph.py",
         "tasks/database.py",
-        "tasks/pages/landing_pages.py",
+        "tasks/landing_pages.py",
+        "tasks/timeline_log.py",
+        "tasks/create_task.py",
+        "tasks/derive_task_timeline_log.py",
+        "tasks/refresh_task_tracker_state.py",
         "miscellaneous_pages.py",
         "synthesis_pages.py",
     ]
 
     for metadata_file in metadata_files:
-        assert "notion_task_tracker.notion_io" not in _source(metadata_file), metadata_file
+        source = _source(metadata_file).replace(
+            "notion_task_tracker.notion_operations.notion_id",
+            "",
+        )
+        assert "notion_task_tracker.notion_operations" not in source, metadata_file
 
 
 def test_rest_client_uses_notion_sdk_not_raw_http_transport():
-    source = _source("notion_io/rest_client.py")
+    source = _source("notion_operations/rest_client.py")
 
     assert "from notion_client import AsyncClient" in source
     assert "urlopen" not in source

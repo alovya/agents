@@ -268,10 +268,12 @@ The package is Python metadata and Notion write execution code. Live fetch/write
 - `tasks/dependency_graph.py`: task dependency graph validation, priority rollup, and task-write orchestration.
 - `tasks/database.py`: task database projection and database-row parsing.
 - `tasks/task.py`: task, priority, status, timeline-entry data, task property refresh intents, and timeline-log update intents.
-- `tasks/pages/landing_pages.py`: ongoing and completed task landing-page rendering and refresh intents.
-- `tasks/pages/timeline_log.py`: task page body parsing for timeline logs.
-- `tasks/actions/`: task actions for timeline logging, database-backed creation, and dependency reconciliation.
-- `notion_io/`: Notion boundary code for page references, write intents, Markdown helpers, database-property conversion, live clients, and write execution.
+- `tasks/landing_pages.py`: ongoing and completed task landing-page rendering and refresh intents.
+- `tasks/timeline_log.py`: task page body parsing for timeline logs.
+- `tasks/create_task.py`: local task graph changes for creating parent, child, and sibling tasks.
+- `tasks/derive_task_timeline_log.py`: timeline-log facts derived from fetched task page content.
+- `tasks/refresh_task_tracker_state.py`: local task graph refresh from Notion database rows.
+- `notion_operations/`: Notion boundary code for page references, write intents, Markdown helpers, database-property conversion, live clients, and write execution.
 - `fixed_pages.py`: names and local keys for fixed tracker pages.
 - `miscellaneous_pages.py`: dated miscellaneous notes.
 - `synthesis_pages.py`: flat synthesis root mentions and synthesis subpages with sources.

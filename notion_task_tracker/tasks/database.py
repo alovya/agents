@@ -8,9 +8,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from notion_task_tracker.errors import NotionPlanningError
-from notion_task_tracker.notion_ids import canonical_notion_page_id, notion_page_id_from_url
+from notion_task_tracker.notion_operations.notion_id import canonical_notion_page_id, notion_page_id_from_url
 from notion_task_tracker.tasks.dependency_graph import TaskDependencyGraph
-from notion_task_tracker.tasks.pages.landing_pages import CompletedTasksLandingPage, OngoingTasksLandingPage
+from notion_task_tracker.tasks.landing_pages import CompletedTasksLandingPage, OngoingTasksLandingPage
 from notion_task_tracker.tasks.task import (
     PROPERTIES_BLOCK_PATTERN,
     TASK_DATABASE_PRIORITY_PROPERTY,

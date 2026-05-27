@@ -1,7 +1,7 @@
 import pytest
 
 from notion_task_tracker import NotionPlanningError
-from notion_task_tracker.notion_io.synthesis_writes import (
+from notion_task_tracker.notion_operations.synthesis_writes import (
     notion_write_plan_for_synthesis_notes,
     synthesis_page_creation_write_intent,
 )

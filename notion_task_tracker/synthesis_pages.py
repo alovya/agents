@@ -11,7 +11,7 @@ from notion_task_tracker.fixed_pages import (
     SYNTHESIS_NOTES_PAGE_LOCAL_KEY,
     SYNTHESIS_NOTES_PAGE_TITLE,
 )
-from notion_task_tracker.notion_ids import canonical_notion_page_id, notion_page_id_from_url
+from notion_task_tracker.notion_operations.notion_id import canonical_notion_page_id, notion_page_id_from_url
 from notion_task_tracker.tracked_pages import (
     TrackedPage,
     fixed_tracked_page_from_tracker_state,

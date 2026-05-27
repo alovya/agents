@@ -9,22 +9,22 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from notion_task_tracker.notion_io.client import notion_client_from_credentials_path
-from notion_task_tracker.notion_io.write_executor import execute_command_result_writes
-from notion_task_tracker.tasks.actions.write_task_log import (
-    command_result_from_current_notion_state,
-    command_result_with_context_repairs,
-    repair_result_for_command_context,
-    tracker_state_ready_for_command,
+from notion_task_tracker.notion_operations.client import notion_client_from_credentials_path
+from notion_task_tracker.notion_operations.create_task_database_page import (
+    should_create_task_database_page_for_command,
+    execute_create_task_database_page_command,
 )
-from notion_task_tracker.tasks.actions.create_task_page_in_database import (
-    command_creates_task_page_in_database,
-    execute_task_creation_command,
+from notion_task_tracker.notion_operations.prepare_task_page_timeline_log_write import (
+    prepare_command_result_from_current_task_page,
+    merge_context_repairs_into_command_result,
+    plan_context_repair_result,
 )
-from notion_task_tracker.tasks.actions.refresh_task_tracker_state import (
-    repair_result_for_task_graph_changes,
-    refresh_tracker_state_from_task_database,
+from notion_task_tracker.notion_operations.reconcile_task_database import (
+    plan_repairs_for_task_graph_changes,
+    refresh_tracker_state_for_task_command,
+    refresh_tracker_state_from_notion_task_database,
 )
+from notion_task_tracker.notion_operations.write_executor import execute_command_result_writes
 from notion_task_tracker.tasks import TaskDependencyGraph
 
 
@@ -86,31 +86,31 @@ async def _execute_command_file(
     _write_json(destination_backup_path, tracker_state)
 
     client = notion_client_from_credentials_path(Path(credentials_path), notion_client)
-    command_ready_result = await tracker_state_ready_for_command(
+    command_ready_result = await refresh_tracker_state_for_task_command(
         command=command,
         tracker_state=tracker_state,
         notion_client=client,
     )
     command_ready_tracker_state = command_ready_result.tracker_state
 
-    if command_creates_task_page_in_database(command, command_ready_tracker_state):
-        command_tracker_state, command_operation_keys = await execute_task_creation_command(
+    if should_create_task_database_page_for_command(command, command_ready_tracker_state):
+        command_tracker_state, command_operation_keys = await execute_create_task_database_page_command(
             command=command,
             tracker_state=command_ready_tracker_state,
             notion_client=client,
         )
         command_warnings = []
     else:
-        context_repair_result = repair_result_for_command_context(
+        context_repair_result = plan_context_repair_result(
             before_tracker_state=tracker_state,
             command_ready_result=command_ready_result,
         )
-        command_result = await command_result_from_current_notion_state(
+        command_result = await prepare_command_result_from_current_task_page(
             command=command,
             tracker_state=command_ready_tracker_state,
             notion_client=client,
         )
-        command_result = command_result_with_context_repairs(context_repair_result, command_result)
+        command_result = merge_context_repairs_into_command_result(context_repair_result, command_result)
         command_tracker_state, command_operation_keys = await execute_command_result_writes(command_result, client)
         command_warnings = command_result.warnings or []
 
@@ -142,7 +142,7 @@ async def _refresh_task_tracker_from_notion(
     _write_json(destination_backup_path, tracker_state)
 
     client = notion_client_from_credentials_path(Path(credentials_path), notion_client)
-    refreshed_result = await refresh_tracker_state_from_task_database(tracker_state, client)
+    refreshed_result = await refresh_tracker_state_from_notion_task_database(tracker_state, client)
     return await repair_and_write_refreshed_tracker_state(
         source_tracker_state_path=source_tracker_state_path,
         destination_output_path=destination_output_path,
@@ -165,7 +165,7 @@ async def repair_and_write_refreshed_tracker_state(
         before_tracker_state,
         refreshed_result.tracker_state,
     )
-    repair_result = repair_result_for_task_graph_changes(
+    repair_result = plan_repairs_for_task_graph_changes(
         refreshed_result=refreshed_result,
         task_graph_changes=task_changes,
     )

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from notion_task_tracker import COMPLETED_LANDING_PAGE_TITLE, LANDING_PAGE_TITLE
 from notion_task_tracker.apply_tracker_command import TrackerCommandResult
-from notion_task_tracker.notion_io.client import NotionWriteExecutionResult
+from notion_task_tracker.notion_operations.client import NotionWriteExecutionResult
 from notion_task_tracker.tracker_cli_workflow import repair_and_write_refreshed_tracker_state
 
 

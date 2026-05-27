@@ -17,7 +17,7 @@ from notion_task_tracker.fixed_pages import (
     LANDING_PAGE_LOCAL_KEY,
     LANDING_PAGE_TITLE,
 )
-from notion_task_tracker.tasks.pages.landing_pages import CompletedTasksLandingPage, OngoingTasksLandingPage
+from notion_task_tracker.tasks.landing_pages import CompletedTasksLandingPage, OngoingTasksLandingPage
 from notion_task_tracker.tasks.task import (
     Priority,
     Task,
@@ -384,8 +384,8 @@ def _task_from_tracker_state(tracker_state: dict[str, Any]) -> Task:
         parent_task_id=tracker_state.get("parent_task_id"),
         child_task_ids=list(tracker_state.get("child_task_ids", [])),
         timeline_entries=[
-            TimelineEntry.from_tracker_state(timeline_state)
-            for timeline_state in tracker_state.get("timeline_entries", [])
+            TimelineEntry.from_tracker_state(derived_timeline_log)
+            for derived_timeline_log in tracker_state.get("timeline_entries", [])
         ],
         links=[
             external_link_from_tracker_state(link_state)

@@ -159,7 +159,7 @@ class Task:
 
     def append_timeline_log(self, timeline_entry: TimelineEntry) -> TimelineLogChange:
         self.timeline_entries = _merged_timeline_entries_by_date(self.timeline_entries)
-        existing_entry = _timeline_entry_for_date(self.timeline_entries, timeline_entry.entry_date)
+        existing_entry = _build_timeline_entry_for_date(self.timeline_entries, timeline_entry.entry_date)
         existing_entry_before_append = _copy_timeline_entry(existing_entry) if existing_entry is not None else None
         appended_entry = _copy_timeline_entry(timeline_entry)
         timeline_entry_to_render = _upsert_timeline_entry(self, timeline_entry)
@@ -195,7 +195,7 @@ def _upsert_timeline_entry(
     timeline_entry: TimelineEntry,
 ) -> TimelineEntry:
     task.timeline_entries = _merged_timeline_entries_by_date(task.timeline_entries)
-    existing_entry = _timeline_entry_for_date(task.timeline_entries, timeline_entry.entry_date)
+    existing_entry = _build_timeline_entry_for_date(task.timeline_entries, timeline_entry.entry_date)
 
     if existing_entry is None:
         task.timeline_entries.append(timeline_entry)
@@ -230,7 +230,7 @@ def _merged_timeline_entries_by_date(timeline_entries: list[TimelineEntry]) -> l
     return merged_entries
 
 
-def _timeline_entry_for_date(
+def _build_timeline_entry_for_date(
     timeline_entries: list[TimelineEntry],
     entry_date: str,
 ) -> TimelineEntry | None:

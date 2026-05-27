@@ -1,5 +1,5 @@
 from notion_task_tracker.miscellaneous_pages import MiscellaneousNotesMetadata
-from notion_task_tracker.notion_io.miscellaneous_writes import (
+from notion_task_tracker.notion_operations.miscellaneous_writes import (
     miscellaneous_note_append_write_intent,
     notion_write_plan_for_miscellaneous_notes,
 )
