@@ -1,6 +1,6 @@
 import json
 
-from notion_task_tracker.apply_tracker_command import TrackerCommandResult, apply_command_files, apply_command_to_tracker_state
+from notion_task_tracker.apply_tracker_command import apply_command_to_tracker_state
 from notion_task_tracker.tasks import Priority, Task, TaskStatus, TaskDependencyGraph
 
 
@@ -262,37 +262,6 @@ class TestApplyCommandToTrackerState:
         assert command_result.tracker_state["synthesis_notes"]["pages"]["onnx_qdq"]["notion_page_id"] == (
             "66666666666666666666666666666666"
         )
-
-
-class TestApplyCommandFiles:
-    def test_reads_command_and_tracker_state_then_writes_command_result(self, tmp_path):
-        command_path = tmp_path / "command.json"
-        tracker_state_path = tmp_path / "tracker_state.json"
-        output_path = tmp_path / "output.json"
-        command_path.write_text(
-            json.dumps(
-                {
-                    "command": "append_task_timeline_log",
-                    "task_id": "ALOVYA-1",
-                    "timeline_entry": {
-                        "entry_date": "2026-05-24",
-                        "heading": '<mention-date start="2026-05-24"/>',
-                        "lines": ["Found the remaining blocker."],
-                    },
-                }
-            ),
-            encoding="utf-8",
-        )
-        tracker_state_path.write_text(json.dumps(_combined_tracker_state()), encoding="utf-8")
-
-        command_result = apply_command_files(
-            command_path=command_path,
-            tracker_state_path=tracker_state_path,
-            output_path=output_path,
-        )
-
-        loaded_command_result = TrackerCommandResult.from_json(json.loads(output_path.read_text()))
-        assert loaded_command_result.to_json() == command_result.to_json()
 
 
 def _combined_tracker_state():

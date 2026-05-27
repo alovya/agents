@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 from notion_task_tracker.external_links import (
@@ -18,7 +17,6 @@ from notion_task_tracker.fixed_pages import (
     LANDING_PAGE_LOCAL_KEY,
     LANDING_PAGE_TITLE,
 )
-from notion_task_tracker.json_file import write_json_file
 from notion_task_tracker.tasks.pages.landing_pages import CompletedTasksLandingPage, OngoingTasksLandingPage
 from notion_task_tracker.tasks.task import (
     Priority,
@@ -61,12 +59,6 @@ class TaskDependencyGraph:
     tasks: dict[str, Task] = field(default_factory=dict)
 
     @classmethod
-    def from_tracker_state_path(cls, tracker_state_path: str | Path) -> TaskDependencyGraph:
-        source_path = Path(tracker_state_path)
-        tracker_state = json.loads(source_path.read_text(encoding="utf-8"))
-        return cls.from_tracker_state(tracker_state)
-
-    @classmethod
     def from_tracker_state(cls, tracker_state: dict[str, Any]) -> TaskDependencyGraph:
         work_graph = cls(
             ongoing_tasks_landing_page=OngoingTasksLandingPage(
@@ -90,9 +82,6 @@ class TaskDependencyGraph:
         work_graph.validate()
         work_graph.recalculate_display_priorities()
         return work_graph
-
-    def write_tracker_state(self, tracker_state_path: str | Path) -> None:
-        write_json_file(self.to_tracker_state(), tracker_state_path)
 
     def to_tracker_state(self) -> dict[str, Any]:
         return {

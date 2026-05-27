@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from notion_task_tracker import COMPLETED_LANDING_PAGE_TITLE, LANDING_PAGE_TITLE
@@ -426,26 +424,13 @@ class TestTaskDependencyGraphCompleteTask:
         ]
 
 
-class TestTaskDependencyGraphSnapshot:
-    def test_round_trip_preserves_graph_metadata(self, tmp_path):
-        tracker_state_path = tmp_path / "notion_tasks_graph.json"
-        work_graph = _build_recursive_work_graph()
-        work_graph.recalculate_display_priorities()
-
-        work_graph.write_tracker_state(tracker_state_path)
-        loaded_work_graph = TaskDependencyGraph.from_tracker_state_path(tracker_state_path)
-
-        assert loaded_work_graph.to_tracker_state() == work_graph.to_tracker_state()
-        assert loaded_work_graph.tasks["ALOVYA-2"].displayed_priority == Priority.P0
-
-    def test_load_normalizes_fixed_page_titles(self, tmp_path):
-        tracker_state_path = tmp_path / "notion_tasks_graph.json"
+class TestTaskDependencyGraphFromTrackerState:
+    def test_normalizes_fixed_page_titles(self):
         tracker_state = TaskDependencyGraph().to_tracker_state()
         tracker_state["landing_page"]["title"] = "User-edited landing title"
         tracker_state["landing_page"]["notion_page_id"] = "landing-page-id"
-        tracker_state_path.write_text(json.dumps(tracker_state), encoding="utf-8")
 
-        loaded_work_graph = TaskDependencyGraph.from_tracker_state_path(tracker_state_path)
+        loaded_work_graph = TaskDependencyGraph.from_tracker_state(tracker_state)
 
         assert loaded_work_graph.ongoing_tasks_landing_page.page.title == LANDING_PAGE_TITLE
         assert loaded_work_graph.ongoing_tasks_landing_page.page.notion_page_id == "landing-page-id"

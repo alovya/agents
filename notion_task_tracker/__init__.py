@@ -19,11 +19,9 @@ from notion_task_tracker.notion_io.writes import (
     NotionPlanningError,
     NotionWriteIntent,
 )
-from notion_task_tracker.json_file import write_json_file
 from notion_task_tracker.tracked_pages import TrackedPage
 from notion_task_tracker.apply_tracker_command import (
     TrackerCommandResult,
-    apply_command_files,
     apply_command_to_tracker_state,
 )
 from notion_task_tracker.tracker_cli_workflow import (
@@ -82,9 +80,7 @@ __all__ = [
     "TaskStatus",
     "TimelineEntry",
     "TaskDependencyGraph",
-    "apply_command_files",
     "apply_command_to_tracker_state",
     "parse_synthesis_root_page_mentions",
     "refresh_task_tracker_from_notion",
-    "write_json_file",
 ]

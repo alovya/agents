@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
-from pathlib import Path
+from dataclasses import dataclass, field
 from typing import Any
 
-from notion_task_tracker.json_file import write_json_file
 from notion_task_tracker.errors import NotionPlanningError
 from notion_task_tracker.notion_io.writes import NotionWriteIntent
 from notion_task_tracker.notion_io.page_registry import NotionPageRegistry
@@ -37,56 +35,14 @@ from notion_task_tracker.tasks import (
 )
 
 
-@dataclass(frozen=True, init=False)
+@dataclass(frozen=True)
 class TrackerCommandResult:
     """Tracker state candidate and exact Notion writes from one command."""
 
     tracker_state: dict[str, Any]
-    write_intents: list[NotionWriteIntent]
-    page_registry: NotionPageRegistry | None
-    warnings: list[dict[str, str]] | None = None
-
-    def __init__(
-        self,
-        tracker_state: dict[str, Any],
-        write_intents: list[NotionWriteIntent] | None = None,
-        page_registry: NotionPageRegistry | None = None,
-        warnings: list[dict[str, str]] | None = None,
-    ) -> None:
-        object.__setattr__(self, "tracker_state", tracker_state)
-        object.__setattr__(self, "write_intents", list(write_intents or []))
-        object.__setattr__(self, "page_registry", page_registry)
-        object.__setattr__(self, "warnings", warnings)
-
-    @classmethod
-    def from_json(cls, call: dict[str, Any]) -> "TrackerCommandResult":
-        return cls(
-            tracker_state=dict(call["tracker_state"]),
-            write_intents=[],
-            page_registry=None,
-            warnings=list(call.get("warnings", [])),
-        )
-
-    def write_json(self, output_path: str | Path) -> None:
-        write_json_file(self.to_json(), output_path)
-
-    def to_json(self) -> dict[str, Any]:
-        return {
-            "tracker_state": self.tracker_state,
-            "warnings": list(self.warnings or []),
-        }
-
-
-def apply_command_files(
-    command_path: str | Path,
-    tracker_state_path: str | Path,
-    output_path: str | Path,
-) -> TrackerCommandResult:
-    command = _read_json_file(command_path)
-    tracker_state = _read_json_file(tracker_state_path)
-    command_result = apply_command_to_tracker_state(command, tracker_state)
-    command_result.write_json(output_path)
-    return command_result
+    write_intents: list[NotionWriteIntent] = field(default_factory=list)
+    page_registry: NotionPageRegistry | None = None
+    warnings: list[dict[str, str]] = field(default_factory=list)
 
 
 def apply_command_to_tracker_state(command: dict[str, Any], tracker_state: dict[str, Any]) -> TrackerCommandResult:
@@ -387,8 +343,3 @@ def _synthesis_source_from_command(command: dict[str, Any]) -> SynthesisSource:
         page_key=command.get("page_key"),
         external_url=command.get("external_url"),
     )
-
-
-def _read_json_file(path: str | Path) -> dict[str, Any]:
-    source_path = Path(path)
-    return json.loads(source_path.read_text(encoding="utf-8"))
