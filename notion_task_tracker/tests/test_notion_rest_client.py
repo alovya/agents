@@ -147,7 +147,7 @@ def test_replace_content_uses_page_markdown_endpoint():
         "/v1/pages/11111111111111111111111111111111/markdown",
         {
             "type": "replace_content",
-            "replace_content": "## P1\n- Active task",
+            "replace_content": {"new_str": "## P1\n- Active task"},
         },
         )
     ]
@@ -156,7 +156,6 @@ def test_replace_content_uses_page_markdown_endpoint():
 def test_update_content_inserts_new_markdown_after_matching_heading():
     notion_client = _FakeNotionRestClient(
         responses=[
-            {"markdown": "## Timeline log\n\nExisting notes."},
             {},
         ]
     )
@@ -178,16 +177,18 @@ def test_update_content_inserts_new_markdown_after_matching_heading():
 
     assert notion_client.requests == [
         (
-            "GET",
-            "/v1/pages/22222222222222222222222222222222/markdown",
-            None,
-        ),
-        (
         "PATCH",
         "/v1/pages/22222222222222222222222222222222/markdown",
         {
-            "type": "replace_content",
-            "replace_content": '## Timeline log\n### <mention-date start="2026-05-26"/>\n- New log.\n\nExisting notes.',
+            "type": "update_content",
+            "update_content": {
+                "content_updates": [
+                    {
+                        "old_str": "## Timeline log",
+                        "new_str": '## Timeline log\n### <mention-date start="2026-05-26"/>\n- New log.',
+                    }
+                ]
+            },
         },
         ),
     ]

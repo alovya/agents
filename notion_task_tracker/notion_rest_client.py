@@ -342,7 +342,24 @@ class NotionRestClient:
             f"/v1/pages/{page_id}/markdown",
             {
                 "type": "replace_content",
-                "replace_content": markdown,
+                "replace_content": {"new_str": markdown},
+            },
+        )
+
+    async def update_page_markdown_content(self, page_id: str, old_markdown: str, new_markdown: str) -> None:
+        await self._send_json(
+            "PATCH",
+            f"/v1/pages/{page_id}/markdown",
+            {
+                "type": "update_content",
+                "update_content": {
+                    "content_updates": [
+                        {
+                            "old_str": old_markdown,
+                            "new_str": new_markdown,
+                        }
+                    ]
+                },
             },
         )
 
@@ -352,13 +369,11 @@ class NotionRestClient:
         anchor_markdown: str,
         inserted_markdown: str,
     ) -> None:
-        current_markdown = await self.fetch_page_markdown(page_id)
-        updated_markdown = _markdown_with_inserted_content_after_anchor(
-            current_markdown=current_markdown,
-            anchor_markdown=anchor_markdown,
-            inserted_markdown=inserted_markdown,
+        await self.update_page_markdown_content(
+            page_id=page_id,
+            old_markdown=anchor_markdown,
+            new_markdown=f"{anchor_markdown}\n{inserted_markdown}",
         )
-        await self.replace_page_markdown(page_id, updated_markdown)
 
     async def replace_markdown_section(
         self,
@@ -366,10 +381,11 @@ class NotionRestClient:
         old_markdown: str,
         new_markdown: str,
     ) -> None:
-        current_markdown = await self.fetch_page_markdown(page_id)
-        if old_markdown.strip() not in current_markdown:
-            raise ValueError(f"Could not find Notion Markdown section matching {old_markdown!r}")
-        await self.replace_page_markdown(page_id, current_markdown.replace(old_markdown.strip(), new_markdown.strip(), 1))
+        await self.update_page_markdown_content(
+            page_id=page_id,
+            old_markdown=old_markdown,
+            new_markdown=new_markdown,
+        )
 
     async def _send_json(self, method: str, path: str, body: dict[str, Any] | None) -> dict[str, Any]:
         try:
@@ -525,27 +541,6 @@ def _markdown_from_sdk_response(response: Any) -> str:
             if key in response:
                 return str(response[key])
     return str(response)
-
-
-def _markdown_with_inserted_content_after_anchor(
-    current_markdown: str,
-    anchor_markdown: str,
-    inserted_markdown: str,
-) -> str:
-    lines = current_markdown.splitlines()
-
-    for line_index, line in enumerate(lines):
-        if line.strip() != anchor_markdown.strip():
-            continue
-
-        updated_lines = [
-            *lines[:line_index + 1],
-            inserted_markdown,
-            *lines[line_index + 1:],
-        ]
-        return "\n".join(updated_lines).strip()
-
-    raise ValueError(f"Could not find Notion Markdown matching {anchor_markdown!r}")
 
 
 def _rest_parent_from_page_key(
