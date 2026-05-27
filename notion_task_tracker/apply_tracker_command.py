@@ -83,8 +83,8 @@ def _record_page_id_in_tracker_state(command: dict[str, Any], tracker_state: dic
     local_page_key = command["local_page_key"]
     notion_page_id = command["notion_page_id"]
 
-    if local_page_key == "landing_page":
-        updated_tracker_state["landing_page"]["notion_page_id"] = notion_page_id
+    if local_page_key == "ongoing_landing_page":
+        updated_tracker_state["ongoing_landing_page"]["notion_page_id"] = notion_page_id
         return TrackerCommandResult(tracker_state=updated_tracker_state)
 
     if local_page_key == "completed_landing_page":
@@ -275,7 +275,7 @@ def _record_synthesis_page_id(
 def _replace_task_pages_in_tracker_state(tracker_state: dict[str, Any], work_graph: TaskDependencyGraph) -> dict[str, Any]:
     updated_tracker_state = json.loads(json.dumps(tracker_state))
     task_state = work_graph.to_tracker_state()
-    updated_tracker_state["landing_page"] = task_state["landing_page"]
+    updated_tracker_state["ongoing_landing_page"] = task_state["ongoing_landing_page"]
     updated_tracker_state["completed_landing_page"] = task_state["completed_landing_page"]
     updated_tracker_state["tasks"] = task_state["tasks"]
     return updated_tracker_state

@@ -130,9 +130,9 @@ def test_replace_content_uses_page_markdown_endpoint():
     asyncio.run(
         notion_client.execute_write_intent(
             NotionWriteIntent(
-                operation_key="replace:landing_page",
+                operation_key="replace:ongoing_landing_page",
                 operation_name="replace_page_markdown",
-                target_page_key="landing_page",
+                target_page_key="ongoing_landing_page",
                 arguments={
                     "markdown": "## P1\n- Active task",
                 },
@@ -295,8 +295,8 @@ class _FakePagesEndpoint:
 def _page_registry() -> NotionPageRegistry:
     return NotionPageRegistry(
         pages={
-            "landing_page": NotionPageReference(
-                local_page_key="landing_page",
+            "ongoing_landing_page": NotionPageReference(
+                local_page_key="ongoing_landing_page",
                 title="Landing page",
                 notion_page_id="11111111111111111111111111111111",
             ),

@@ -2,7 +2,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from notion_task_tracker import COMPLETED_LANDING_PAGE_TITLE, LANDING_PAGE_TITLE
+from notion_task_tracker import COMPLETED_LANDING_PAGE_TITLE, ONGOING_LANDING_PAGE_TITLE
 from notion_task_tracker.apply_tracker_command import TrackerCommandResult
 from notion_task_tracker.notion_operations.client import NotionWriteExecutionResult
 from notion_task_tracker.tracker_cli_workflow import repair_and_write_refreshed_tracker_state
@@ -38,17 +38,17 @@ def test_repair_and_write_refreshed_tracker_state_pushes_repairs_for_changed_tas
     assert json.loads(tracker_state_path.read_text(encoding="utf-8")) == after_tracker_state
     assert [write_intent.operation_key for write_intent in notion_client.write_intents] == [
         "update_properties:task:ALOVYA-1",
-        "replace:landing_page",
+        "replace:ongoing_landing_page",
     ]
     assert json.loads(output_path.read_text(encoding="utf-8"))["completed_operations"] == [
         "update_properties:task:ALOVYA-1",
-        "replace:landing_page",
+        "replace:ongoing_landing_page",
     ]
     assert refresh_summary.to_json_summary() == {
         "backup_path": str(backup_path),
         "completed_operations": [
             "update_properties:task:ALOVYA-1",
-            "replace:landing_page",
+            "replace:ongoing_landing_page",
         ],
         "output_path": str(output_path),
         "tracker_state_path": str(tracker_state_path),
@@ -117,9 +117,9 @@ class _FakeNotionClient:
 
 def _tracker_state(title: str, priority: str) -> dict:
     return {
-        "landing_page": {
-            "local_page_key": "landing_page",
-            "title": LANDING_PAGE_TITLE,
+        "ongoing_landing_page": {
+            "local_page_key": "ongoing_landing_page",
+            "title": ONGOING_LANDING_PAGE_TITLE,
             "notion_page_id": "11111111111111111111111111111111",
             "parent_page_key": None,
         },

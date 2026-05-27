@@ -146,7 +146,7 @@ async def _refresh_derived_task_landing_pages(
     landing_refresh_result = apply_command_to_tracker_state(
         command={
             "command": "refresh_task_pages",
-            "operation_keys": ["replace:landing_page", "replace:completed_landing_page"],
+            "operation_keys": ["replace:ongoing_landing_page", "replace:completed_landing_page"],
         },
         tracker_state=tracker_state,
     )

@@ -146,7 +146,7 @@ class TestApplyCommandToTrackerState:
         ]
         assert [write_intent.operation_key for write_intent in command_result.write_intents] == [
             "update_properties:task:ALOVYA-1",
-            "replace:landing_page",
+            "replace:ongoing_landing_page",
             "replace:completed_landing_page",
             "update_timeline_log:task:ALOVYA-1:2026-05-24",
         ]
@@ -156,7 +156,7 @@ class TestApplyCommandToTrackerState:
         }
         assert write_intents_by_key["update_properties:task:ALOVYA-1"].target_page_key == "task:ALOVYA-1"
         assert write_intents_by_key["update_properties:task:ALOVYA-1"].arguments["properties"]["Status"] == "Complete"
-        assert write_intents_by_key["replace:landing_page"].operation_name == "replace_page_markdown"
+        assert write_intents_by_key["replace:ongoing_landing_page"].operation_name == "replace_page_markdown"
         assert write_intents_by_key["replace:completed_landing_page"].arguments["markdown"].startswith("## Completed")
         assert write_intents_by_key["update_timeline_log:task:ALOVYA-1:2026-05-24"].operation_name == (
             "update_timeline_log"

@@ -7,8 +7,8 @@ from collections.abc import Callable
 from notion_task_tracker.fixed_pages import (
     COMPLETED_LANDING_PAGE_LOCAL_KEY,
     COMPLETED_LANDING_PAGE_TITLE,
-    LANDING_PAGE_LOCAL_KEY,
-    LANDING_PAGE_TITLE,
+    ONGOING_LANDING_PAGE_LOCAL_KEY,
+    ONGOING_LANDING_PAGE_TITLE,
 )
 from notion_task_tracker.notion_operations.markdown import bullet, heading, join_markdown_blocks, page_mention, toggle
 from notion_task_tracker.notion_operations.page_registry import NotionPageRegistry
@@ -119,7 +119,7 @@ def build_ongoing_landing_page_refresh_intent(
     page_registry: NotionPageRegistry,
 ) -> NotionWriteIntent:
     return NotionWriteIntent(
-        operation_key="replace:landing_page",
+        operation_key="replace:ongoing_landing_page",
         operation_name="replace_page_markdown",
         target_page_key=task_graph.ongoing_tasks_landing_page.page.local_page_key,
         arguments={"markdown": render_ongoing_landing_page_markdown(task_graph.tasks, page_registry)},

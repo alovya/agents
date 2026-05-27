@@ -12,9 +12,9 @@ def test_execute_command_result_writes_sends_intents_to_selected_client():
         tracker_state={},
         write_intents=[
             NotionWriteIntent(
-                operation_key="replace:landing_page",
+                operation_key="replace:ongoing_landing_page",
                 operation_name="replace_page_markdown",
-                target_page_key="landing_page",
+                target_page_key="ongoing_landing_page",
                 arguments={"markdown": "A"},
             ),
             NotionWriteIntent(
@@ -26,8 +26,8 @@ def test_execute_command_result_writes_sends_intents_to_selected_client():
         ],
         page_registry=NotionPageRegistry(
             pages={
-                "landing_page": NotionPageReference(
-                    local_page_key="landing_page",
+                "ongoing_landing_page": NotionPageReference(
+                    local_page_key="ongoing_landing_page",
                     title="Landing",
                     notion_page_id="11111111111111111111111111111111",
                 ),
@@ -45,11 +45,11 @@ def test_execute_command_result_writes_sends_intents_to_selected_client():
     )
 
     assert [tool_call.operation_key for tool_call in notion_client.calls] == [
-        "replace:landing_page",
+        "replace:ongoing_landing_page",
         "update_properties:task:ALOVYA-1",
     ]
     assert completed_operation_keys == [
-        "replace:landing_page",
+        "replace:ongoing_landing_page",
         "update_properties:task:ALOVYA-1",
     ]
 

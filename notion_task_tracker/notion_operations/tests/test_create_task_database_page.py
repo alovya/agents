@@ -65,7 +65,7 @@ def test_execute_create_task_database_page_command_creates_database_row_then_ref
         "create_database_task:create_child_task",
         "update_properties:task:ALOVYA-72",
         "update_timeline_log:task:ALOVYA-1:2026-05-25",
-        "replace:landing_page",
+        "replace:ongoing_landing_page",
     ]
     assert notion_client.calls[0].tool_name == "notion-create-pages"
     assert notion_client.calls[0].arguments["parent"] == {

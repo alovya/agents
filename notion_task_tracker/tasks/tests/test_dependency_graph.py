@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from notion_task_tracker import COMPLETED_LANDING_PAGE_TITLE, LANDING_PAGE_TITLE
+from notion_task_tracker import COMPLETED_LANDING_PAGE_TITLE, ONGOING_LANDING_PAGE_TITLE
 from notion_task_tracker.notion_operations.plan_task_page_write_intents import (
     plan_completion_write_intents,
     plan_notion_writes_for_task_graph,
@@ -82,9 +82,9 @@ class TestTaskDependencyGraphFromSnapshot:
     def test_loads_null_completed_landing_page_as_missing_page_id(self):
         work_graph = TaskDependencyGraph.from_tracker_state(
             {
-                "landing_page": {
-                    "local_page_key": "landing_page",
-                    "title": LANDING_PAGE_TITLE,
+                "ongoing_landing_page": {
+                    "local_page_key": "ongoing_landing_page",
+                    "title": ONGOING_LANDING_PAGE_TITLE,
                     "notion_page_id": "11111111111111111111111111111111",
                     "parent_page_key": None,
                 },
@@ -167,9 +167,9 @@ class TestTaskDependencyGraphBuildNotionWritePlan:
             write_intent.operation_key
             for write_intent in write_intents
         } >= {
-            "create:landing_page",
+            "create:ongoing_landing_page",
             "create:completed_landing_page",
-            "replace:landing_page",
+            "replace:ongoing_landing_page",
             "update_properties:task:ALOVYA-2",
             "update_properties:task:ALOVYA-4",
         }
@@ -180,7 +180,7 @@ class TestTaskDependencyGraphBuildNotionWritePlan:
         landing_refresh_intent = next(
             write_intent
             for write_intent in plan_notion_writes_for_task_graph(work_graph)
-            if write_intent.operation_key == "replace:landing_page"
+            if write_intent.operation_key == "replace:ongoing_landing_page"
         )
 
         landing_markdown = landing_refresh_intent.arguments["markdown"]
@@ -264,7 +264,7 @@ class TestTaskDependencyGraphRepairOperationKeysForChanges:
         )
 
         assert operation_keys == [
-            "replace:landing_page",
+            "replace:ongoing_landing_page",
             "replace:completed_landing_page",
             "update_properties:task:ALOVYA-1",
             "update_properties:task:ALOVYA-2",
@@ -419,7 +419,7 @@ class TestTaskDependencyGraphCompleteTask:
         assert work_graph.tasks["ALOVYA-5"].timeline_entries[-1] == timeline_entry
         assert [write_intent.operation_key for write_intent in write_intents] == [
             "update_properties:task:ALOVYA-5",
-            "replace:landing_page",
+            "replace:ongoing_landing_page",
             "update_timeline_log:task:ALOVYA-5:2026-05-25",
         ]
 
@@ -427,10 +427,10 @@ class TestTaskDependencyGraphCompleteTask:
 class TestTaskDependencyGraphFromTrackerState:
     def test_normalizes_fixed_page_titles(self):
         tracker_state = TaskDependencyGraph().to_tracker_state()
-        tracker_state["landing_page"]["title"] = "User-edited landing title"
-        tracker_state["landing_page"]["notion_page_id"] = "landing-page-id"
+        tracker_state["ongoing_landing_page"]["title"] = "User-edited landing title"
+        tracker_state["ongoing_landing_page"]["notion_page_id"] = "landing-page-id"
 
         loaded_work_graph = TaskDependencyGraph.from_tracker_state(tracker_state)
 
-        assert loaded_work_graph.ongoing_tasks_landing_page.page.title == LANDING_PAGE_TITLE
+        assert loaded_work_graph.ongoing_tasks_landing_page.page.title == ONGOING_LANDING_PAGE_TITLE
         assert loaded_work_graph.ongoing_tasks_landing_page.page.notion_page_id == "landing-page-id"

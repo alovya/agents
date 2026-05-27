@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from notion_task_tracker import COMPLETED_LANDING_PAGE_TITLE, LANDING_PAGE_TITLE, TrackedPage
+from notion_task_tracker import COMPLETED_LANDING_PAGE_TITLE, ONGOING_LANDING_PAGE_TITLE, TrackedPage
 from notion_task_tracker.tasks import Priority, TaskDependencyGraph, Task, TaskStatus
 from notion_task_tracker.tasks.database import (
     TASK_DATABASE_DATA_SOURCE_URL,
@@ -50,8 +50,8 @@ class TestTaskDependencyGraphFromDatabaseQueryResults:
                 },
             ],
             landing_page=TrackedPage(
-                local_page_key="landing_page",
-                title=LANDING_PAGE_TITLE,
+                local_page_key="ongoing_landing_page",
+                title=ONGOING_LANDING_PAGE_TITLE,
                 notion_page_id="landing-page-id",
             ),
             previous_work_graph=previous_work_graph,
@@ -71,8 +71,8 @@ class TestTaskDependencyGraphFromDatabaseQueryResults:
         work_graph = task_dependency_graph_from_database_query_results(
             query_results=[],
             landing_page=TrackedPage(
-                local_page_key="landing_page",
-                title=LANDING_PAGE_TITLE,
+                local_page_key="ongoing_landing_page",
+                title=ONGOING_LANDING_PAGE_TITLE,
                 notion_page_id="landing-page-id",
             ),
             previous_work_graph=previous_work_graph,
@@ -93,8 +93,8 @@ class TestTaskDependencyGraphFromDatabaseQueryResults:
                 },
             ],
             landing_page=TrackedPage(
-                local_page_key="landing_page",
-                title=LANDING_PAGE_TITLE,
+                local_page_key="ongoing_landing_page",
+                title=ONGOING_LANDING_PAGE_TITLE,
                 notion_page_id="landing-page-id",
             ),
         )
@@ -115,8 +115,8 @@ class TestTaskDependencyGraphFromDatabaseQueryResults:
                 },
             ],
             landing_page=TrackedPage(
-                local_page_key="landing_page",
-                title=LANDING_PAGE_TITLE,
+                local_page_key="ongoing_landing_page",
+                title=ONGOING_LANDING_PAGE_TITLE,
                 notion_page_id="landing-page-id",
             ),
         )
@@ -138,8 +138,8 @@ class TestTaskDependencyGraphFromDatabaseQueryResults:
                 },
             ],
             landing_page=TrackedPage(
-                local_page_key="landing_page",
-                title=LANDING_PAGE_TITLE,
+                local_page_key="ongoing_landing_page",
+                title=ONGOING_LANDING_PAGE_TITLE,
                 notion_page_id="landing-page-id",
             ),
         )
@@ -174,8 +174,8 @@ class TestTaskDependencyGraphFromDatabaseQueryResults:
                 },
             ],
             landing_page=TrackedPage(
-                local_page_key="landing_page",
-                title=LANDING_PAGE_TITLE,
+                local_page_key="ongoing_landing_page",
+                title=ONGOING_LANDING_PAGE_TITLE,
                 notion_page_id="landing-page-id",
             ),
         )
@@ -195,8 +195,8 @@ class TestTaskDependencyGraphFromDatabaseQueryResults:
                 },
             ],
             landing_page=TrackedPage(
-                local_page_key="landing_page",
-                title=LANDING_PAGE_TITLE,
+                local_page_key="ongoing_landing_page",
+                title=ONGOING_LANDING_PAGE_TITLE,
                 notion_page_id="landing-page-id",
             )
         )
@@ -224,8 +224,8 @@ class TestTaskDependencyGraphFromDatabaseQueryResults:
                 },
             ],
             landing_page=TrackedPage(
-                local_page_key="landing_page",
-                title=LANDING_PAGE_TITLE,
+                local_page_key="ongoing_landing_page",
+                title=ONGOING_LANDING_PAGE_TITLE,
                 notion_page_id="landing-page-id",
             )
         )
@@ -252,8 +252,8 @@ class TestTaskDependencyGraphFromDatabaseQueryResults:
                     },
                 ],
                 landing_page=TrackedPage(
-                    local_page_key="landing_page",
-                    title=LANDING_PAGE_TITLE,
+                    local_page_key="ongoing_landing_page",
+                    title=ONGOING_LANDING_PAGE_TITLE,
                     notion_page_id="landing-page-id",
                 ),
             )

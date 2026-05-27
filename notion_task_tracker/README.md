@@ -175,7 +175,7 @@ Refresh task views and task database properties:
 ```json
 {
   "command": "refresh_task_pages",
-  "operation_keys": ["update_properties:task:ALOVYA-5", "replace:landing_page"]
+  "operation_keys": ["update_properties:task:ALOVYA-5", "replace:ongoing_landing_page"]
 }
 ```
 

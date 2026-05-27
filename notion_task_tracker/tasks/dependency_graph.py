@@ -14,8 +14,8 @@ from notion_task_tracker.errors import NotionPlanningError
 from notion_task_tracker.fixed_pages import (
     COMPLETED_LANDING_PAGE_LOCAL_KEY,
     COMPLETED_LANDING_PAGE_TITLE,
-    LANDING_PAGE_LOCAL_KEY,
-    LANDING_PAGE_TITLE,
+    ONGOING_LANDING_PAGE_LOCAL_KEY,
+    ONGOING_LANDING_PAGE_TITLE,
 )
 from notion_task_tracker.tasks.landing_pages import CompletedTasksLandingPage, OngoingTasksLandingPage
 from notion_task_tracker.tasks.task import (
@@ -43,8 +43,8 @@ class TaskDependencyGraph:
     ongoing_tasks_landing_page: OngoingTasksLandingPage = field(
         default_factory=lambda: OngoingTasksLandingPage(
             page=TrackedPage(
-                local_page_key=LANDING_PAGE_LOCAL_KEY,
-                title=LANDING_PAGE_TITLE,
+                local_page_key=ONGOING_LANDING_PAGE_LOCAL_KEY,
+                title=ONGOING_LANDING_PAGE_TITLE,
             )
         )
     )
@@ -63,9 +63,9 @@ class TaskDependencyGraph:
         work_graph = cls(
             ongoing_tasks_landing_page=OngoingTasksLandingPage(
                 page=fixed_tracked_page_from_tracker_state(
-                    tracker_state=tracker_state["landing_page"],
-                    local_page_key=LANDING_PAGE_LOCAL_KEY,
-                    title=LANDING_PAGE_TITLE,
+                    tracker_state=tracker_state["ongoing_landing_page"],
+                    local_page_key=ONGOING_LANDING_PAGE_LOCAL_KEY,
+                    title=ONGOING_LANDING_PAGE_TITLE,
                 )
             ),
             completed_tasks_landing_page=CompletedTasksLandingPage(
@@ -85,7 +85,7 @@ class TaskDependencyGraph:
 
     def to_tracker_state(self) -> dict[str, Any]:
         return {
-            "landing_page": tracked_page_to_tracker_state(self.ongoing_tasks_landing_page.page),
+            "ongoing_landing_page": tracked_page_to_tracker_state(self.ongoing_tasks_landing_page.page),
             "completed_landing_page": tracked_page_to_tracker_state(self.completed_tasks_landing_page.page),
             "tasks": {
                 task_id: _task_to_tracker_state(task)
@@ -124,7 +124,7 @@ class TaskDependencyGraph:
     def replace_task_graph_in_tracker_state(self, tracker_state: dict[str, Any]) -> dict[str, Any]:
         updated_tracker_state = json.loads(json.dumps(tracker_state))
         task_graph_state = self.to_tracker_state()
-        updated_tracker_state["landing_page"] = task_graph_state["landing_page"]
+        updated_tracker_state["ongoing_landing_page"] = task_graph_state["ongoing_landing_page"]
         updated_tracker_state["completed_landing_page"] = task_graph_state["completed_landing_page"]
         updated_tracker_state["tasks"] = task_graph_state["tasks"]
         return updated_tracker_state
@@ -214,7 +214,7 @@ class TaskDependencyGraph:
                 task_ids_to_repair.update(_parent_task_ids_from_change(task_graph_change))
 
         return [
-            "replace:landing_page",
+            "replace:ongoing_landing_page",
             "replace:completed_landing_page",
             *[
                 operation_key
@@ -249,8 +249,8 @@ class TaskDependencyGraph:
     def _validate_fixed_page_keys_and_titles(self) -> None:
         validate_fixed_tracked_page(
             page=self.ongoing_tasks_landing_page.page,
-            expected_local_page_key=LANDING_PAGE_LOCAL_KEY,
-            expected_title=LANDING_PAGE_TITLE,
+            expected_local_page_key=ONGOING_LANDING_PAGE_LOCAL_KEY,
+            expected_title=ONGOING_LANDING_PAGE_TITLE,
         )
         validate_fixed_tracked_page(
             page=self.completed_tasks_landing_page.page,

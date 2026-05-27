@@ -113,7 +113,7 @@ def test_notion_mcp_client_rejects_unadvertised_tool_before_calling_it():
         asyncio.run(
             client.send_call(
                 NotionMcpToolCall(
-                    operation_key="replace:landing_page",
+                    operation_key="replace:ongoing_landing_page",
                     tool_name="notion-update-page",
                     arguments={},
                 )

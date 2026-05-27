@@ -20,7 +20,7 @@ def test_plan_context_repair_result_plans_repairs_without_writing_them():
     assert repair_result.tracker_state["tasks"]["ALOVYA-1"]["title"] == "Root task edited in Notion"
     assert [write_intent.operation_key for write_intent in repair_result.write_intents] == [
         "update_properties:task:ALOVYA-1",
-        "replace:landing_page",
+        "replace:ongoing_landing_page",
     ]
 
 
@@ -29,9 +29,9 @@ def test_merge_context_repairs_into_command_result_keeps_one_ordered_write_set_a
         tracker_state={"phase": "ready"},
         write_intents=[
             NotionWriteIntent(
-                operation_key="replace:landing_page",
+                operation_key="replace:ongoing_landing_page",
                 operation_name="replace_page_markdown",
-                target_page_key="landing_page",
+                target_page_key="ongoing_landing_page",
                 arguments={"markdown": "Stale landing"},
             ),
             NotionWriteIntent(
@@ -46,9 +46,9 @@ def test_merge_context_repairs_into_command_result_keeps_one_ordered_write_set_a
         tracker_state={"phase": "command"},
         write_intents=[
             NotionWriteIntent(
-                operation_key="replace:landing_page",
+                operation_key="replace:ongoing_landing_page",
                 operation_name="replace_page_markdown",
-                target_page_key="landing_page",
+                target_page_key="ongoing_landing_page",
                 arguments={"markdown": "Command landing"},
             ),
             NotionWriteIntent(
@@ -64,7 +64,7 @@ def test_merge_context_repairs_into_command_result_keeps_one_ordered_write_set_a
 
     assert combined_result.tracker_state == {"phase": "command"}
     assert [write_intent.operation_key for write_intent in combined_result.write_intents] == [
-        "replace:landing_page",
+        "replace:ongoing_landing_page",
         "update_properties:task:ALOVYA-1",
         "update_timeline_log:task:ALOVYA-1:2026-05-26",
     ]

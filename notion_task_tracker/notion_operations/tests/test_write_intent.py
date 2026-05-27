@@ -3,11 +3,11 @@ from notion_task_tracker.notion_operations.write_intent import NotionWriteIntent
 
 def test_notion_write_intent_records_operation_and_target():
     write_intent = NotionWriteIntent(
-        operation_key="replace:landing_page",
+        operation_key="replace:ongoing_landing_page",
         operation_name="replace_page_markdown",
-        target_page_key="landing_page",
+        target_page_key="ongoing_landing_page",
         arguments={"markdown": "Landing page body"},
     )
 
-    assert write_intent.operation_key == "replace:landing_page"
+    assert write_intent.operation_key == "replace:ongoing_landing_page"
     assert write_intent.arguments == {"markdown": "Landing page body"}
