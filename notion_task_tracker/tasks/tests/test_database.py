@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from notion_task_tracker import COMPLETED_LANDING_PAGE_TITLE, LANDING_PAGE_TITLE, PagePointer
+from notion_task_tracker import COMPLETED_LANDING_PAGE_TITLE, LANDING_PAGE_TITLE, TrackedPage
 from notion_task_tracker.tasks import Priority, TaskDependencyGraph, Task, TaskStatus
 from notion_task_tracker.tasks.database import (
     TASK_DATABASE_DATA_SOURCE_URL,
@@ -49,7 +49,7 @@ class TestTaskDependencyGraphFromDatabaseQueryResults:
                     "url": "https://www.notion.so/22222222222222222222222222222222",
                 },
             ],
-            landing_page=PagePointer(
+            landing_page=TrackedPage(
                 local_page_key="landing_page",
                 title=LANDING_PAGE_TITLE,
                 notion_page_id="landing-page-id",
@@ -70,7 +70,7 @@ class TestTaskDependencyGraphFromDatabaseQueryResults:
 
         work_graph = task_dependency_graph_from_database_query_results(
             query_results=[],
-            landing_page=PagePointer(
+            landing_page=TrackedPage(
                 local_page_key="landing_page",
                 title=LANDING_PAGE_TITLE,
                 notion_page_id="landing-page-id",
@@ -92,7 +92,7 @@ class TestTaskDependencyGraphFromDatabaseQueryResults:
                     "url": "https://www.notion.so/33333333333333333333333333333333",
                 },
             ],
-            landing_page=PagePointer(
+            landing_page=TrackedPage(
                 local_page_key="landing_page",
                 title=LANDING_PAGE_TITLE,
                 notion_page_id="landing-page-id",
@@ -114,7 +114,7 @@ class TestTaskDependencyGraphFromDatabaseQueryResults:
                     "url": "https://www.notion.so/Root-task-22222222222222222222222222222222",
                 },
             ],
-            landing_page=PagePointer(
+            landing_page=TrackedPage(
                 local_page_key="landing_page",
                 title=LANDING_PAGE_TITLE,
                 notion_page_id="landing-page-id",
@@ -137,7 +137,7 @@ class TestTaskDependencyGraphFromDatabaseQueryResults:
                     "url": "https://www.notion.so/11111111111111111111111111111111",
                 },
             ],
-            landing_page=PagePointer(
+            landing_page=TrackedPage(
                 local_page_key="landing_page",
                 title=LANDING_PAGE_TITLE,
                 notion_page_id="landing-page-id",
@@ -173,7 +173,7 @@ class TestTaskDependencyGraphFromDatabaseQueryResults:
                     "url": "https://www.notion.so/22222222222222222222222222222222",
                 },
             ],
-            landing_page=PagePointer(
+            landing_page=TrackedPage(
                 local_page_key="landing_page",
                 title=LANDING_PAGE_TITLE,
                 notion_page_id="landing-page-id",
@@ -194,7 +194,7 @@ class TestTaskDependencyGraphFromDatabaseQueryResults:
                     "url": "https://www.notion.so/22222222222222222222222222222222",
                 },
             ],
-            landing_page=PagePointer(
+            landing_page=TrackedPage(
                 local_page_key="landing_page",
                 title=LANDING_PAGE_TITLE,
                 notion_page_id="landing-page-id",
@@ -223,7 +223,7 @@ class TestTaskDependencyGraphFromDatabaseQueryResults:
                     "url": "https://www.notion.so/33333333333333333333333333333333",
                 },
             ],
-            landing_page=PagePointer(
+            landing_page=TrackedPage(
                 local_page_key="landing_page",
                 title=LANDING_PAGE_TITLE,
                 notion_page_id="landing-page-id",
@@ -251,7 +251,7 @@ class TestTaskDependencyGraphFromDatabaseQueryResults:
                         "url": "https://www.notion.so/22222222222222222222222222222222",
                     },
                 ],
-                landing_page=PagePointer(
+                landing_page=TrackedPage(
                     local_page_key="landing_page",
                     title=LANDING_PAGE_TITLE,
                     notion_page_id="landing-page-id",

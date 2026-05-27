@@ -14,13 +14,13 @@ from notion_task_tracker.external_links import ExternalLink
 from notion_task_tracker.notion_io.page_registry import (
     NotionPageReference,
     NotionPageRegistry,
-    PagePointer,
 )
 from notion_task_tracker.notion_io.writes import (
     NotionPlanningError,
     NotionWriteIntent,
 )
 from notion_task_tracker.json_file import write_json_file
+from notion_task_tracker.tracked_pages import TrackedPage
 from notion_task_tracker.apply_tracker_command import (
     TrackerCommandResult,
     apply_command_files,
@@ -71,8 +71,8 @@ __all__ = [
     "NotionPlanningError",
     "NotionTaskReconcileSummary",
     "NotionWriteIntent",
-    "PagePointer",
     "Priority",
+    "TrackedPage",
     "ExistingSynthesisPageMention",
     "SynthesisNotesMetadata",
     "SynthesisPageMetadata",

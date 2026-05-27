@@ -1,16 +1,21 @@
 from notion_task_tracker.miscellaneous_pages import MiscellaneousNotesMetadata
+from notion_task_tracker.notion_io.miscellaneous_writes import (
+    miscellaneous_note_append_write_intent,
+    notion_write_plan_for_miscellaneous_notes,
+)
 
 
 class TestMiscellaneousNotesMetadataAppendToDatedPage:
     def test_appends_context_to_one_dated_subpage(self):
         miscellaneous_notes = MiscellaneousNotesMetadata()
 
-        write_intent = miscellaneous_notes.append_to_dated_page(
+        dated_page, note_entry = miscellaneous_notes.append_to_dated_page(
             note_date="2026-05-24",
             lines=["Random thought not yet tied to a task."],
             source_page_id="source-page",
             source_block_id="source-block",
         )
+        write_intent = miscellaneous_note_append_write_intent(miscellaneous_notes, dated_page, note_entry)
 
         assert list(miscellaneous_notes.dated_pages) == ["2026-05-24"]
         assert miscellaneous_notes.dated_pages["2026-05-24"].entries[0].lines == [
@@ -31,7 +36,7 @@ class TestMiscellaneousNotesMetadataBuildNotionWritePlan:
             lines=["Meeting fragment that may become work later."],
         )
 
-        write_intents = miscellaneous_notes.build_notion_write_plan()
+        write_intents = notion_write_plan_for_miscellaneous_notes(miscellaneous_notes)
 
         create_page_keys = {
             write_intent.arguments["local_page_key"]

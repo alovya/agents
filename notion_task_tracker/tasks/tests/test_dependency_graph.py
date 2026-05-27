@@ -5,6 +5,11 @@ import json
 import pytest
 
 from notion_task_tracker import COMPLETED_LANDING_PAGE_TITLE, LANDING_PAGE_TITLE
+from notion_task_tracker.notion_io.task_writes import (
+    completion_write_intents,
+    notion_write_plan_for_task_graph,
+    timeline_log_write_intent,
+)
 from notion_task_tracker.tasks import (
     Priority,
     TaskDependencyGraph,
@@ -150,7 +155,7 @@ class TestTaskDependencyGraphBuildNotionWritePlan:
     def test_refreshes_fixed_pages_and_database_task_properties_without_creating_task_pages(self):
         work_graph = _build_recursive_work_graph()
 
-        write_intents = work_graph.build_notion_write_plan()
+        write_intents = notion_write_plan_for_task_graph(work_graph)
 
         assert not any(
             write_intent.operation_key.startswith("create:task:")
@@ -176,7 +181,7 @@ class TestTaskDependencyGraphBuildNotionWritePlan:
 
         landing_refresh_intent = next(
             write_intent
-            for write_intent in work_graph.build_notion_write_plan()
+            for write_intent in notion_write_plan_for_task_graph(work_graph)
             if write_intent.operation_key == "replace:landing_page"
         )
 
@@ -194,7 +199,7 @@ class TestTaskDependencyGraphBuildNotionWritePlan:
 
         completed_landing_refresh_intent = next(
             write_intent
-            for write_intent in work_graph.build_notion_write_plan()
+            for write_intent in notion_write_plan_for_task_graph(work_graph)
             if write_intent.operation_key == "replace:completed_landing_page"
         )
 
@@ -205,7 +210,7 @@ class TestTaskDependencyGraphBuildNotionWritePlan:
 
         title_refresh_intent = next(
             write_intent
-            for write_intent in work_graph.build_notion_write_plan()
+            for write_intent in notion_write_plan_for_task_graph(work_graph)
             if write_intent.operation_key == "update_properties:task:ALOVYA-4"
         )
 
@@ -278,10 +283,11 @@ class TestTaskDependencyGraphAppendTaskTimelineLog:
             lines=["Tested the mismatch fix and found one remaining failing node."],
         )
 
-        write_intent = work_graph.append_task_timeline_log(
+        timeline_log_change = work_graph.append_task_timeline_log(
             task_id="ALOVYA-5",
             timeline_entry=timeline_entry,
         )
+        write_intent = timeline_log_write_intent(timeline_log_change)
 
         assert work_graph.tasks["ALOVYA-5"].timeline_entries[-1] == timeline_entry
         assert write_intent.operation_name == "update_timeline_log"
@@ -302,7 +308,7 @@ class TestTaskDependencyGraphAppendTaskTimelineLog:
             )
         )
 
-        write_intent = work_graph.append_task_timeline_log(
+        timeline_log_change = work_graph.append_task_timeline_log(
             task_id="ALOVYA-5",
             timeline_entry=TimelineEntry(
                 entry_date="2026-05-25",
@@ -310,6 +316,7 @@ class TestTaskDependencyGraphAppendTaskTimelineLog:
                 lines=["Found the stale REST request."],
             ),
         )
+        write_intent = timeline_log_write_intent(timeline_log_change)
 
         assert work_graph.tasks["ALOVYA-5"].timeline_entries == [
             TimelineEntry(
@@ -338,7 +345,7 @@ class TestTaskDependencyGraphAppendTaskTimelineLog:
             )
         )
 
-        write_intent = work_graph.append_task_timeline_log(
+        timeline_log_change = work_graph.append_task_timeline_log(
             task_id="ALOVYA-5",
             timeline_entry=TimelineEntry(
                 entry_date="2026-05-25",
@@ -347,6 +354,7 @@ class TestTaskDependencyGraphAppendTaskTimelineLog:
                 lines=["Moved task metadata into the database."],
             ),
         )
+        write_intent = timeline_log_write_intent(timeline_log_change)
 
         assert write_intent.arguments["appended_markdown"] == "\n".join([
             "<details>",
@@ -403,10 +411,11 @@ class TestTaskDependencyGraphCompleteTask:
             lines=["Completed the mismatch investigation."],
         )
 
-        write_intents = work_graph.complete_task(
+        completion_change = work_graph.complete_task(
             task_id="ALOVYA-5",
             timeline_entry=timeline_entry,
         )
+        write_intents = completion_write_intents(work_graph, completion_change)
 
         assert work_graph.tasks["ALOVYA-5"].status == TaskStatus.COMPLETE
         assert work_graph.tasks["ALOVYA-5"].timeline_entries[-1] == timeline_entry

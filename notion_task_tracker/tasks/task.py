@@ -8,8 +8,6 @@ from enum import Enum
 from typing import Any
 
 from notion_task_tracker.external_links import ExternalLink
-from notion_task_tracker.notion_io.markdown import bullet, heading, join_markdown_blocks, toggle
-from notion_task_tracker.notion_io.writes import NotionWriteIntent
 
 
 COMPLETED_TASK_PRIORITY_LABEL = "N/A"
@@ -86,19 +84,6 @@ class TimelineEntry:
     lines: list[str] = field(default_factory=list)
     subheading: str | None = None
 
-    def to_content_markdown(self) -> str:
-        lines_markdown = join_markdown_blocks([bullet(line) for line in self.lines])
-        if self.subheading:
-            return toggle(self.subheading, lines_markdown)
-
-        return lines_markdown
-
-    def to_timeline_section_markdown(self) -> str:
-        return join_markdown_blocks([
-            heading(3, self.heading),
-            self.to_content_markdown(),
-        ])
-
     def to_tracker_state(self) -> dict[str, Any]:
         return {
             "entry_date": self.entry_date,
@@ -123,6 +108,24 @@ class TimelineEntry:
             lines=list(command.get("lines", [])),
             subheading=command.get("subheading"),
         )
+
+
+@dataclass(frozen=True)
+class TimelineLogChange:
+    """Timeline update caused by one task command."""
+
+    task_id: str
+    timeline_entry: TimelineEntry
+    appended_timeline_entry: TimelineEntry
+    existing_timeline_entry: TimelineEntry | None = None
+
+
+@dataclass(frozen=True)
+class TaskCompletionChange:
+    """Task completion plus the timeline entry that recorded it."""
+
+    task_id: str
+    timeline_log_change: TimelineLogChange
 
 
 @dataclass
@@ -154,64 +157,28 @@ class Task:
 
         return self.title
 
-    def database_property_refresh_intent(self) -> NotionWriteIntent:
-        return NotionWriteIntent(
-            operation_key=f"update_properties:{self.local_page_key}",
-            operation_name="update_page_properties",
-            target_page_key=self.local_page_key,
-            arguments={
-                "properties": {
-                    TASK_DATABASE_TITLE_PROPERTY: self.page_title(),
-                    TASK_DATABASE_PRIORITY_PROPERTY: self.configured_priority.value,
-                    TASK_DATABASE_STATUS_PROPERTY: self.status.value,
-                }
-            },
-        )
-
-    def append_timeline_log(self, timeline_entry: TimelineEntry) -> NotionWriteIntent:
+    def append_timeline_log(self, timeline_entry: TimelineEntry) -> TimelineLogChange:
         self.timeline_entries = _merged_timeline_entries_by_date(self.timeline_entries)
         existing_entry = _timeline_entry_for_date(self.timeline_entries, timeline_entry.entry_date)
         existing_entry_before_append = _copy_timeline_entry(existing_entry) if existing_entry is not None else None
         appended_entry = _copy_timeline_entry(timeline_entry)
         timeline_entry_to_render = _upsert_timeline_entry(self, timeline_entry)
-        return self._timeline_log_update_intent(
+        return TimelineLogChange(
+            task_id=self.task_id,
             existing_timeline_entry=existing_entry_before_append,
             appended_timeline_entry=appended_entry,
             timeline_entry=timeline_entry_to_render,
         )
 
-    def complete_with_timeline_log(self, timeline_entry: TimelineEntry) -> tuple[NotionWriteIntent, NotionWriteIntent]:
+    def complete_with_timeline_log(self, timeline_entry: TimelineEntry) -> TaskCompletionChange:
         self.status = TaskStatus.COMPLETE
-        timeline_log_update_intent = self.append_timeline_log(timeline_entry)
-        return self.database_property_refresh_intent(), timeline_log_update_intent
+        return TaskCompletionChange(
+            task_id=self.task_id,
+            timeline_log_change=self.append_timeline_log(timeline_entry),
+        )
 
     def normalise_timeline_entries(self) -> None:
         self.timeline_entries = _merged_timeline_entries_by_date(self.timeline_entries)
-
-    def _timeline_log_update_intent(
-        self,
-        existing_timeline_entry: TimelineEntry | None,
-        appended_timeline_entry: TimelineEntry,
-        timeline_entry: TimelineEntry,
-    ) -> NotionWriteIntent:
-        arguments = {
-            "task_id": self.task_id,
-            "timeline_log_heading": TASK_PAGE_TIMELINE_LOG_HEADING,
-            "timeline_entry": timeline_entry.to_tracker_state(),
-            "timeline_section_markdown": timeline_entry.to_timeline_section_markdown(),
-        }
-        if existing_timeline_entry is not None:
-            arguments["existing_timeline_heading"] = existing_timeline_entry.heading
-            arguments["old_timeline_section_markdown"] = existing_timeline_entry.to_timeline_section_markdown()
-            arguments["new_timeline_section_markdown"] = timeline_entry.to_timeline_section_markdown()
-            arguments["appended_markdown"] = appended_timeline_entry.to_content_markdown()
-
-        return NotionWriteIntent(
-            operation_key=f"{UPDATE_TIMELINE_LOG_OPERATION_NAME}:{self.local_page_key}:{timeline_entry.entry_date}",
-            operation_name=UPDATE_TIMELINE_LOG_OPERATION_NAME,
-            target_page_key=self.local_page_key,
-            arguments=arguments,
-        )
 
 
 def task_id_sort_key(task_id: str) -> tuple[str, int, str]:

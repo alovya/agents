@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 
-from notion_task_tracker.notion_io.markdown import heading, join_markdown_blocks
 from notion_task_tracker.tasks.task import (
     MENTION_DATE_START_PATTERN,
     PROPERTIES_BLOCK_PATTERN,
@@ -47,8 +46,8 @@ def initialised_task_timeline_markdown(
 ) -> str:
     del entry_date
     existing_body_content = body_content_to_subsume_under_initial_timeline_date(fetched_page_content)
-    return join_markdown_blocks([
-        heading(2, TASK_PAGE_TIMELINE_LOG_HEADING),
+    return _join_markdown_blocks([
+        f"## {TASK_PAGE_TIMELINE_LOG_HEADING}",
         timeline_section_markdown,
         existing_body_content,
     ])
@@ -124,3 +123,7 @@ def _entry_date_from_timeline_heading(heading: str) -> str | None:
         return plain_date_match.group(0)
 
     return None
+
+
+def _join_markdown_blocks(blocks: list[str]) -> str:
+    return "\n".join(block.rstrip() for block in blocks if block.strip())

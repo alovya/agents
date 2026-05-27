@@ -8,13 +8,32 @@ from pathlib import Path
 from typing import Any
 
 from notion_task_tracker.json_file import write_json_file
-from notion_task_tracker.notion_io.writes import NotionPlanningError, NotionWriteIntent
+from notion_task_tracker.errors import NotionPlanningError
+from notion_task_tracker.notion_io.writes import NotionWriteIntent
 from notion_task_tracker.notion_io.page_registry import NotionPageRegistry
+from notion_task_tracker.notion_io.task_writes import (
+    completion_write_intents,
+    notion_write_plan_for_task_graph,
+    page_registry_for_task_graph,
+    timeline_log_write_intent,
+)
+from notion_task_tracker.notion_io.miscellaneous_writes import (
+    miscellaneous_note_append_write_intent,
+    notion_write_plan_for_miscellaneous_notes,
+    page_registry_for_miscellaneous_notes,
+)
+from notion_task_tracker.notion_io.synthesis_writes import (
+    notion_write_plan_for_synthesis_notes,
+    page_registry_for_synthesis_notes,
+    synthesis_page_creation_write_intent,
+)
 from notion_task_tracker.miscellaneous_pages import MiscellaneousNotesMetadata
 from notion_task_tracker.synthesis_pages import SynthesisNotesMetadata, SynthesisPageMetadata, SynthesisSource
 from notion_task_tracker.tasks import (
+    TaskCompletionChange,
     TaskDependencyGraph,
     TimelineEntry,
+    TimelineLogChange,
 )
 
 
@@ -143,8 +162,9 @@ def _apply_task_command(
     command_handler,
 ) -> TrackerCommandResult:
     work_graph = TaskDependencyGraph.from_tracker_state(tracker_state)
-    write_intents = _write_intents_from_task_command(command_handler(work_graph, command))
-    page_registry = work_graph.page_registry()
+    task_command_change = command_handler(work_graph, command)
+    write_intents = _write_intents_from_task_command(work_graph, task_command_change)
+    page_registry = page_registry_for_task_graph(work_graph)
     return TrackerCommandResult(
         tracker_state=_replace_task_pages_in_tracker_state(tracker_state, work_graph),
         write_intents=write_intents,
@@ -152,11 +172,14 @@ def _apply_task_command(
     )
 
 
-def _write_intents_from_task_command(command_result) -> list:
-    if isinstance(command_result, list):
-        return command_result
+def _write_intents_from_task_command(work_graph: TaskDependencyGraph, command_result) -> list[NotionWriteIntent]:
+    if isinstance(command_result, TimelineLogChange):
+        return [timeline_log_write_intent(command_result)]
 
-    return [command_result]
+    if isinstance(command_result, TaskCompletionChange):
+        return completion_write_intents(work_graph, command_result)
+
+    raise NotionPlanningError(f"Unsupported task command result {command_result!r}")
 
 
 def _append_task_timeline_log(
@@ -181,8 +204,8 @@ def _complete_task(
 
 def _refresh_task_pages(command: dict[str, Any], tracker_state: dict[str, Any]) -> TrackerCommandResult:
     work_graph = TaskDependencyGraph.from_tracker_state(tracker_state)
-    write_intents = _filter_write_intents(work_graph.build_notion_write_plan(), command.get("operation_keys"))
-    page_registry = work_graph.page_registry()
+    write_intents = _filter_write_intents(notion_write_plan_for_task_graph(work_graph), command.get("operation_keys"))
+    page_registry = page_registry_for_task_graph(work_graph)
     return TrackerCommandResult(
         tracker_state=_replace_task_pages_in_tracker_state(tracker_state, work_graph),
         write_intents=write_intents,
@@ -192,13 +215,14 @@ def _refresh_task_pages(command: dict[str, Any], tracker_state: dict[str, Any]) 
 
 def _apply_miscellaneous_command(command: dict[str, Any], tracker_state: dict[str, Any]) -> TrackerCommandResult:
     miscellaneous_notes = MiscellaneousNotesMetadata.from_tracker_state(tracker_state["miscellaneous_notes"])
-    write_intent = miscellaneous_notes.append_to_dated_page(
+    dated_page, note_entry = miscellaneous_notes.append_to_dated_page(
         note_date=command["note_date"],
         lines=list(command["lines"]),
         source_page_id=command.get("source_page_id"),
         source_block_id=command.get("source_block_id"),
     )
-    page_registry = miscellaneous_notes.page_registry()
+    write_intent = miscellaneous_note_append_write_intent(miscellaneous_notes, dated_page, note_entry)
+    page_registry = page_registry_for_miscellaneous_notes(miscellaneous_notes)
     return TrackerCommandResult(
         tracker_state=_replace_miscellaneous_notes_in_tracker_state(tracker_state, miscellaneous_notes),
         write_intents=[write_intent],
@@ -209,10 +233,10 @@ def _apply_miscellaneous_command(command: dict[str, Any], tracker_state: dict[st
 def _refresh_miscellaneous_pages(command: dict[str, Any], tracker_state: dict[str, Any]) -> TrackerCommandResult:
     miscellaneous_notes = MiscellaneousNotesMetadata.from_tracker_state(tracker_state["miscellaneous_notes"])
     write_intents = _filter_write_intents(
-        miscellaneous_notes.build_notion_write_plan(),
+        notion_write_plan_for_miscellaneous_notes(miscellaneous_notes),
         command.get("operation_keys"),
     )
-    page_registry = miscellaneous_notes.page_registry()
+    page_registry = page_registry_for_miscellaneous_notes(miscellaneous_notes)
     return TrackerCommandResult(
         tracker_state=_replace_miscellaneous_notes_in_tracker_state(tracker_state, miscellaneous_notes),
         write_intents=write_intents,
@@ -222,7 +246,7 @@ def _refresh_miscellaneous_pages(command: dict[str, Any], tracker_state: dict[st
 
 def _apply_synthesis_command(command: dict[str, Any], tracker_state: dict[str, Any]) -> TrackerCommandResult:
     synthesis_notes = SynthesisNotesMetadata.from_tracker_state(tracker_state["synthesis_notes"])
-    write_intent = synthesis_notes.create_synthesis_page(
+    synthesis_page = synthesis_notes.create_synthesis_page(
         SynthesisPageMetadata(
             synthesis_key=command["synthesis_key"],
             title=command["title"],
@@ -234,6 +258,7 @@ def _apply_synthesis_command(command: dict[str, Any], tracker_state: dict[str, A
             ],
         )
     )
+    write_intent = synthesis_page_creation_write_intent(synthesis_notes, synthesis_page)
     page_registry = _page_registry_for_synthesis_command(tracker_state, synthesis_notes)
     return TrackerCommandResult(
         tracker_state=_replace_synthesis_notes_in_tracker_state(tracker_state, synthesis_notes),
@@ -256,7 +281,7 @@ def _reconcile_synthesis_root_page_mentions(command: dict[str, Any], tracker_sta
 def _refresh_synthesis_pages(command: dict[str, Any], tracker_state: dict[str, Any]) -> TrackerCommandResult:
     synthesis_notes = SynthesisNotesMetadata.from_tracker_state(tracker_state["synthesis_notes"])
     write_intents = _filter_write_intents(
-        synthesis_notes.build_notion_write_plan(),
+        notion_write_plan_for_synthesis_notes(synthesis_notes),
         command.get("operation_keys"),
     )
     page_registry = _page_registry_for_synthesis_command(tracker_state, synthesis_notes)
@@ -323,9 +348,11 @@ def _page_registry_for_synthesis_command(
     synthesis_notes: SynthesisNotesMetadata,
 ) -> NotionPageRegistry:
     return _merge_page_registries(
-        TaskDependencyGraph.from_tracker_state(tracker_state).page_registry(),
-        MiscellaneousNotesMetadata.from_tracker_state(tracker_state["miscellaneous_notes"]).page_registry(),
-        synthesis_notes.page_registry(),
+        page_registry_for_task_graph(TaskDependencyGraph.from_tracker_state(tracker_state)),
+        page_registry_for_miscellaneous_notes(
+            MiscellaneousNotesMetadata.from_tracker_state(tracker_state["miscellaneous_notes"])
+        ),
+        page_registry_for_synthesis_notes(synthesis_notes),
     )
 
 

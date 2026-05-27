@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from notion_task_tracker.errors import NotionPlanningError
+
 
 @dataclass(frozen=True)
 class NotionWriteIntent:
@@ -14,7 +16,3 @@ class NotionWriteIntent:
     operation_name: str
     target_page_key: str | None
     arguments: dict[str, Any]
-
-
-class NotionPlanningError(ValueError):
-    """Raised when a write intent cannot become an exact Notion call."""

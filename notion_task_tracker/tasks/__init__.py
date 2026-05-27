@@ -5,8 +5,10 @@ from notion_task_tracker.tasks.pages.landing_pages import CompletedTasksLandingP
 from notion_task_tracker.tasks.task import (
     Priority,
     Task,
+    TaskCompletionChange,
     TaskStatus,
     TimelineEntry,
+    TimelineLogChange,
 )
 
 __all__ = [
@@ -14,7 +16,9 @@ __all__ = [
     "OngoingTasksLandingPage",
     "Priority",
     "Task",
+    "TaskCompletionChange",
     "TaskDependencyGraph",
     "TaskStatus",
     "TimelineEntry",
+    "TimelineLogChange",
 ]

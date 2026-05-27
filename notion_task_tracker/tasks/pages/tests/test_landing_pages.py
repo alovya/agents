@@ -1,7 +1,10 @@
-from notion_task_tracker import PagePointer
+from notion_task_tracker import TrackedPage
 from notion_task_tracker.notion_io.page_registry import NotionPageRegistry
+from notion_task_tracker.notion_io.task_writes import (
+    render_completed_landing_page_markdown,
+    render_ongoing_landing_page_markdown,
+)
 from notion_task_tracker.tasks import Priority, Task, TaskStatus
-from notion_task_tracker.tasks.pages.landing_pages import CompletedTasksLandingPage, OngoingTasksLandingPage
 
 
 def test_ongoing_tasks_landing_page_renders_priority_sections_and_child_depth():
@@ -26,11 +29,11 @@ def test_ongoing_tasks_landing_page_renders_priority_sections_and_child_depth():
         ),
     }
 
-    markdown = OngoingTasksLandingPage(PagePointer("landing_page", "Landing")).render_markdown(
+    markdown = render_ongoing_landing_page_markdown(
         tasks,
-        NotionPageRegistry.from_page_pointers([
-            PagePointer("task:ALOVYA-1", "Root", "11111111111111111111111111111111"),
-            PagePointer("task:ALOVYA-2", "Child", "22222222222222222222222222222222"),
+        NotionPageRegistry.from_tracked_pages([
+            TrackedPage("task:ALOVYA-1", "Root", "11111111111111111111111111111111"),
+            TrackedPage("task:ALOVYA-2", "Child", "22222222222222222222222222222222"),
         ]),
     )
 
@@ -61,7 +64,7 @@ def test_completed_tasks_landing_page_only_starts_from_completed_top_level_tasks
         ),
     }
 
-    markdown = CompletedTasksLandingPage(PagePointer("completed_landing_page", "Completed")).render_markdown(
+    markdown = render_completed_landing_page_markdown(
         tasks,
         NotionPageRegistry(pages={}),
     )

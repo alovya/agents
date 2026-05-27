@@ -39,6 +39,20 @@ def test_workflow_modules_do_not_import_notion_protocol_details():
         assert not any(forbidden in source for forbidden in forbidden_text), workflow_file
 
 
+def test_tracker_metadata_modules_do_not_import_notion_io():
+    metadata_files = [
+        "tasks/task.py",
+        "tasks/dependency_graph.py",
+        "tasks/database.py",
+        "tasks/pages/landing_pages.py",
+        "miscellaneous_pages.py",
+        "synthesis_pages.py",
+    ]
+
+    for metadata_file in metadata_files:
+        assert "notion_task_tracker.notion_io" not in _source(metadata_file), metadata_file
+
+
 def test_legacy_common_module_has_been_deleted():
     assert not (PACKAGE_PATH / "common.py").exists()
 

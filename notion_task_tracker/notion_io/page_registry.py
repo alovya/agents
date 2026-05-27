@@ -2,26 +2,12 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlparse
 
 from notion_task_tracker.notion_io.writes import NotionPlanningError
-
-
-_COMPACT_NOTION_PAGE_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
-_TRAILING_NOTION_PAGE_ID_PATTERN = re.compile(r"([0-9a-fA-F]{32})$")
-
-
-@dataclass
-class PagePointer:
-    """Stable reference to a Notion page."""
-
-    local_page_key: str
-    title: str
-    notion_page_id: str | None = None
-    parent_page_key: str | None = None
+from notion_task_tracker.notion_ids import canonical_notion_page_id, notion_page_id_from_url
+from notion_task_tracker.tracked_pages import TrackedPage
 
 
 @dataclass(frozen=True)
@@ -51,7 +37,7 @@ class NotionPageRegistry:
     pages: dict[str, NotionPageReference]
 
     @classmethod
-    def from_page_pointers(cls, page_pointers: list[PagePointer]) -> "NotionPageRegistry":
+    def from_tracked_pages(cls, tracked_pages: list[TrackedPage]) -> "NotionPageRegistry":
         return cls(
             pages={
                 page.local_page_key: NotionPageReference(
@@ -60,7 +46,7 @@ class NotionPageRegistry:
                     notion_page_id=page.notion_page_id,
                     parent_page_key=page.parent_page_key,
                 )
-                for page in page_pointers
+                for page in tracked_pages
             }
         )
 
@@ -116,35 +102,6 @@ class NotionPageRegistry:
         }
 
 
-def canonical_notion_page_id(notion_page_id: str) -> str:
-    compact_page_id = notion_page_id.replace("-", "").lower()
-
-    if not _COMPACT_NOTION_PAGE_ID_PATTERN.fullmatch(compact_page_id):
-        raise NotionPlanningError(f"Invalid Notion page id {notion_page_id!r}")
-
-    return compact_page_id
-
-
-def notion_page_id_from_url(notion_url: str) -> str:
-    parsed_url = urlparse(notion_url)
-    final_path_part = parsed_url.path.rstrip("/").rsplit("/", 1)[-1].replace("-", "")
-    page_id_match = _TRAILING_NOTION_PAGE_ID_PATTERN.search(final_path_part)
-
-    if page_id_match is None:
-        raise NotionPlanningError(f"Notion URL {notion_url!r} does not contain a page id")
-
-    return canonical_notion_page_id(page_id_match.group(1))
-
-
-def page_pointer_to_tracker_state(page: PagePointer) -> dict[str, Any]:
-    return {
-        "local_page_key": page.local_page_key,
-        "title": page.title,
-        "notion_page_id": page.notion_page_id,
-        "parent_page_key": page.parent_page_key,
-    }
-
-
 def notion_page_reference_to_tracker_state(page: NotionPageReference) -> dict[str, Any]:
     return {
         "local_page_key": page.local_page_key,
@@ -164,31 +121,3 @@ def notion_page_reference_from_tracker_state(tracker_state: dict[str, Any]) -> N
         parent_page_key=tracker_state.get("parent_page_key"),
     )
 
-
-def fixed_page_pointer_from_tracker_state(
-    tracker_state: dict[str, Any],
-    local_page_key: str,
-    title: str,
-) -> PagePointer:
-    return PagePointer(
-        local_page_key=local_page_key,
-        title=title,
-        notion_page_id=tracker_state.get("notion_page_id"),
-        parent_page_key=tracker_state.get("parent_page_key"),
-    )
-
-
-def validate_fixed_page_pointer(
-    page: PagePointer,
-    expected_local_page_key: str,
-    expected_title: str,
-) -> None:
-    if page.local_page_key != expected_local_page_key:
-        raise ValueError(
-            f"Fixed page key {page.local_page_key!r} should be {expected_local_page_key!r}"
-        )
-
-    if page.title != expected_title:
-        raise ValueError(
-            f"Fixed page title {page.title!r} should be {expected_title!r}"
-        )

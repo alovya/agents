@@ -11,6 +11,7 @@ from notion_task_tracker.external_links import (
     external_link_from_tracker_state,
     external_link_to_tracker_state,
 )
+from notion_task_tracker.errors import NotionPlanningError
 from notion_task_tracker.fixed_pages import (
     COMPLETED_LANDING_PAGE_LOCAL_KEY,
     COMPLETED_LANDING_PAGE_TITLE,
@@ -18,24 +19,22 @@ from notion_task_tracker.fixed_pages import (
     LANDING_PAGE_TITLE,
 )
 from notion_task_tracker.json_file import write_json_file
-from notion_task_tracker.notion_io.writes import NotionPlanningError, NotionWriteIntent
-from notion_task_tracker.notion_io.page_registry import (
-    NotionPageRegistry,
-    PagePointer,
-    fixed_page_pointer_from_tracker_state,
-    page_pointer_to_tracker_state,
-    validate_fixed_page_pointer,
-)
-
-
 from notion_task_tracker.tasks.pages.landing_pages import CompletedTasksLandingPage, OngoingTasksLandingPage
 from notion_task_tracker.tasks.task import (
     Priority,
     Task,
+    TaskCompletionChange,
     TaskStatus,
     TimelineEntry,
+    TimelineLogChange,
     _PRIORITY_RANK_BY_VALUE,
     task_id_sort_key,
+)
+from notion_task_tracker.tracked_pages import (
+    TrackedPage,
+    fixed_tracked_page_from_tracker_state,
+    tracked_page_to_tracker_state,
+    validate_fixed_tracked_page,
 )
 
 
@@ -45,7 +44,7 @@ class TaskDependencyGraph:
 
     ongoing_tasks_landing_page: OngoingTasksLandingPage = field(
         default_factory=lambda: OngoingTasksLandingPage(
-            page=PagePointer(
+            page=TrackedPage(
                 local_page_key=LANDING_PAGE_LOCAL_KEY,
                 title=LANDING_PAGE_TITLE,
             )
@@ -53,7 +52,7 @@ class TaskDependencyGraph:
     )
     completed_tasks_landing_page: CompletedTasksLandingPage = field(
         default_factory=lambda: CompletedTasksLandingPage(
-            page=PagePointer(
+            page=TrackedPage(
                 local_page_key=COMPLETED_LANDING_PAGE_LOCAL_KEY,
                 title=COMPLETED_LANDING_PAGE_TITLE,
             )
@@ -71,14 +70,14 @@ class TaskDependencyGraph:
     def from_tracker_state(cls, tracker_state: dict[str, Any]) -> TaskDependencyGraph:
         work_graph = cls(
             ongoing_tasks_landing_page=OngoingTasksLandingPage(
-                page=fixed_page_pointer_from_tracker_state(
+                page=fixed_tracked_page_from_tracker_state(
                     tracker_state=tracker_state["landing_page"],
                     local_page_key=LANDING_PAGE_LOCAL_KEY,
                     title=LANDING_PAGE_TITLE,
                 )
             ),
             completed_tasks_landing_page=CompletedTasksLandingPage(
-                page=fixed_page_pointer_from_tracker_state(
+                page=fixed_tracked_page_from_tracker_state(
                     tracker_state=tracker_state.get("completed_landing_page") or {},
                     local_page_key=COMPLETED_LANDING_PAGE_LOCAL_KEY,
                     title=COMPLETED_LANDING_PAGE_TITLE,
@@ -97,8 +96,8 @@ class TaskDependencyGraph:
 
     def to_tracker_state(self) -> dict[str, Any]:
         return {
-            "landing_page": page_pointer_to_tracker_state(self.ongoing_tasks_landing_page.page),
-            "completed_landing_page": page_pointer_to_tracker_state(self.completed_tasks_landing_page.page),
+            "landing_page": tracked_page_to_tracker_state(self.ongoing_tasks_landing_page.page),
+            "completed_landing_page": tracked_page_to_tracker_state(self.completed_tasks_landing_page.page),
             "tasks": {
                 task_id: _task_to_tracker_state(task)
                 for task_id, task in sorted(self.tasks.items(), key=lambda item: task_id_sort_key(item[0]))
@@ -132,9 +131,6 @@ class TaskDependencyGraph:
                 changes.append({"task_id": task_id, "fields": changed_fields})
 
         return changes
-
-    def page_registry(self) -> NotionPageRegistry:
-        return NotionPageRegistry.from_page_pointers(self._pages_that_should_exist())
 
     def replace_task_graph_in_tracker_state(self, tracker_state: dict[str, Any]) -> dict[str, Any]:
         updated_tracker_state = json.loads(json.dumps(tracker_state))
@@ -184,43 +180,27 @@ class TaskDependencyGraph:
         task.notion_page_id = notion_page_id
         self.set_task_parent(task_id, parent_task_id)
 
-    def build_notion_write_plan(self) -> list[NotionWriteIntent]:
-        self.validate()
-        self.recalculate_display_priorities()
-        return [
-            *self._plan_missing_page_creation(),
-            *self._plan_fixed_page_title_refreshes(),
-            *self._plan_existing_task_property_refreshes(),
-            self._plan_landing_page_refresh(),
-            *self._plan_completed_landing_page_refresh(),
-        ]
-
     def append_task_timeline_log(
         self,
         task_id: str,
         timeline_entry: TimelineEntry,
-    ) -> NotionWriteIntent:
+    ) -> TimelineLogChange:
         task = self.tasks[task_id]
-        write_intent = task.append_timeline_log(timeline_entry)
+        timeline_log_change = task.append_timeline_log(timeline_entry)
         self.validate()
         self.recalculate_display_priorities()
-        return write_intent
+        return timeline_log_change
 
     def complete_task(
         self,
         task_id: str,
         timeline_entry: TimelineEntry,
-    ) -> list[NotionWriteIntent]:
+    ) -> TaskCompletionChange:
         task = self.tasks[task_id]
-        task_property_intent, timeline_log_intent = task.complete_with_timeline_log(timeline_entry)
+        completion_change = task.complete_with_timeline_log(timeline_entry)
         self.validate()
         self.recalculate_display_priorities()
-        return [
-            task_property_intent,
-            self._plan_landing_page_refresh(),
-            *self._plan_completed_landing_page_refresh(),
-            timeline_log_intent,
-        ]
+        return completion_change
 
     def task_ids_grouped_for_landing_page(self) -> dict[Priority, list[str]]:
         self.recalculate_display_priorities()
@@ -277,66 +257,13 @@ class TaskDependencyGraph:
         for task_id in sorted(self.tasks, key=task_id_sort_key, reverse=True):
             self.tasks[task_id].displayed_priority = self._calculate_priority_visible_on_task(self.tasks[task_id])
 
-    def _plan_missing_page_creation(self) -> list[NotionWriteIntent]:
-        write_intents = []
-        page_registry = self.page_registry()
-        ongoing_page_creation = self.ongoing_tasks_landing_page.creation_intent(
-            self.ongoing_tasks_landing_page.render_markdown(self.tasks, page_registry)
-        )
-        completed_page_creation = self.completed_tasks_landing_page.creation_intent(
-            self.completed_tasks_landing_page.render_markdown(self.tasks, page_registry)
-        )
-        for page_creation in [ongoing_page_creation, completed_page_creation]:
-            if page_creation is not None:
-                write_intents.append(page_creation)
-        return write_intents
-
-    def _plan_fixed_page_title_refreshes(self) -> list[NotionWriteIntent]:
-        return [
-            title_refresh
-            for title_refresh in [
-                self.ongoing_tasks_landing_page.title_refresh_intent(),
-                self.completed_tasks_landing_page.title_refresh_intent(),
-            ]
-            if title_refresh is not None
-        ]
-
-    def _plan_existing_task_property_refreshes(self) -> list[NotionWriteIntent]:
-        return [
-            task.database_property_refresh_intent()
-            for task in sorted(self.tasks.values(), key=lambda task: task_id_sort_key(task.task_id))
-            if task.notion_page_id is not None
-        ]
-
-    def _plan_landing_page_refresh(self) -> NotionWriteIntent:
-        return self.ongoing_tasks_landing_page.refresh_intent(self.tasks, self.page_registry())
-
-    def _plan_completed_landing_page_refresh(self) -> list[NotionWriteIntent]:
-        return self.completed_tasks_landing_page.refresh_intents(self.tasks, self.page_registry())
-
-    def _pages_that_should_exist(self) -> list[PagePointer]:
-        pages = [
-            self.ongoing_tasks_landing_page.page,
-            self.completed_tasks_landing_page.page,
-        ]
-        for task in self.tasks.values():
-            pages.append(
-                PagePointer(
-                    local_page_key=task.local_page_key,
-                    title=task.page_title(),
-                    notion_page_id=task.notion_page_id,
-                    parent_page_key=None,
-                )
-            )
-        return pages
-
     def _validate_fixed_page_keys_and_titles(self) -> None:
-        validate_fixed_page_pointer(
+        validate_fixed_tracked_page(
             page=self.ongoing_tasks_landing_page.page,
             expected_local_page_key=LANDING_PAGE_LOCAL_KEY,
             expected_title=LANDING_PAGE_TITLE,
         )
-        validate_fixed_page_pointer(
+        validate_fixed_tracked_page(
             page=self.completed_tasks_landing_page.page,
             expected_local_page_key=COMPLETED_LANDING_PAGE_LOCAL_KEY,
             expected_title=COMPLETED_LANDING_PAGE_TITLE,

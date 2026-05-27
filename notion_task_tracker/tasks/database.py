@@ -7,8 +7,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from notion_task_tracker.notion_io.writes import NotionPlanningError
-from notion_task_tracker.notion_io.page_registry import PagePointer, canonical_notion_page_id, notion_page_id_from_url
+from notion_task_tracker.errors import NotionPlanningError
+from notion_task_tracker.notion_ids import canonical_notion_page_id, notion_page_id_from_url
 from notion_task_tracker.tasks.dependency_graph import TaskDependencyGraph
 from notion_task_tracker.tasks.pages.landing_pages import CompletedTasksLandingPage, OngoingTasksLandingPage
 from notion_task_tracker.tasks.task import (
@@ -21,6 +21,7 @@ from notion_task_tracker.tasks.task import (
     TaskStatus,
     task_id_sort_key,
 )
+from notion_task_tracker.tracked_pages import TrackedPage
 
 
 TASK_DATABASE_DATA_SOURCE_ID = "36b03da5-d69a-8080-91d1-000b5d7c1c8d"
@@ -35,8 +36,8 @@ _TASK_TITLE_PREFIX_PATTERN = re.compile(r"^ALOVYA-\d+:\s+")
 
 def task_dependency_graph_from_database_query_results(
     query_results: list[dict[str, Any]],
-    landing_page: PagePointer,
-    completed_landing_page: PagePointer | None = None,
+    landing_page: TrackedPage,
+    completed_landing_page: TrackedPage | None = None,
     previous_work_graph: TaskDependencyGraph | None = None,
 ) -> TaskDependencyGraph:
     previous_tasks_by_task_id = _previous_tasks_by_task_id(previous_work_graph)
@@ -318,7 +319,7 @@ def _previous_tasks_by_task_id(previous_work_graph: TaskDependencyGraph | None) 
     return dict(previous_work_graph.tasks)
 
 
-def _previous_completed_landing_page(previous_work_graph: TaskDependencyGraph | None) -> PagePointer:
+def _previous_completed_landing_page(previous_work_graph: TaskDependencyGraph | None) -> TrackedPage:
     if previous_work_graph is None:
         return TaskDependencyGraph().completed_tasks_landing_page.page
 

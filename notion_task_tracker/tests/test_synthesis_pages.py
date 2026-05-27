@@ -1,6 +1,10 @@
 import pytest
 
 from notion_task_tracker import NotionPlanningError
+from notion_task_tracker.notion_io.synthesis_writes import (
+    notion_write_plan_for_synthesis_notes,
+    synthesis_page_creation_write_intent,
+)
 from notion_task_tracker.synthesis_pages import (
     ExistingSynthesisPageMention,
     SynthesisNotesMetadata,
@@ -37,7 +41,8 @@ class TestSynthesisNotesMetadataCreateSynthesisPage:
             lines=["QDQ nodes preserve quantisation boundaries for export."],
         )
 
-        write_intent = synthesis_notes.create_synthesis_page(synthesis_page)
+        created_page = synthesis_notes.create_synthesis_page(synthesis_page)
+        write_intent = synthesis_page_creation_write_intent(synthesis_notes, created_page)
 
         assert list(synthesis_notes.pages) == ["onnx_qdq_export"]
         assert write_intent.operation_name == "create_synthesis_page"
@@ -65,7 +70,7 @@ class TestSynthesisNotesMetadataBuildNotionWritePlan:
             )
         )
 
-        write_intents = synthesis_notes.build_notion_write_plan()
+        write_intents = notion_write_plan_for_synthesis_notes(synthesis_notes)
 
         operation_keys = {write_intent.operation_key for write_intent in write_intents}
         create_page_keys = {
@@ -141,7 +146,7 @@ class TestSynthesisNotesMetadataReconcileRootPageMentionsFromContent:
         )
 
         root_page_entry = synthesis_notes.existing_page_mentions["99999999999999999999999999999999"]
-        root_page_markdown = synthesis_notes.build_notion_write_plan()[1].arguments["markdown"]
+        root_page_markdown = notion_write_plan_for_synthesis_notes(synthesis_notes)[1].arguments["markdown"]
 
         assert root_page_entry.title == "Guide"
         assert root_page_entry.root_block_type == "child_page"
@@ -238,7 +243,7 @@ class TestSynthesisNotesMetadataSnapshot:
             display_order=3,
         )
 
-        write_intents = synthesis_notes.build_notion_write_plan()
+        write_intents = notion_write_plan_for_synthesis_notes(synthesis_notes)
         create_page_keys = {
             write_intent.arguments["local_page_key"]
             for write_intent in write_intents

@@ -1,4 +1,4 @@
-"""Miscellaneous notes metadata and dated subpage planning."""
+"""Miscellaneous notes metadata and dated subpages."""
 
 from __future__ import annotations
 
@@ -9,14 +9,11 @@ from notion_task_tracker.fixed_pages import (
     MISCELLANEOUS_NOTES_PAGE_LOCAL_KEY,
     MISCELLANEOUS_NOTES_PAGE_TITLE,
 )
-from notion_task_tracker.notion_io.markdown import bullet, join_markdown_blocks, page_mention
-from notion_task_tracker.notion_io.writes import NotionWriteIntent
-from notion_task_tracker.notion_io.page_registry import (
-    NotionPageRegistry,
-    PagePointer,
-    fixed_page_pointer_from_tracker_state,
-    page_pointer_to_tracker_state,
-    validate_fixed_page_pointer,
+from notion_task_tracker.tracked_pages import (
+    TrackedPage,
+    fixed_tracked_page_from_tracker_state,
+    tracked_page_to_tracker_state,
+    validate_fixed_tracked_page,
 )
 
 
@@ -51,8 +48,8 @@ class MiscellaneousNotesPageMetadata:
 class MiscellaneousNotesMetadata:
     """Root page and dated subpages for unresolved capture."""
 
-    page: PagePointer = field(
-        default_factory=lambda: PagePointer(
+    page: TrackedPage = field(
+        default_factory=lambda: TrackedPage(
             local_page_key=MISCELLANEOUS_NOTES_PAGE_LOCAL_KEY,
             title=MISCELLANEOUS_NOTES_PAGE_TITLE,
         )
@@ -62,7 +59,7 @@ class MiscellaneousNotesMetadata:
     @classmethod
     def from_tracker_state(cls, tracker_state: dict[str, Any]) -> MiscellaneousNotesMetadata:
         miscellaneous_notes = cls(
-            page=fixed_page_pointer_from_tracker_state(
+            page=fixed_tracked_page_from_tracker_state(
                 tracker_state=tracker_state["page"],
                 local_page_key=MISCELLANEOUS_NOTES_PAGE_LOCAL_KEY,
                 title=MISCELLANEOUS_NOTES_PAGE_TITLE,
@@ -81,7 +78,7 @@ class MiscellaneousNotesMetadata:
         lines: list[str],
         source_page_id: str | None = None,
         source_block_id: str | None = None,
-    ) -> NotionWriteIntent:
+    ) -> tuple[MiscellaneousNotesPageMetadata, MiscellaneousNoteEntry]:
         dated_page = self.dated_pages.setdefault(
             note_date,
             MiscellaneousNotesPageMetadata(note_date=note_date),
@@ -93,124 +90,24 @@ class MiscellaneousNotesMetadata:
             source_block_id=source_block_id,
         )
         dated_page.entries.append(note_entry)
-        return self._plan_dated_page_append(dated_page, note_entry)
-
-    def build_notion_write_plan(self) -> list[NotionWriteIntent]:
-        self.validate()
-
-        write_intents = []
-        write_intents.extend(self._plan_missing_page_creation())
-        write_intents.append(self._plan_root_page_refresh())
-        write_intents.extend(self._plan_dated_page_refreshes())
-        return write_intents
+        return dated_page, note_entry
 
     def validate(self) -> None:
-        validate_fixed_page_pointer(
+        validate_fixed_tracked_page(
             page=self.page,
             expected_local_page_key=MISCELLANEOUS_NOTES_PAGE_LOCAL_KEY,
             expected_title=MISCELLANEOUS_NOTES_PAGE_TITLE,
         )
         self._validate_page_keys_match_page_values()
 
-    def page_registry(self) -> NotionPageRegistry:
-        self.validate()
-        return NotionPageRegistry.from_page_pointers(self._pages_that_should_exist())
-
     def to_tracker_state(self) -> dict[str, Any]:
         return {
-            "page": page_pointer_to_tracker_state(self.page),
+            "page": tracked_page_to_tracker_state(self.page),
             "dated_pages": {
                 note_date: _miscellaneous_notes_page_to_tracker_state(dated_page)
                 for note_date, dated_page in sorted(self.dated_pages.items())
             },
         }
-
-    def _plan_dated_page_append(
-        self,
-        dated_page: MiscellaneousNotesPageMetadata,
-        note_entry: MiscellaneousNoteEntry,
-    ) -> NotionWriteIntent:
-        return NotionWriteIntent(
-            operation_key=f"append_miscellaneous_context:{dated_page.local_page_key}",
-            operation_name="append_miscellaneous_context",
-            target_page_key=dated_page.local_page_key,
-            arguments={
-                "root_page_key": self.page.local_page_key,
-                "dated_page": _miscellaneous_notes_page_pointer_to_tracker_state(self.page, dated_page),
-                "markdown": _render_miscellaneous_note_entry_markdown(note_entry),
-                "root_page_markdown": self._render_root_page_markdown(),
-                "dated_page_markdown": _render_miscellaneous_notes_page_markdown(dated_page),
-            },
-        )
-
-    def _plan_missing_page_creation(self) -> list[NotionWriteIntent]:
-        write_intents = []
-
-        for page in self._pages_that_should_exist():
-            if page.notion_page_id is None:
-                write_intents.append(
-                    NotionWriteIntent(
-                        operation_key=f"create:{page.local_page_key}",
-                        operation_name="create_page",
-                        target_page_key=None,
-                        arguments={
-                            "local_page_key": page.local_page_key,
-                            "title": page.title,
-                            "parent_page_key": page.parent_page_key,
-                            "markdown": self._page_creation_markdown(page.local_page_key),
-                        },
-                    )
-                )
-
-        return write_intents
-
-    def _plan_root_page_refresh(self) -> NotionWriteIntent:
-        return NotionWriteIntent(
-            operation_key="replace:miscellaneous_notes",
-            operation_name="replace_page_markdown",
-            target_page_key=self.page.local_page_key,
-            arguments={
-                "markdown": self._render_root_page_markdown(),
-            },
-        )
-
-    def _plan_dated_page_refreshes(self) -> list[NotionWriteIntent]:
-        return [
-            NotionWriteIntent(
-                operation_key=f"replace:{dated_page.local_page_key}",
-                operation_name="replace_page_markdown",
-                target_page_key=dated_page.local_page_key,
-                arguments={
-                    "markdown": _render_miscellaneous_notes_page_markdown(dated_page),
-                },
-            )
-            for dated_page in sorted(self.dated_pages.values(), key=lambda page: page.note_date, reverse=True)
-        ]
-
-    def _pages_that_should_exist(self) -> list[PagePointer]:
-        pages = [self.page]
-
-        for dated_page in self.dated_pages.values():
-            pages.append(_miscellaneous_notes_page_pointer(self.page, dated_page))
-
-        return pages
-
-    def _render_root_page_markdown(self) -> str:
-        if not self.dated_pages:
-            return "No miscellaneous notes yet."
-
-        page_registry = self.page_registry()
-        return join_markdown_blocks([
-            bullet(_dated_page_reference(dated_page, page_registry))
-            for dated_page in sorted(self.dated_pages.values(), key=lambda page: page.note_date, reverse=True)
-        ])
-
-    def _page_creation_markdown(self, local_page_key: str) -> str:
-        if local_page_key == self.page.local_page_key:
-            return self._render_root_page_markdown()
-
-        note_date = local_page_key.removeprefix("miscellaneous:")
-        return _render_miscellaneous_notes_page_markdown(self.dated_pages[note_date])
 
     def _validate_page_keys_match_page_values(self) -> None:
         for note_date, dated_page in self.dated_pages.items():
@@ -219,54 +116,6 @@ class MiscellaneousNotesMetadata:
                     f"Miscellaneous page dictionary key {note_date!r} "
                     f"does not match page {dated_page.note_date!r}"
                 )
-
-
-def _miscellaneous_notes_page_pointer(
-    root_page: PagePointer,
-    dated_page: MiscellaneousNotesPageMetadata,
-) -> PagePointer:
-    return PagePointer(
-        local_page_key=dated_page.local_page_key,
-        title=dated_page.title,
-        notion_page_id=dated_page.notion_page_id,
-        parent_page_key=root_page.local_page_key,
-    )
-
-
-def _miscellaneous_notes_page_pointer_to_tracker_state(
-    root_page: PagePointer,
-    dated_page: MiscellaneousNotesPageMetadata,
-) -> dict[str, Any]:
-    return page_pointer_to_tracker_state(_miscellaneous_notes_page_pointer(root_page, dated_page))
-
-
-def _dated_page_reference(
-    dated_page: MiscellaneousNotesPageMetadata,
-    page_registry: NotionPageRegistry,
-) -> str:
-    if dated_page.notion_page_id is None:
-        return dated_page.title
-
-    return page_mention(dated_page.local_page_key, page_registry)
-
-
-def _render_miscellaneous_notes_page_markdown(
-    dated_page: MiscellaneousNotesPageMetadata,
-) -> str:
-    if not dated_page.entries:
-        return "No notes yet."
-
-    return join_markdown_blocks([
-        _render_miscellaneous_note_entry_markdown(note_entry)
-        for note_entry in dated_page.entries
-    ])
-
-
-def _render_miscellaneous_note_entry_markdown(note_entry: MiscellaneousNoteEntry) -> str:
-    return join_markdown_blocks([
-        bullet(line)
-        for line in note_entry.lines
-    ])
 
 
 def _miscellaneous_notes_page_to_tracker_state(
