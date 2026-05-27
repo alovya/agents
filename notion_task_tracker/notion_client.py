@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from notion_task_tracker.commands import CommandResult
+from notion_task_tracker.apply_tracker_command import TrackerCommandResult
 
 
 @dataclass(frozen=True)
@@ -33,7 +33,6 @@ class NotionClient(Protocol):
         self,
         data_source_id: str,
         properties: dict[str, Any],
-        blocks: list[dict[str, Any]],
         content: str,
         operation_key: str,
     ) -> CreatedTaskDatabasePage:
@@ -48,7 +47,7 @@ class NotionClient(Protocol):
     ) -> str:
         raise NotImplementedError
 
-    async def execute_command_result(self, command_result: CommandResult) -> NotionWriteExecutionResult:
+    async def execute_command_result(self, command_result: TrackerCommandResult) -> NotionWriteExecutionResult:
         raise NotImplementedError
 
 

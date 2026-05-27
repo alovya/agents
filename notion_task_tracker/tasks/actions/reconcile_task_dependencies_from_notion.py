@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from notion_task_tracker.commands import CommandResult, apply_command_to_tracker_state
+from notion_task_tracker.apply_tracker_command import TrackerCommandResult, apply_command_to_tracker_state
 from notion_task_tracker.notion_client import NotionClient
 from notion_task_tracker.tasks import TaskDependencyGraph
 from notion_task_tracker.tasks.database import (
@@ -13,10 +13,10 @@ from notion_task_tracker.tasks.database import (
 )
 
 
-async def reconcile_tracker_state_from_notion_pages(
+async def reconcile_tracker_state_from_notion(
     tracker_state: dict[str, Any],
     notion_client: NotionClient,
-) -> CommandResult:
+) -> TrackerCommandResult:
     if "task_database" in tracker_state:
         return await _reconcile_tracker_state_from_task_database(tracker_state, notion_client)
 
@@ -27,12 +27,12 @@ async def reconcile_tracker_state_for_command_targets(
     command: dict[str, Any],
     tracker_state: dict[str, Any],
     notion_client: NotionClient,
-) -> CommandResult:
+) -> TrackerCommandResult:
     task_ids_to_refresh = task_ids_to_refresh_before_command(command, tracker_state)
     if not task_ids_to_refresh:
-        return CommandResult(tracker_state=tracker_state, warnings=[])
+        return TrackerCommandResult(tracker_state=tracker_state, warnings=[])
 
-    work_graph = TaskDependencyGraph.from_snapshot(tracker_state)
+    work_graph = TaskDependencyGraph.from_tracker_state(tracker_state)
     refreshed_task_ids = set()
     pending_task_ids = list(dict.fromkeys(task_ids_to_refresh))
 
@@ -58,29 +58,29 @@ async def reconcile_tracker_state_for_command_targets(
 
     work_graph.validate()
     work_graph.recalculate_display_priorities()
-    return CommandResult(
+    return TrackerCommandResult(
         tracker_state=work_graph.replace_task_graph_in_tracker_state(tracker_state),
         warnings=[],
     )
 
 
 def maybe_repair_reconciled_task_pages(
-    reconcile_result: CommandResult,
+    reconcile_result: TrackerCommandResult,
     task_graph_changes: list[dict[str, Any]],
-) -> CommandResult:
+) -> TrackerCommandResult:
     if not task_graph_changes and not reconcile_result.warnings:
         return reconcile_result
 
     repair_result = apply_command_to_tracker_state(
         command={
             "command": "refresh_task_pages",
-            "operation_keys": TaskDependencyGraph.from_snapshot(
+            "operation_keys": TaskDependencyGraph.from_tracker_state(
                 reconcile_result.tracker_state
             ).repair_operation_keys_for_changes(task_graph_changes),
         },
         tracker_state=reconcile_result.tracker_state,
     )
-    return CommandResult(
+    return TrackerCommandResult(
         tracker_state=repair_result.tracker_state,
         write_intents=repair_result.write_intents,
         page_registry=repair_result.page_registry,
@@ -91,8 +91,8 @@ def maybe_repair_reconciled_task_pages(
 async def _reconcile_tracker_state_from_task_database(
     tracker_state: dict[str, Any],
     notion_client: NotionClient,
-) -> CommandResult:
-    previous_work_graph = TaskDependencyGraph.from_snapshot(tracker_state)
+) -> TrackerCommandResult:
+    previous_work_graph = TaskDependencyGraph.from_tracker_state(tracker_state)
     database_rows = await notion_client.query_task_database_rows(tracker_state)
     work_graph = task_dependency_graph_from_database_query_results(
         query_results=database_rows,
@@ -100,7 +100,7 @@ async def _reconcile_tracker_state_from_task_database(
         completed_landing_page=previous_work_graph.completed_tasks_landing_page.page,
         previous_work_graph=previous_work_graph,
     )
-    return CommandResult(
+    return TrackerCommandResult(
         tracker_state=work_graph.replace_task_graph_in_tracker_state(tracker_state),
         warnings=[],
     )

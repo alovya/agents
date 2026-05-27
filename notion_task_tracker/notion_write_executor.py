@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from notion_task_tracker.commands import CommandResult, apply_command_to_tracker_state
+from notion_task_tracker.apply_tracker_command import TrackerCommandResult, apply_command_to_tracker_state
 from notion_task_tracker.notion_client import NotionClient
 
 
 async def execute_command_result_writes(
-    command_result: CommandResult,
+    command_result: TrackerCommandResult,
     notion_client: NotionClient,
 ) -> tuple[dict[str, Any], list[str]]:
     if not command_result.write_intents:

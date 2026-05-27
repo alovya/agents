@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from notion_task_tracker.notion_pages import COMPLETED_LANDING_PAGE_TITLE, LANDING_PAGE_TITLE
+from notion_task_tracker import COMPLETED_LANDING_PAGE_TITLE, LANDING_PAGE_TITLE
 from notion_task_tracker.tasks import (
     Priority,
     TaskDependencyGraph,
@@ -77,7 +77,7 @@ class TestTaskDependencyGraphValidate:
 
 class TestTaskDependencyGraphFromSnapshot:
     def test_loads_null_completed_landing_page_as_missing_page_id(self):
-        work_graph = TaskDependencyGraph.from_snapshot(
+        work_graph = TaskDependencyGraph.from_tracker_state(
             {
                 "landing_page": {
                     "local_page_key": "landing_page",
@@ -180,26 +180,13 @@ class TestTaskDependencyGraphBuildNotionWritePlan:
             if write_intent.operation_key == "replace:landing_page"
         )
 
-        landing_blocks = landing_refresh_intent.arguments["blocks"]
-        landing_task_blocks = [
-            block
-            for block in landing_blocks
-            if block["type"] == "bulleted_list_item"
-        ]
-        assert landing_blocks[0] == {"type": "heading_2", "text": "P0 (high impact and urgent)"}
-        assert landing_task_blocks[0]["page_key"] == "task:ALOVYA-2"
-        assert landing_task_blocks[0]["depth"] == 0
-        assert landing_task_blocks[0]["text"] == "[P0] Activation quantisation stack: Active"
-        assert landing_task_blocks[0]["color"] == "red"
-        assert landing_task_blocks[1]["page_key"] == "task:ALOVYA-3"
-        assert landing_task_blocks[1]["depth"] == 1
-        assert landing_task_blocks[1]["color"] == "red"
-        assert landing_task_blocks[2]["page_key"] == "task:ALOVYA-5"
-        assert landing_task_blocks[2]["depth"] == 2
-        assert landing_task_blocks[2]["color"] == "red"
-        assert landing_task_blocks[3]["page_key"] == "task:ALOVYA-4"
-        assert landing_task_blocks[3]["color"] == "green"
-        assert landing_task_blocks[3]["text"].startswith("[N/A]")
+        landing_markdown = landing_refresh_intent.arguments["markdown"]
+
+        assert "## P0 (high impact and urgent)" in landing_markdown
+        assert '- [P0] <mention-page url="https://www.notion.so/22222222222222222222222222222222"/>: Active {color="red"}' in landing_markdown
+        assert '\t- [P0] <mention-page url="https://www.notion.so/33333333333333333333333333333333"/>: Active {color="red"}' in landing_markdown
+        assert '\t\t- [P0] <mention-page url="https://www.notion.so/55555555555555555555555555555555"/>: Blocked {color="red"}' in landing_markdown
+        assert '\t- [N/A] <mention-page url="https://www.notion.so/44444444444444444444444444444444"/>: Complete {color="green"}' in landing_markdown
 
     def test_renders_completed_page_from_completed_top_level_tasks_only(self):
         work_graph = _build_recursive_work_graph()
@@ -211,9 +198,7 @@ class TestTaskDependencyGraphBuildNotionWritePlan:
             if write_intent.operation_key == "replace:completed_landing_page"
         )
 
-        assert completed_landing_refresh_intent.arguments["blocks"] == [
-            {"type": "paragraph", "text": "No completed tasks yet."}
-        ]
+        assert completed_landing_refresh_intent.arguments["markdown"] == "No completed tasks yet."
 
     def test_completed_task_page_title_strikes_through_and_properties_include_database_metadata(self):
         work_graph = _build_recursive_work_graph()
@@ -304,8 +289,8 @@ class TestTaskDependencyGraphAppendTaskTimelineLog:
         assert write_intent.arguments["task_id"] == "ALOVYA-5"
         assert write_intent.arguments["timeline_log_heading"] == "Timeline log"
         assert write_intent.arguments["timeline_entry"]["entry_date"] == "2026-05-25"
-        assert write_intent.arguments["blocks"][0]["text"] == '<mention-date start="2026-05-25"/>'
-        assert "existing_blocks" not in write_intent.arguments
+        assert '### <mention-date start="2026-05-25"/>' in write_intent.arguments["timeline_section_markdown"]
+        assert "old_timeline_section_markdown" not in write_intent.arguments
 
     def test_appends_lines_to_existing_timeline_entry_for_same_date(self):
         work_graph = _build_recursive_work_graph()
@@ -337,13 +322,12 @@ class TestTaskDependencyGraphAppendTaskTimelineLog:
             )
         ]
         assert write_intent.arguments["timeline_entry"]["lines"] == []
-        assert write_intent.arguments["append_blocks"] == [
-            {
-                "type": "bulleted_list_item",
-                "depth": 0,
-                "text": "Found the stale REST request.",
-            },
-        ]
+        assert write_intent.arguments["appended_markdown"] == "- Found the stale REST request."
+        assert write_intent.arguments["new_timeline_section_markdown"] == "\n".join([
+            '### <mention-date start="2026-05-25"/>',
+            "- Started debugging the repair path.",
+            "- Found the stale REST request.",
+        ])
 
     def test_appends_subheaded_lines_as_toggle_content(self):
         work_graph = _build_recursive_work_graph()
@@ -364,19 +348,12 @@ class TestTaskDependencyGraphAppendTaskTimelineLog:
             ),
         )
 
-        assert write_intent.arguments["append_blocks"] == [
-            {
-                "type": "toggle",
-                "text": "Design notes",
-                "children": [
-                    {
-                        "type": "bulleted_list_item",
-                        "depth": 0,
-                        "text": "Moved task metadata into the database.",
-                    }
-                ],
-            }
-        ]
+        assert write_intent.arguments["appended_markdown"] == "\n".join([
+            "<details>",
+            "<summary>Design notes</summary>",
+            "\t- Moved task metadata into the database.",
+            "</details>",
+        ])
 
     def test_collapses_existing_duplicate_date_headings_before_appending_lines(self):
         work_graph = _build_recursive_work_graph()
@@ -442,24 +419,24 @@ class TestTaskDependencyGraphCompleteTask:
 
 class TestTaskDependencyGraphSnapshot:
     def test_round_trip_preserves_graph_metadata(self, tmp_path):
-        snapshot_path = tmp_path / "notion_tasks_graph.json"
+        tracker_state_path = tmp_path / "notion_tasks_graph.json"
         work_graph = _build_recursive_work_graph()
         work_graph.recalculate_display_priorities()
 
-        work_graph.write_snapshot(snapshot_path)
-        loaded_work_graph = TaskDependencyGraph.from_snapshot_path(snapshot_path)
+        work_graph.write_tracker_state(tracker_state_path)
+        loaded_work_graph = TaskDependencyGraph.from_tracker_state_path(tracker_state_path)
 
-        assert loaded_work_graph.to_snapshot() == work_graph.to_snapshot()
+        assert loaded_work_graph.to_tracker_state() == work_graph.to_tracker_state()
         assert loaded_work_graph.tasks["ALOVYA-2"].displayed_priority == Priority.P0
 
     def test_load_normalizes_fixed_page_titles(self, tmp_path):
-        snapshot_path = tmp_path / "notion_tasks_graph.json"
-        snapshot = TaskDependencyGraph().to_snapshot()
-        snapshot["landing_page"]["title"] = "User-edited landing title"
-        snapshot["landing_page"]["notion_page_id"] = "landing-page-id"
-        snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
+        tracker_state_path = tmp_path / "notion_tasks_graph.json"
+        tracker_state = TaskDependencyGraph().to_tracker_state()
+        tracker_state["landing_page"]["title"] = "User-edited landing title"
+        tracker_state["landing_page"]["notion_page_id"] = "landing-page-id"
+        tracker_state_path.write_text(json.dumps(tracker_state), encoding="utf-8")
 
-        loaded_work_graph = TaskDependencyGraph.from_snapshot_path(snapshot_path)
+        loaded_work_graph = TaskDependencyGraph.from_tracker_state_path(tracker_state_path)
 
         assert loaded_work_graph.ongoing_tasks_landing_page.page.title == LANDING_PAGE_TITLE
         assert loaded_work_graph.ongoing_tasks_landing_page.page.notion_page_id == "landing-page-id"

@@ -4,14 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
 
-from notion_task_tracker.notion_pages import (
-    NotionWriteIntent,
-    PagePointer,
-    heading_block,
-    paragraph_block,
-)
+from notion_task_tracker.notion_markdown import bullet, heading, join_markdown_blocks, page_mention
+from notion_task_tracker.notion_writes import NotionWriteIntent
+from notion_task_tracker.page_registry import NotionPageRegistry, PagePointer
 from notion_task_tracker.tasks.task import (
     COMPLETED_TASK_PRIORITY_LABEL,
     LANDING_COLOR_BY_PRIORITY,
@@ -28,11 +24,11 @@ from notion_task_tracker.tasks.task import (
 class OngoingTasksLandingPage:
     page: PagePointer
 
-    def creation_intent(self, blocks: list[dict[str, Any]]) -> NotionWriteIntent | None:
+    def creation_intent(self, markdown: str) -> NotionWriteIntent | None:
         if self.page.notion_page_id is not None:
             return None
 
-        return _page_creation_intent(self.page, blocks)
+        return _page_creation_intent(self.page, markdown)
 
     def title_refresh_intent(self) -> NotionWriteIntent | None:
         if self.page.notion_page_id is None:
@@ -40,29 +36,30 @@ class OngoingTasksLandingPage:
 
         return _page_title_refresh_intent(self.page)
 
-    def refresh_intent(self, tasks: dict[str, Task]) -> NotionWriteIntent:
+    def refresh_intent(self, tasks: dict[str, Task], page_registry: NotionPageRegistry) -> NotionWriteIntent:
         return NotionWriteIntent(
             operation_key="replace:landing_page",
-            operation_name="replace_page_children",
+            operation_name="replace_page_markdown",
             target_page_key=self.page.local_page_key,
-            arguments={"blocks": self.render_blocks(tasks)},
+            arguments={"markdown": self.render_markdown(tasks, page_registry)},
         )
 
-    def render_blocks(self, tasks: dict[str, Task]) -> list[dict[str, Any]]:
-        blocks = []
+    def render_markdown(self, tasks: dict[str, Task], page_registry: NotionPageRegistry) -> str:
+        markdown_blocks = []
         for priority, task_ids in self.task_ids_grouped_by_priority(tasks).items():
             if task_ids:
-                blocks.append(heading_block(level=2, text=LANDING_HEADING_BY_PRIORITY[priority]))
+                markdown_blocks.append(heading(2, LANDING_HEADING_BY_PRIORITY[priority]))
                 for task_id in task_ids:
-                    blocks.extend(
-                        _render_task_tree_blocks(
+                    markdown_blocks.append(
+                        _render_task_tree_markdown(
                             tasks=tasks,
                             task_id=task_id,
                             depth=0,
                             task_should_be_visible=_task_should_appear_inside_ongoing_landing_tree,
+                            page_registry=page_registry,
                         )
                     )
-        return blocks
+        return join_markdown_blocks(markdown_blocks)
 
     def task_ids_grouped_by_priority(self, tasks: dict[str, Task]) -> dict[Priority, list[str]]:
         return {
@@ -79,11 +76,11 @@ class OngoingTasksLandingPage:
 class CompletedTasksLandingPage:
     page: PagePointer
 
-    def creation_intent(self, blocks: list[dict[str, Any]]) -> NotionWriteIntent | None:
+    def creation_intent(self, markdown: str) -> NotionWriteIntent | None:
         if self.page.notion_page_id is not None:
             return None
 
-        return _page_creation_intent(self.page, blocks)
+        return _page_creation_intent(self.page, markdown)
 
     def title_refresh_intent(self) -> NotionWriteIntent | None:
         if self.page.notion_page_id is None:
@@ -91,24 +88,24 @@ class CompletedTasksLandingPage:
 
         return _page_title_refresh_intent(self.page)
 
-    def refresh_intents(self, tasks: dict[str, Task]) -> list[NotionWriteIntent]:
+    def refresh_intents(self, tasks: dict[str, Task], page_registry: NotionPageRegistry) -> list[NotionWriteIntent]:
         if self.page.notion_page_id is None:
             return []
 
         return [
             NotionWriteIntent(
                 operation_key="replace:completed_landing_page",
-                operation_name="replace_page_children",
+                operation_name="replace_page_markdown",
                 target_page_key=self.page.local_page_key,
-                arguments={"blocks": self.render_blocks(tasks)},
+                arguments={"markdown": self.render_markdown(tasks, page_registry)},
             )
         ]
 
-    def render_blocks(self, tasks: dict[str, Task]) -> list[dict[str, Any]]:
-        blocks = []
-        self._append_status_section(TaskStatus.COMPLETE, "Completed", tasks, blocks)
-        self._append_status_section(TaskStatus.CANCELLED, "Cancelled", tasks, blocks)
-        return blocks or [paragraph_block(text="No completed tasks yet.")]
+    def render_markdown(self, tasks: dict[str, Task], page_registry: NotionPageRegistry) -> str:
+        markdown_blocks = []
+        self._append_status_section(TaskStatus.COMPLETE, "Completed", tasks, markdown_blocks, page_registry)
+        self._append_status_section(TaskStatus.CANCELLED, "Cancelled", tasks, markdown_blocks, page_registry)
+        return join_markdown_blocks(markdown_blocks) or "No completed tasks yet."
 
     def completed_top_level_task_ids(self, tasks: dict[str, Task]) -> list[str]:
         return _top_level_task_ids_matching(tasks, lambda task: task.status == TaskStatus.COMPLETE)
@@ -121,24 +118,26 @@ class CompletedTasksLandingPage:
         status: TaskStatus,
         section_title: str,
         tasks: dict[str, Task],
-        blocks: list[dict[str, Any]],
+        markdown_blocks: list[str],
+        page_registry: NotionPageRegistry,
     ) -> None:
         task_should_be_visible = lambda task: task.status == status
         task_ids = _top_level_task_ids_matching(tasks, task_should_be_visible)
         if task_ids:
-            blocks.append(heading_block(level=2, text=section_title))
+            markdown_blocks.append(heading(2, section_title))
             for task_id in task_ids:
-                blocks.extend(
-                    _render_task_tree_blocks(
+                markdown_blocks.append(
+                    _render_task_tree_markdown(
                         tasks=tasks,
                         task_id=task_id,
                         depth=0,
                         task_should_be_visible=task_should_be_visible,
+                        page_registry=page_registry,
                     )
                 )
 
 
-def _page_creation_intent(page: PagePointer, blocks: list[dict[str, Any]]) -> NotionWriteIntent:
+def _page_creation_intent(page: PagePointer, markdown: str) -> NotionWriteIntent:
     return NotionWriteIntent(
         operation_key=f"create:{page.local_page_key}",
         operation_name="create_page",
@@ -147,7 +146,7 @@ def _page_creation_intent(page: PagePointer, blocks: list[dict[str, Any]]) -> No
             "local_page_key": page.local_page_key,
             "title": page.title,
             "parent_page_key": page.parent_page_key,
-            "blocks": blocks,
+            "markdown": markdown,
         },
     )
 
@@ -161,35 +160,35 @@ def _page_title_refresh_intent(page: PagePointer) -> NotionWriteIntent:
     )
 
 
-def _render_task_tree_blocks(
+def _render_task_tree_markdown(
     tasks: dict[str, Task],
     task_id: str,
     depth: int,
     task_should_be_visible: Callable[[Task], bool],
-) -> list[dict[str, Any]]:
+    page_registry: NotionPageRegistry,
+) -> str:
     task = tasks[task_id]
     displayed_priority = task.displayed_priority or task.configured_priority
-    blocks = [
-        {
-            "type": "bulleted_list_item",
-            "depth": depth,
-            "text": _format_landing_task_text(task, displayed_priority),
-            "page_key": task.local_page_key,
-            "color": _landing_color_for_task(task, displayed_priority),
-        }
+    lines = [
+        bullet(
+            text=_format_landing_task_text(task, displayed_priority, page_registry),
+            depth=depth,
+            colour=_landing_color_for_task(task, displayed_priority),
+        )
     ]
     for child_task_id in sorted(task.child_task_ids, key=task_id_sort_key):
         child_task = tasks[child_task_id]
         if task_should_be_visible(child_task):
-            blocks.extend(
-                _render_task_tree_blocks(
+            lines.append(
+                _render_task_tree_markdown(
                     tasks=tasks,
                     task_id=child_task_id,
                     depth=depth + 1,
                     task_should_be_visible=task_should_be_visible,
+                    page_registry=page_registry,
                 )
             )
-    return blocks
+    return join_markdown_blocks(lines)
 
 
 def _landing_root_task_ids_matching(
@@ -231,9 +230,13 @@ def _task_should_appear_inside_ongoing_landing_tree(task: Task) -> bool:
     return True
 
 
-def _format_landing_task_text(task: Task, displayed_priority: Priority) -> str:
+def _format_landing_task_text(
+    task: Task,
+    displayed_priority: Priority,
+    page_registry: NotionPageRegistry,
+) -> str:
     priority_label = _priority_label_for_task(task, displayed_priority)
-    return f"[{priority_label}] {task.title}: {task.status.value}"
+    return f"[{priority_label}] {page_mention(task.local_page_key, page_registry)}: {task.status.value}"
 
 
 def _landing_color_for_task(task: Task, displayed_priority: Priority) -> str:

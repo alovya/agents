@@ -6,13 +6,13 @@ from dataclasses import dataclass
 import json
 from typing import Any
 
-from notion_task_tracker.commands import CommandResult, apply_command_to_tracker_state
-from notion_task_tracker.notion_pages import NotionWriteIntent
+from notion_task_tracker.apply_tracker_command import TrackerCommandResult, apply_command_to_tracker_state
+from notion_task_tracker.notion_writes import NotionWriteIntent
 from notion_task_tracker.notion_client import NotionClient
 from notion_task_tracker.tasks.task import UPDATE_TIMELINE_LOG_OPERATION_NAME
 from notion_task_tracker.tasks.pages.timeline_log import (
     fetched_task_page_has_usable_timeline_log,
-    initialised_task_timeline_blocks,
+    initialised_task_timeline_markdown,
     timeline_entries_from_fetched_task_page_content,
     timeline_entry_for_date,
 )
@@ -27,7 +27,7 @@ async def tracker_state_ready_for_command(
     command: dict[str, Any],
     tracker_state: dict[str, Any],
     notion_client: NotionClient,
-) -> CommandResult:
+) -> TrackerCommandResult:
     if _is_task_command(command):
         return await reconcile_tracker_state_for_command_targets(
             command=command,
@@ -35,14 +35,14 @@ async def tracker_state_ready_for_command(
             notion_client=notion_client,
         )
 
-    return CommandResult(tracker_state=tracker_state, warnings=[])
+    return TrackerCommandResult(tracker_state=tracker_state, warnings=[])
 
 
 async def command_result_from_current_notion_state(
     command: dict[str, Any],
     tracker_state: dict[str, Any],
     notion_client: NotionClient,
-) -> CommandResult:
+) -> TrackerCommandResult:
     task_id = task_id_whose_timeline_is_written_by_command(command)
     if task_id is None:
         return apply_command_to_tracker_state(command, tracker_state)
@@ -67,8 +67,8 @@ async def command_result_from_current_notion_state(
 
 def repair_result_for_command_context(
     before_tracker_state: dict[str, Any],
-    command_ready_result: CommandResult,
-) -> CommandResult:
+    command_ready_result: TrackerCommandResult,
+) -> TrackerCommandResult:
     return maybe_repair_reconciled_task_pages(
         reconcile_result=command_ready_result,
         task_graph_changes=TaskDependencyGraph.changes_between_tracker_states(
@@ -79,9 +79,9 @@ def repair_result_for_command_context(
 
 
 def command_result_with_context_repairs(
-    context_repair_result: CommandResult,
-    command_result: CommandResult,
-) -> CommandResult:
+    context_repair_result: TrackerCommandResult,
+    command_result: TrackerCommandResult,
+) -> TrackerCommandResult:
     write_intents_by_key = {
         write_intent.operation_key: write_intent
         for write_intent in context_repair_result.write_intents
@@ -89,7 +89,7 @@ def command_result_with_context_repairs(
     for write_intent in command_result.write_intents:
         write_intents_by_key[write_intent.operation_key] = write_intent
 
-    return CommandResult(
+    return TrackerCommandResult(
         tracker_state=command_result.tracker_state,
         write_intents=list(write_intents_by_key.values()),
         page_registry=command_result.page_registry or context_repair_result.page_registry,
@@ -209,18 +209,18 @@ def _is_task_command(command: dict[str, Any]) -> bool:
 
 
 def _command_result_with_initialised_task_timeline(
-    command_result: CommandResult,
+    command_result: TrackerCommandResult,
     task_id: str,
     entry_date: str,
     fetched_page_content: str,
-) -> CommandResult:
+) -> TrackerCommandResult:
     replacement_write_intent = _initialised_task_timeline_write_intent(
         task_id,
         entry_date,
         fetched_page_content,
         command_result,
     )
-    return CommandResult(
+    return TrackerCommandResult(
         tracker_state=command_result.tracker_state,
         write_intents=[
             replacement_write_intent
@@ -237,17 +237,17 @@ def _initialised_task_timeline_write_intent(
     task_id: str,
     entry_date: str,
     fetched_page_content: str,
-    command_result: CommandResult,
+    command_result: TrackerCommandResult,
 ) -> NotionWriteIntent:
     timeline_write_intent = _task_timeline_write_intent(command_result, task_id, entry_date)
     return NotionWriteIntent(
         operation_key=timeline_write_intent.operation_key,
-        operation_name="replace_page_children",
+        operation_name="replace_page_markdown",
         target_page_key=timeline_write_intent.target_page_key,
         arguments={
-            "blocks": initialised_task_timeline_blocks(
+            "markdown": initialised_task_timeline_markdown(
                 entry_date=entry_date,
-                timeline_blocks=timeline_write_intent.arguments["append_blocks"],
+                timeline_section_markdown=timeline_write_intent.arguments["timeline_section_markdown"],
                 fetched_page_content=fetched_page_content,
             ),
         },
@@ -255,7 +255,7 @@ def _initialised_task_timeline_write_intent(
 
 
 def _task_timeline_write_intent(
-    command_result: CommandResult,
+    command_result: TrackerCommandResult,
     task_id: str,
     entry_date: str,
 ) -> NotionWriteIntent:

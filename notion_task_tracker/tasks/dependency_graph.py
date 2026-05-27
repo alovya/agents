@@ -7,21 +7,24 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from notion_task_tracker.notion_pages import (
+from notion_task_tracker.external_links import (
+    external_link_from_tracker_state,
+    external_link_to_tracker_state,
+)
+from notion_task_tracker.fixed_pages import (
     COMPLETED_LANDING_PAGE_LOCAL_KEY,
     COMPLETED_LANDING_PAGE_TITLE,
     LANDING_PAGE_LOCAL_KEY,
     LANDING_PAGE_TITLE,
+)
+from notion_task_tracker.json_file import write_json_file
+from notion_task_tracker.notion_writes import NotionPlanningError, NotionWriteIntent
+from notion_task_tracker.page_registry import (
     NotionPageRegistry,
-    NotionPlanningError,
-    NotionWriteIntent,
     PagePointer,
-    external_link_from_snapshot,
-    external_link_to_snapshot,
-    fixed_page_pointer_from_snapshot,
-    page_pointer_to_snapshot,
+    fixed_page_pointer_from_tracker_state,
+    page_pointer_to_tracker_state,
     validate_fixed_page_pointer,
-    write_json_snapshot,
 )
 
 
@@ -59,45 +62,45 @@ class TaskDependencyGraph:
     tasks: dict[str, Task] = field(default_factory=dict)
 
     @classmethod
-    def from_snapshot_path(cls, snapshot_path: str | Path) -> TaskDependencyGraph:
-        source_path = Path(snapshot_path)
-        snapshot = json.loads(source_path.read_text(encoding="utf-8"))
-        return cls.from_snapshot(snapshot)
+    def from_tracker_state_path(cls, tracker_state_path: str | Path) -> TaskDependencyGraph:
+        source_path = Path(tracker_state_path)
+        tracker_state = json.loads(source_path.read_text(encoding="utf-8"))
+        return cls.from_tracker_state(tracker_state)
 
     @classmethod
-    def from_snapshot(cls, snapshot: dict[str, Any]) -> TaskDependencyGraph:
+    def from_tracker_state(cls, tracker_state: dict[str, Any]) -> TaskDependencyGraph:
         work_graph = cls(
             ongoing_tasks_landing_page=OngoingTasksLandingPage(
-                page=fixed_page_pointer_from_snapshot(
-                    snapshot=snapshot["landing_page"],
+                page=fixed_page_pointer_from_tracker_state(
+                    tracker_state=tracker_state["landing_page"],
                     local_page_key=LANDING_PAGE_LOCAL_KEY,
                     title=LANDING_PAGE_TITLE,
                 )
             ),
             completed_tasks_landing_page=CompletedTasksLandingPage(
-                page=fixed_page_pointer_from_snapshot(
-                    snapshot=snapshot.get("completed_landing_page") or {},
+                page=fixed_page_pointer_from_tracker_state(
+                    tracker_state=tracker_state.get("completed_landing_page") or {},
                     local_page_key=COMPLETED_LANDING_PAGE_LOCAL_KEY,
                     title=COMPLETED_LANDING_PAGE_TITLE,
                 )
             ),
         )
-        for task_snapshot in snapshot.get("tasks", {}).values():
-            work_graph.tasks[task_snapshot["task_id"]] = _task_from_snapshot(task_snapshot)
+        for task_state in tracker_state.get("tasks", {}).values():
+            work_graph.tasks[task_state["task_id"]] = _task_from_tracker_state(task_state)
         work_graph._normalise_task_timelines()
         work_graph.validate()
         work_graph.recalculate_display_priorities()
         return work_graph
 
-    def write_snapshot(self, snapshot_path: str | Path) -> None:
-        write_json_snapshot(self.to_snapshot(), snapshot_path)
+    def write_tracker_state(self, tracker_state_path: str | Path) -> None:
+        write_json_file(self.to_tracker_state(), tracker_state_path)
 
-    def to_snapshot(self) -> dict[str, Any]:
+    def to_tracker_state(self) -> dict[str, Any]:
         return {
-            "landing_page": page_pointer_to_snapshot(self.ongoing_tasks_landing_page.page),
-            "completed_landing_page": page_pointer_to_snapshot(self.completed_tasks_landing_page.page),
+            "landing_page": page_pointer_to_tracker_state(self.ongoing_tasks_landing_page.page),
+            "completed_landing_page": page_pointer_to_tracker_state(self.completed_tasks_landing_page.page),
             "tasks": {
-                task_id: _task_to_snapshot(task)
+                task_id: _task_to_tracker_state(task)
                 for task_id, task in sorted(self.tasks.items(), key=lambda item: task_id_sort_key(item[0]))
             },
         }
@@ -135,7 +138,7 @@ class TaskDependencyGraph:
 
     def replace_task_graph_in_tracker_state(self, tracker_state: dict[str, Any]) -> dict[str, Any]:
         updated_tracker_state = json.loads(json.dumps(tracker_state))
-        task_graph_state = self.to_snapshot()
+        task_graph_state = self.to_tracker_state()
         updated_tracker_state["landing_page"] = task_graph_state["landing_page"]
         updated_tracker_state["completed_landing_page"] = task_graph_state["completed_landing_page"]
         updated_tracker_state["tasks"] = task_graph_state["tasks"]
@@ -276,11 +279,12 @@ class TaskDependencyGraph:
 
     def _plan_missing_page_creation(self) -> list[NotionWriteIntent]:
         write_intents = []
+        page_registry = self.page_registry()
         ongoing_page_creation = self.ongoing_tasks_landing_page.creation_intent(
-            self.ongoing_tasks_landing_page.render_blocks(self.tasks)
+            self.ongoing_tasks_landing_page.render_markdown(self.tasks, page_registry)
         )
         completed_page_creation = self.completed_tasks_landing_page.creation_intent(
-            self.completed_tasks_landing_page.render_blocks(self.tasks)
+            self.completed_tasks_landing_page.render_markdown(self.tasks, page_registry)
         )
         for page_creation in [ongoing_page_creation, completed_page_creation]:
             if page_creation is not None:
@@ -305,10 +309,10 @@ class TaskDependencyGraph:
         ]
 
     def _plan_landing_page_refresh(self) -> NotionWriteIntent:
-        return self.ongoing_tasks_landing_page.refresh_intent(self.tasks)
+        return self.ongoing_tasks_landing_page.refresh_intent(self.tasks, self.page_registry())
 
     def _plan_completed_landing_page_refresh(self) -> list[NotionWriteIntent]:
-        return self.completed_tasks_landing_page.refresh_intents(self.tasks)
+        return self.completed_tasks_landing_page.refresh_intents(self.tasks, self.page_registry())
 
     def _pages_that_should_exist(self) -> list[PagePointer]:
         pages = [
@@ -429,7 +433,7 @@ def _changed_task_graph_fields(
     return changed_fields
 
 
-def _task_to_snapshot(task: Task) -> dict[str, Any]:
+def _task_to_tracker_state(task: Task) -> dict[str, Any]:
     return {
         "task_id": task.task_id,
         "title": task.title,
@@ -440,36 +444,36 @@ def _task_to_snapshot(task: Task) -> dict[str, Any]:
         "parent_task_id": task.parent_task_id,
         "child_task_ids": list(task.child_task_ids),
         "timeline_entries": [
-            timeline_entry.to_snapshot()
+            timeline_entry.to_tracker_state()
             for timeline_entry in task.timeline_entries
         ],
         "links": [
-            external_link_to_snapshot(link)
+            external_link_to_tracker_state(link)
             for link in task.links
         ],
         "notion_page_id": task.notion_page_id,
     }
 
 
-def _task_from_snapshot(snapshot: dict[str, Any]) -> Task:
-    displayed_priority = snapshot.get("displayed_priority")
+def _task_from_tracker_state(tracker_state: dict[str, Any]) -> Task:
+    displayed_priority = tracker_state.get("displayed_priority")
 
     return Task(
-        task_id=snapshot["task_id"],
-        title=snapshot["title"],
-        configured_priority=Priority(snapshot["configured_priority"]),
+        task_id=tracker_state["task_id"],
+        title=tracker_state["title"],
+        configured_priority=Priority(tracker_state["configured_priority"]),
         displayed_priority=Priority(displayed_priority) if displayed_priority else None,
-        status=TaskStatus(snapshot["status"]),
-        status_update=snapshot.get("status_update", ""),
-        parent_task_id=snapshot.get("parent_task_id"),
-        child_task_ids=list(snapshot.get("child_task_ids", [])),
+        status=TaskStatus(tracker_state["status"]),
+        status_update=tracker_state.get("status_update", ""),
+        parent_task_id=tracker_state.get("parent_task_id"),
+        child_task_ids=list(tracker_state.get("child_task_ids", [])),
         timeline_entries=[
-            TimelineEntry.from_snapshot(timeline_snapshot)
-            for timeline_snapshot in snapshot.get("timeline_entries", [])
+            TimelineEntry.from_tracker_state(timeline_state)
+            for timeline_state in tracker_state.get("timeline_entries", [])
         ],
         links=[
-            external_link_from_snapshot(link_snapshot)
-            for link_snapshot in snapshot.get("links", [])
+            external_link_from_tracker_state(link_state)
+            for link_state in tracker_state.get("links", [])
         ],
-        notion_page_id=snapshot.get("notion_page_id"),
+        notion_page_id=tracker_state.get("notion_page_id"),
     )

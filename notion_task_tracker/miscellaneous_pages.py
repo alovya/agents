@@ -5,15 +5,17 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from notion_task_tracker.notion_pages import (
+from notion_task_tracker.fixed_pages import (
     MISCELLANEOUS_NOTES_PAGE_LOCAL_KEY,
     MISCELLANEOUS_NOTES_PAGE_TITLE,
+)
+from notion_task_tracker.notion_markdown import bullet, join_markdown_blocks, page_mention
+from notion_task_tracker.notion_writes import NotionWriteIntent
+from notion_task_tracker.page_registry import (
     NotionPageRegistry,
-    NotionWriteIntent,
     PagePointer,
-    fixed_page_pointer_from_snapshot,
-    page_pointer_to_snapshot,
-    paragraph_block,
+    fixed_page_pointer_from_tracker_state,
+    page_pointer_to_tracker_state,
     validate_fixed_page_pointer,
 )
 
@@ -58,17 +60,17 @@ class MiscellaneousNotesMetadata:
     dated_pages: dict[str, MiscellaneousNotesPageMetadata] = field(default_factory=dict)
 
     @classmethod
-    def from_snapshot(cls, snapshot: dict[str, Any]) -> MiscellaneousNotesMetadata:
+    def from_tracker_state(cls, tracker_state: dict[str, Any]) -> MiscellaneousNotesMetadata:
         miscellaneous_notes = cls(
-            page=fixed_page_pointer_from_snapshot(
-                snapshot=snapshot["page"],
+            page=fixed_page_pointer_from_tracker_state(
+                tracker_state=tracker_state["page"],
                 local_page_key=MISCELLANEOUS_NOTES_PAGE_LOCAL_KEY,
                 title=MISCELLANEOUS_NOTES_PAGE_TITLE,
             ),
         )
         miscellaneous_notes.dated_pages = {
-            note_date: _miscellaneous_notes_page_from_snapshot(page_snapshot)
-            for note_date, page_snapshot in snapshot.get("dated_pages", {}).items()
+            note_date: _miscellaneous_notes_page_from_tracker_state(page_state)
+            for note_date, page_state in tracker_state.get("dated_pages", {}).items()
         }
         miscellaneous_notes.validate()
         return miscellaneous_notes
@@ -114,11 +116,11 @@ class MiscellaneousNotesMetadata:
         self.validate()
         return NotionPageRegistry.from_page_pointers(self._pages_that_should_exist())
 
-    def to_snapshot(self) -> dict[str, Any]:
+    def to_tracker_state(self) -> dict[str, Any]:
         return {
-            "page": page_pointer_to_snapshot(self.page),
+            "page": page_pointer_to_tracker_state(self.page),
             "dated_pages": {
-                note_date: _miscellaneous_notes_page_to_snapshot(dated_page)
+                note_date: _miscellaneous_notes_page_to_tracker_state(dated_page)
                 for note_date, dated_page in sorted(self.dated_pages.items())
             },
         }
@@ -134,10 +136,10 @@ class MiscellaneousNotesMetadata:
             target_page_key=dated_page.local_page_key,
             arguments={
                 "root_page_key": self.page.local_page_key,
-                "dated_page": _miscellaneous_notes_page_pointer_to_snapshot(self.page, dated_page),
-                "blocks": _render_miscellaneous_note_entry_blocks(note_entry),
-                "root_page_blocks": self._render_root_page_blocks(),
-                "dated_page_blocks": _render_miscellaneous_notes_page_blocks(dated_page),
+                "dated_page": _miscellaneous_notes_page_pointer_to_tracker_state(self.page, dated_page),
+                "markdown": _render_miscellaneous_note_entry_markdown(note_entry),
+                "root_page_markdown": self._render_root_page_markdown(),
+                "dated_page_markdown": _render_miscellaneous_notes_page_markdown(dated_page),
             },
         )
 
@@ -155,7 +157,7 @@ class MiscellaneousNotesMetadata:
                             "local_page_key": page.local_page_key,
                             "title": page.title,
                             "parent_page_key": page.parent_page_key,
-                            "blocks": self._page_creation_blocks(page.local_page_key),
+                            "markdown": self._page_creation_markdown(page.local_page_key),
                         },
                     )
                 )
@@ -165,10 +167,10 @@ class MiscellaneousNotesMetadata:
     def _plan_root_page_refresh(self) -> NotionWriteIntent:
         return NotionWriteIntent(
             operation_key="replace:miscellaneous_notes",
-            operation_name="replace_page_children",
+            operation_name="replace_page_markdown",
             target_page_key=self.page.local_page_key,
             arguments={
-                "blocks": self._render_root_page_blocks(),
+                "markdown": self._render_root_page_markdown(),
             },
         )
 
@@ -176,10 +178,10 @@ class MiscellaneousNotesMetadata:
         return [
             NotionWriteIntent(
                 operation_key=f"replace:{dated_page.local_page_key}",
-                operation_name="replace_page_children",
+                operation_name="replace_page_markdown",
                 target_page_key=dated_page.local_page_key,
                 arguments={
-                    "blocks": _render_miscellaneous_notes_page_blocks(dated_page),
+                    "markdown": _render_miscellaneous_notes_page_markdown(dated_page),
                 },
             )
             for dated_page in sorted(self.dated_pages.values(), key=lambda page: page.note_date, reverse=True)
@@ -193,26 +195,22 @@ class MiscellaneousNotesMetadata:
 
         return pages
 
-    def _render_root_page_blocks(self) -> list[dict[str, Any]]:
+    def _render_root_page_markdown(self) -> str:
         if not self.dated_pages:
-            return [paragraph_block(text="No miscellaneous notes yet.")]
+            return "No miscellaneous notes yet."
 
-        return [
-            {
-                "type": "bulleted_list_item",
-                "depth": 0,
-                "text": dated_page.title,
-                "page_key": dated_page.local_page_key,
-            }
+        page_registry = self.page_registry()
+        return join_markdown_blocks([
+            bullet(_dated_page_reference(dated_page, page_registry))
             for dated_page in sorted(self.dated_pages.values(), key=lambda page: page.note_date, reverse=True)
-        ]
+        ])
 
-    def _page_creation_blocks(self, local_page_key: str) -> list[dict[str, Any]]:
+    def _page_creation_markdown(self, local_page_key: str) -> str:
         if local_page_key == self.page.local_page_key:
-            return self._render_root_page_blocks()
+            return self._render_root_page_markdown()
 
         note_date = local_page_key.removeprefix("miscellaneous:")
-        return _render_miscellaneous_notes_page_blocks(self.dated_pages[note_date])
+        return _render_miscellaneous_notes_page_markdown(self.dated_pages[note_date])
 
     def _validate_page_keys_match_page_values(self) -> None:
         for note_date, dated_page in self.dated_pages.items():
@@ -235,54 +233,56 @@ def _miscellaneous_notes_page_pointer(
     )
 
 
-def _miscellaneous_notes_page_pointer_to_snapshot(
+def _miscellaneous_notes_page_pointer_to_tracker_state(
     root_page: PagePointer,
     dated_page: MiscellaneousNotesPageMetadata,
 ) -> dict[str, Any]:
-    return page_pointer_to_snapshot(_miscellaneous_notes_page_pointer(root_page, dated_page))
+    return page_pointer_to_tracker_state(_miscellaneous_notes_page_pointer(root_page, dated_page))
 
 
-def _render_miscellaneous_notes_page_blocks(
+def _dated_page_reference(
     dated_page: MiscellaneousNotesPageMetadata,
-) -> list[dict[str, Any]]:
+    page_registry: NotionPageRegistry,
+) -> str:
+    if dated_page.notion_page_id is None:
+        return dated_page.title
+
+    return page_mention(dated_page.local_page_key, page_registry)
+
+
+def _render_miscellaneous_notes_page_markdown(
+    dated_page: MiscellaneousNotesPageMetadata,
+) -> str:
     if not dated_page.entries:
-        return [paragraph_block(text="No notes yet.")]
+        return "No notes yet."
 
-    blocks = []
-
-    for note_entry in dated_page.entries:
-        blocks.extend(_render_miscellaneous_note_entry_blocks(note_entry))
-
-    return blocks
+    return join_markdown_blocks([
+        _render_miscellaneous_note_entry_markdown(note_entry)
+        for note_entry in dated_page.entries
+    ])
 
 
-def _render_miscellaneous_note_entry_blocks(note_entry: MiscellaneousNoteEntry) -> list[dict[str, Any]]:
-    return [
-        {
-            "type": "bulleted_list_item",
-            "depth": 0,
-            "text": line,
-            "source_page_id": note_entry.source_page_id,
-            "source_block_id": note_entry.source_block_id,
-        }
+def _render_miscellaneous_note_entry_markdown(note_entry: MiscellaneousNoteEntry) -> str:
+    return join_markdown_blocks([
+        bullet(line)
         for line in note_entry.lines
-    ]
+    ])
 
 
-def _miscellaneous_notes_page_to_snapshot(
+def _miscellaneous_notes_page_to_tracker_state(
     dated_page: MiscellaneousNotesPageMetadata,
 ) -> dict[str, Any]:
     return {
         "note_date": dated_page.note_date,
         "entries": [
-            _miscellaneous_note_entry_to_snapshot(note_entry)
+            _miscellaneous_note_entry_to_tracker_state(note_entry)
             for note_entry in dated_page.entries
         ],
         "notion_page_id": dated_page.notion_page_id,
     }
 
 
-def _miscellaneous_note_entry_to_snapshot(note_entry: MiscellaneousNoteEntry) -> dict[str, Any]:
+def _miscellaneous_note_entry_to_tracker_state(note_entry: MiscellaneousNoteEntry) -> dict[str, Any]:
     return {
         "note_date": note_entry.note_date,
         "lines": list(note_entry.lines),
@@ -291,21 +291,21 @@ def _miscellaneous_note_entry_to_snapshot(note_entry: MiscellaneousNoteEntry) ->
     }
 
 
-def _miscellaneous_notes_page_from_snapshot(snapshot: dict[str, Any]) -> MiscellaneousNotesPageMetadata:
+def _miscellaneous_notes_page_from_tracker_state(tracker_state: dict[str, Any]) -> MiscellaneousNotesPageMetadata:
     return MiscellaneousNotesPageMetadata(
-        note_date=snapshot["note_date"],
+        note_date=tracker_state["note_date"],
         entries=[
-            _miscellaneous_note_entry_from_snapshot(note_snapshot)
-            for note_snapshot in snapshot.get("entries", [])
+            _miscellaneous_note_entry_from_tracker_state(note_state)
+            for note_state in tracker_state.get("entries", [])
         ],
-        notion_page_id=snapshot.get("notion_page_id"),
+        notion_page_id=tracker_state.get("notion_page_id"),
     )
 
 
-def _miscellaneous_note_entry_from_snapshot(snapshot: dict[str, Any]) -> MiscellaneousNoteEntry:
+def _miscellaneous_note_entry_from_tracker_state(tracker_state: dict[str, Any]) -> MiscellaneousNoteEntry:
     return MiscellaneousNoteEntry(
-        note_date=snapshot["note_date"],
-        lines=list(snapshot.get("lines", [])),
-        source_page_id=snapshot.get("source_page_id"),
-        source_block_id=snapshot.get("source_block_id"),
+        note_date=tracker_state["note_date"],
+        lines=list(tracker_state.get("lines", [])),
+        source_page_id=tracker_state.get("source_page_id"),
+        source_block_id=tracker_state.get("source_block_id"),
     )

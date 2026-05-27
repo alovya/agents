@@ -2,23 +2,24 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 from notion_client import AsyncClient
 from notion_client.errors import APIResponseError
 
-from notion_task_tracker.commands import CommandResult
-from notion_task_tracker.notion_pages import NotionPageRegistry, NotionWriteIntent, canonical_notion_page_id, notion_page_id_from_url
-from notion_task_tracker.notion_pages.rest_blocks import (
-    find_matching_top_level_block,
-    markdown_from_rest_blocks,
+from notion_task_tracker.apply_tracker_command import TrackerCommandResult
+from notion_task_tracker.page_registry import (
+    NotionPageRegistry,
+    canonical_notion_page_id,
+    notion_page_id_from_url,
+)
+from notion_task_tracker.notion_writes import NotionWriteIntent
+from notion_task_tracker.notion_database_properties import (
     plain_text_from_rich_text_items,
-    rest_blocks_from_tracker_blocks,
     rich_text_items,
 )
 from notion_task_tracker.notion_client import CreatedTaskDatabasePage, NotionWriteExecutionResult
@@ -59,17 +60,16 @@ class NotionRestClient:
         )
 
     async def fetch_task_page_content(self, page_id: str) -> str:
-        page, blocks = await asyncio.gather(
-            self.fetch_page(page_id),
-            self.fetch_page_blocks(page_id),
-        )
-        return _fetched_database_page_content(page, blocks)
+        page = await self.fetch_page(page_id)
+        markdown = await self.fetch_page_markdown(page_id)
+        return _fetched_database_page_content(page, markdown)
 
     async def fetch_page(self, page_id: str) -> dict[str, Any]:
         return await self._send_json("GET", f"/v1/pages/{page_id}", None)
 
-    async def fetch_page_blocks(self, page_id: str) -> list[dict[str, Any]]:
-        return await self._fetch_all_block_children(page_id)
+    async def fetch_page_markdown(self, page_id: str) -> str:
+        response = await self._send_json("GET", f"/v1/pages/{page_id}/markdown", None)
+        return _markdown_from_sdk_response(response)
 
     async def query_data_source(self, data_source_url: str, query: str) -> list[dict[str, Any]]:
         return await self.query_data_source_id(_data_source_id_from_url(data_source_url))
@@ -108,8 +108,8 @@ class NotionRestClient:
     ) -> dict[str, Any]:
         if write_intent.operation_name == "create_page":
             return await self._execute_create_page_intent(write_intent, page_registry)
-        if write_intent.operation_name == "replace_page_children":
-            return await self._execute_replace_page_children_intent(write_intent, page_registry)
+        if write_intent.operation_name == "replace_page_markdown":
+            return await self._execute_replace_page_markdown_intent(write_intent, page_registry)
         if write_intent.operation_name == "update_page_properties":
             return await self._execute_update_page_properties_intent(write_intent, page_registry)
         if write_intent.operation_name == "update_timeline_log":
@@ -124,27 +124,25 @@ class NotionRestClient:
         self,
         data_source_id: str,
         properties: dict[str, Any],
-        blocks: list[dict[str, Any]],
+        markdown: str,
     ) -> dict[str, Any]:
         return await self.create_page(
             parent={"type": "data_source_id", "data_source_id": data_source_id},
             properties=properties,
-            blocks=blocks,
+            markdown=markdown,
         )
 
     async def create_task_database_page(
         self,
         data_source_id: str,
         properties: dict[str, Any],
-        blocks: list[dict[str, Any]],
         content: str,
         operation_key: str,
     ) -> CreatedTaskDatabasePage:
-        del content
         created_page = await self.create_database_page(
             data_source_id=data_source_id,
             properties=properties,
-            blocks=blocks,
+            markdown=content,
         )
         return CreatedTaskDatabasePage(
             notion_page_id=created_page["id"],
@@ -164,7 +162,7 @@ class NotionRestClient:
         )
         return operation_key
 
-    async def execute_command_result(self, command_result: CommandResult) -> NotionWriteExecutionResult:
+    async def execute_command_result(self, command_result: TrackerCommandResult) -> NotionWriteExecutionResult:
         if command_result.page_registry is None:
             raise ValueError("REST write execution requires a page registry")
 
@@ -190,18 +188,18 @@ class NotionRestClient:
         created_page = await self.create_page(
             parent=_rest_parent_from_page_key(arguments.get("parent_page_key"), page_registry),
             properties={"title": arguments["title"]},
-            blocks=arguments.get("blocks", []),
+            markdown=arguments.get("markdown", ""),
         )
         return _write_result(write_intent.operation_key, arguments["local_page_key"], created_page)
 
-    async def _execute_replace_page_children_intent(
+    async def _execute_replace_page_markdown_intent(
         self,
         write_intent: NotionWriteIntent,
         page_registry: NotionPageRegistry,
     ) -> dict[str, Any]:
         await self.replace_page_content(
             page_id=page_registry.page_id(_required_target_page_key(write_intent)),
-            blocks=write_intent.arguments["blocks"],
+            markdown=write_intent.arguments["markdown"],
         )
         return _write_result(write_intent.operation_key)
 
@@ -223,17 +221,17 @@ class NotionRestClient:
     ) -> dict[str, Any]:
         page_id = page_registry.page_id(_required_target_page_key(write_intent))
         arguments = write_intent.arguments
-        if "existing_blocks" in arguments:
-            await self.insert_blocks_after_matching_block(
+        if "old_timeline_section_markdown" in arguments:
+            await self.replace_markdown_section(
                 page_id=page_id,
-                anchor_block=arguments["existing_blocks"][0],
-                blocks=arguments["append_blocks"],
+                old_markdown=arguments["old_timeline_section_markdown"],
+                new_markdown=arguments["new_timeline_section_markdown"],
             )
         else:
-            await self.insert_blocks_after_matching_block(
+            await self.insert_markdown_after_anchor(
                 page_id=page_id,
-                anchor_block={"type": "heading_2", "text": arguments["timeline_log_heading"]},
-                blocks=arguments["blocks"],
+                anchor_markdown=f"## {arguments['timeline_log_heading']}",
+                inserted_markdown=arguments["timeline_section_markdown"],
             )
         return _write_result(write_intent.operation_key)
 
@@ -254,17 +252,20 @@ class NotionRestClient:
                         "local_page_key": dated_page_key,
                         "title": dated_page["title"],
                         "parent_page_key": dated_page.get("parent_page_key"),
-                        "blocks": write_intent.arguments["dated_page_blocks"],
+                        "markdown": write_intent.arguments["dated_page_markdown"],
                     },
                 ),
                 page_registry,
             )
 
-        await self.replace_page_content(page_registry.page_id(dated_page_key), write_intent.arguments["dated_page_blocks"])
-        if write_intent.arguments.get("root_page_blocks") is not None:
+        await self.replace_page_content(
+            page_registry.page_id(dated_page_key),
+            write_intent.arguments["dated_page_markdown"],
+        )
+        if write_intent.arguments.get("root_page_markdown") is not None:
             await self.replace_page_content(
                 page_registry.page_id(write_intent.arguments["root_page_key"]),
-                write_intent.arguments["root_page_blocks"],
+                write_intent.arguments["root_page_markdown"],
             )
         return _write_result(write_intent.operation_key)
 
@@ -285,17 +286,20 @@ class NotionRestClient:
                         "local_page_key": synthesis_page_key,
                         "title": synthesis_page["title"],
                         "parent_page_key": synthesis_page.get("parent_page_key"),
-                        "blocks": write_intent.arguments["blocks"],
+                        "markdown": write_intent.arguments["markdown"],
                     },
                 ),
                 page_registry,
             )
 
-        await self.replace_page_content(page_registry.page_id(synthesis_page_key), write_intent.arguments["blocks"])
-        if write_intent.arguments.get("root_page_blocks") is not None:
+        await self.replace_page_content(
+            page_registry.page_id(synthesis_page_key),
+            write_intent.arguments["markdown"],
+        )
+        if write_intent.arguments.get("root_page_markdown") is not None:
             await self.replace_page_content(
                 page_registry.page_id(write_intent.arguments["root_page_key"]),
-                write_intent.arguments["root_page_blocks"],
+                write_intent.arguments["root_page_markdown"],
             )
         return _write_result(write_intent.operation_key)
 
@@ -303,7 +307,7 @@ class NotionRestClient:
         self,
         parent: dict[str, Any],
         properties: dict[str, Any],
-        blocks: list[dict[str, Any]],
+        markdown: str,
     ) -> dict[str, Any]:
         return await self._send_json(
             "POST",
@@ -311,7 +315,7 @@ class NotionRestClient:
             {
                 "parent": parent,
                 "properties": _rest_database_properties(properties),
-                "children": rest_blocks_from_tracker_blocks(blocks),
+                "markdown": markdown,
             },
         )
 
@@ -322,57 +326,50 @@ class NotionRestClient:
             {"properties": _rest_database_properties(properties)},
         )
 
-    async def replace_page_content(self, page_id: str, blocks: list[dict[str, Any]]) -> None:
-        existing_blocks = await self._fetch_all_block_children(page_id)
-        for block in existing_blocks:
-            await self._archive_block(block["id"])
-        await self._append_blocks(page_id, rest_blocks_from_tracker_blocks(blocks))
-
-    async def insert_blocks_after_matching_block(
+    async def replace_page_content(
         self,
         page_id: str,
-        anchor_block: dict[str, Any],
-        blocks: list[dict[str, Any]],
+        markdown: str,
     ) -> None:
-        page_blocks = await self._fetch_all_block_children(page_id)
-        matching_block = find_matching_top_level_block(page_blocks, anchor_block)
-        if matching_block is None:
-            raise ValueError(f"Could not find Notion block matching {anchor_block!r}")
-        await self._append_blocks(
-            page_id,
-            rest_blocks_from_tracker_blocks(blocks),
-            position={"type": "after_block", "after_block": {"id": matching_block["id"]}},
+        await self.replace_page_markdown(
+            page_id=page_id,
+            markdown=markdown,
         )
 
-    async def _archive_block(self, block_id: str) -> None:
-        await self._send_json("PATCH", f"/v1/blocks/{block_id}", {"in_trash": True})
+    async def replace_page_markdown(self, page_id: str, markdown: str) -> None:
+        await self._send_json(
+            "PATCH",
+            f"/v1/pages/{page_id}/markdown",
+            {
+                "type": "replace_content",
+                "replace_content": markdown,
+            },
+        )
 
-    async def _append_blocks(
+    async def insert_markdown_after_anchor(
         self,
-        parent_block_id: str,
-        blocks: list[dict[str, Any]],
-        position: dict[str, Any] | None = None,
+        page_id: str,
+        anchor_markdown: str,
+        inserted_markdown: str,
     ) -> None:
-        for block_chunk in _chunks(blocks, 100):
-            body = {"children": block_chunk}
-            if position is not None:
-                body["position"] = position
-            await self._send_json("PATCH", f"/v1/blocks/{parent_block_id}/children", body)
-            position = None
+        current_markdown = await self.fetch_page_markdown(page_id)
+        updated_markdown = _markdown_with_inserted_content_after_anchor(
+            current_markdown=current_markdown,
+            anchor_markdown=anchor_markdown,
+            inserted_markdown=inserted_markdown,
+        )
+        await self.replace_page_markdown(page_id, updated_markdown)
 
-    async def _fetch_all_block_children(self, block_id: str) -> list[dict[str, Any]]:
-        blocks = []
-        next_cursor = None
-
-        while True:
-            path = f"/v1/blocks/{block_id}/children?page_size=100"
-            if next_cursor:
-                path = f"{path}&start_cursor={next_cursor}"
-            response = await self._send_json("GET", path, None)
-            blocks.extend(response.get("results", []))
-            if not response.get("has_more"):
-                return blocks
-            next_cursor = response.get("next_cursor")
+    async def replace_markdown_section(
+        self,
+        page_id: str,
+        old_markdown: str,
+        new_markdown: str,
+    ) -> None:
+        current_markdown = await self.fetch_page_markdown(page_id)
+        if old_markdown.strip() not in current_markdown:
+            raise ValueError(f"Could not find Notion Markdown section matching {old_markdown!r}")
+        await self.replace_page_markdown(page_id, current_markdown.replace(old_markdown.strip(), new_markdown.strip(), 1))
 
     async def _send_json(self, method: str, path: str, body: dict[str, Any] | None) -> dict[str, Any]:
         try:
@@ -385,7 +382,12 @@ class NotionRestClient:
     async def _send_sdk_request(self, method: str, path: str, body: dict[str, Any]) -> dict[str, Any]:
         parsed_path = urlparse(path)
         path_parts = parsed_path.path.strip("/").split("/")
-        query = parse_qs(parsed_path.query)
+
+        if method == "GET" and path_parts[:2] == ["v1", "pages"] and path_parts[3:] == ["markdown"]:
+            return await self.client.pages.retrieve_markdown(page_id=path_parts[2])
+
+        if method == "PATCH" and path_parts[:2] == ["v1", "pages"] and path_parts[3:] == ["markdown"]:
+            return await self.client.pages.update_markdown(page_id=path_parts[2], **body)
 
         if method == "GET" and path_parts[:2] == ["v1", "pages"]:
             return await self.client.pages.retrieve(page_id=path_parts[2])
@@ -398,19 +400,6 @@ class NotionRestClient:
 
         if method == "POST" and path_parts[:2] == ["v1", "data_sources"] and path_parts[3:] == ["query"]:
             return await self.client.data_sources.query(data_source_id=path_parts[2], **body)
-
-        if method == "GET" and path_parts[:2] == ["v1", "blocks"] and path_parts[3:] == ["children"]:
-            return await self.client.blocks.children.list(
-                block_id=path_parts[2],
-                page_size=int(query.get("page_size", ["100"])[0]),
-                start_cursor=query.get("start_cursor", [None])[0],
-            )
-
-        if method == "PATCH" and path_parts[:2] == ["v1", "blocks"] and len(path_parts) == 3:
-            return await self.client.blocks.update(block_id=path_parts[2], **body)
-
-        if method == "PATCH" and path_parts[:2] == ["v1", "blocks"] and path_parts[3:] == ["children"]:
-            return await self.client.blocks.children.append(block_id=path_parts[2], **body)
 
         raise ValueError(f"Unsupported Notion REST SDK request {method} {path}")
 
@@ -513,7 +502,7 @@ def _relation_items_from_property_value(property_value: Any) -> list[dict[str, s
     ]
 
 
-def _fetched_database_page_content(page: dict[str, Any], blocks: list[dict[str, Any]]) -> str:
+def _fetched_database_page_content(page: dict[str, Any], markdown: str) -> str:
     return "\n".join(
         [
             "<page>",
@@ -521,11 +510,42 @@ def _fetched_database_page_content(page: dict[str, Any], blocks: list[dict[str, 
             json.dumps(_task_database_row_from_rest_page(page)),
             "</properties>",
             "<content>",
-            markdown_from_rest_blocks(blocks),
+            markdown,
             "</content>",
             "</page>",
         ]
     )
+
+
+def _markdown_from_sdk_response(response: Any) -> str:
+    if isinstance(response, str):
+        return response
+    if isinstance(response, dict):
+        for key in ["markdown", "content"]:
+            if key in response:
+                return str(response[key])
+    return str(response)
+
+
+def _markdown_with_inserted_content_after_anchor(
+    current_markdown: str,
+    anchor_markdown: str,
+    inserted_markdown: str,
+) -> str:
+    lines = current_markdown.splitlines()
+
+    for line_index, line in enumerate(lines):
+        if line.strip() != anchor_markdown.strip():
+            continue
+
+        updated_lines = [
+            *lines[:line_index + 1],
+            inserted_markdown,
+            *lines[line_index + 1:],
+        ]
+        return "\n".join(updated_lines).strip()
+
+    raise ValueError(f"Could not find Notion Markdown matching {anchor_markdown!r}")
 
 
 def _rest_parent_from_page_key(
@@ -575,13 +595,6 @@ def _write_result(
         result["captured_page_key"] = captured_page_key
         result["captured_page_id"] = canonical_notion_page_id(page["id"])
     return result
-
-
-def _chunks(items: list[dict[str, Any]], chunk_size: int) -> list[list[dict[str, Any]]]:
-    return [
-        items[index:index + chunk_size]
-        for index in range(0, len(items), chunk_size)
-    ]
 
 
 def _notion_rest_error_message(method: str, path: str, status_code: int | None, error_text: str) -> str:

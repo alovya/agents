@@ -23,7 +23,7 @@ from notion_task_tracker.tasks.actions.create_task_page_in_database import (
 )
 from notion_task_tracker.tasks.actions.reconcile_task_dependencies_from_notion import (
     maybe_repair_reconciled_task_pages,
-    reconcile_tracker_state_from_notion_pages,
+    reconcile_tracker_state_from_notion,
 )
 from notion_task_tracker.tasks import TaskDependencyGraph
 
@@ -142,7 +142,7 @@ async def _reconcile_task_dependency_graph_from_notion(
     _write_json(destination_backup_path, tracker_state)
 
     client = notion_client_from_credentials_path(Path(credentials_path), notion_client)
-    reconcile_result = await reconcile_tracker_state_from_notion_pages(tracker_state, client)
+    reconcile_result = await reconcile_tracker_state_from_notion(tracker_state, client)
     return await repair_and_write_reconciled_tracker_state(
         source_tracker_state_path=source_tracker_state_path,
         destination_output_path=destination_output_path,

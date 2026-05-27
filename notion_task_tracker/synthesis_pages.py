@@ -6,23 +6,19 @@ from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from typing import Any
 
-from notion_task_tracker.notion_pages import (
+from notion_task_tracker.fixed_pages import (
     SYNTHESIS_NOTES_PAGE_LOCAL_KEY,
     SYNTHESIS_NOTES_PAGE_TITLE,
+)
+from notion_task_tracker.notion_markdown import bullet, heading, join_markdown_blocks, page_mention, page_reference
+from notion_task_tracker.notion_writes import NotionPlanningError, NotionWriteIntent
+from notion_task_tracker.page_registry import (
     NotionPageRegistry,
-    NotionPlanningError,
-    NotionWriteIntent,
     PagePointer,
     canonical_notion_page_id,
-    child_page_block,
-    fixed_page_pointer_from_snapshot,
-    heading_block,
-    linked_metadata_bullet_block,
-    metadata_bullet_block,
+    fixed_page_pointer_from_tracker_state,
     notion_page_id_from_url,
-    page_mention_block,
-    page_pointer_to_snapshot,
-    paragraph_block,
+    page_pointer_to_tracker_state,
     validate_fixed_page_pointer,
 )
 
@@ -100,21 +96,21 @@ class SynthesisNotesMetadata:
     pages: dict[str, SynthesisPageMetadata] = field(default_factory=dict)
 
     @classmethod
-    def from_snapshot(cls, snapshot: dict[str, Any]) -> SynthesisNotesMetadata:
+    def from_tracker_state(cls, tracker_state: dict[str, Any]) -> SynthesisNotesMetadata:
         synthesis_notes = cls(
-            page=fixed_page_pointer_from_snapshot(
-                snapshot["page"],
+            page=fixed_page_pointer_from_tracker_state(
+                tracker_state["page"],
                 local_page_key=SYNTHESIS_NOTES_PAGE_LOCAL_KEY,
                 title=SYNTHESIS_NOTES_PAGE_TITLE,
             )
         )
         synthesis_notes.pages = {
-            synthesis_key: _synthesis_page_from_snapshot(page_snapshot)
-            for synthesis_key, page_snapshot in snapshot.get("pages", {}).items()
+            synthesis_key: _synthesis_page_from_tracker_state(page_state)
+            for synthesis_key, page_state in tracker_state.get("pages", {}).items()
         }
         synthesis_notes.existing_page_mentions = {
-            mention_key: _synthesis_existing_page_mention_from_snapshot(page_snapshot)
-            for mention_key, page_snapshot in snapshot.get("existing_page_mentions", {}).items()
+            mention_key: _synthesis_existing_page_mention_from_tracker_state(page_state)
+            for mention_key, page_state in tracker_state.get("existing_page_mentions", {}).items()
         }
         synthesis_notes.validate()
         return synthesis_notes
@@ -192,15 +188,15 @@ class SynthesisNotesMetadata:
         self._validate_page_keys_match_page_values()
         self._validate_root_block_types()
 
-    def to_snapshot(self) -> dict[str, Any]:
+    def to_tracker_state(self) -> dict[str, Any]:
         return {
-            "page": page_pointer_to_snapshot(self.page),
+            "page": page_pointer_to_tracker_state(self.page),
             "existing_page_mentions": {
-                mention_key: _synthesis_existing_page_mention_to_snapshot(existing_page_mention)
+                mention_key: _synthesis_existing_page_mention_to_tracker_state(existing_page_mention)
                 for mention_key, existing_page_mention in sorted(self.existing_page_mentions.items())
             },
             "pages": {
-                synthesis_key: _synthesis_page_to_snapshot(synthesis_page)
+                synthesis_key: _synthesis_page_to_tracker_state(synthesis_page)
                 for synthesis_key, synthesis_page in sorted(self.pages.items())
             },
         }
@@ -215,11 +211,10 @@ class SynthesisNotesMetadata:
             operation_name="create_synthesis_page",
             target_page_key=self.page.local_page_key,
             arguments={
-                "page": _synthesis_page_pointer_to_snapshot(self.page, synthesis_page),
+                "page": _synthesis_page_pointer_to_tracker_state(self.page, synthesis_page),
                 "root_page_key": self.page.local_page_key,
-                "root_page_child_block": _render_synthesis_page_mention_block(synthesis_page),
-                "blocks": _render_synthesis_page_blocks(synthesis_page),
-                "root_page_blocks": self._render_root_page_blocks(),
+                "root_page_markdown": self._render_root_page_markdown(),
+                "markdown": _render_synthesis_page_markdown(synthesis_page, self.page_registry()),
             },
         )
 
@@ -237,7 +232,7 @@ class SynthesisNotesMetadata:
                             "local_page_key": page.local_page_key,
                             "title": page.title,
                             "parent_page_key": page.parent_page_key,
-                            "blocks": self._page_creation_blocks(page.local_page_key),
+                            "markdown": self._page_creation_markdown(page.local_page_key),
                         },
                     )
                 )
@@ -247,10 +242,10 @@ class SynthesisNotesMetadata:
     def _plan_root_page_refresh(self) -> NotionWriteIntent:
         return NotionWriteIntent(
             operation_key="replace:synthesis_notes",
-            operation_name="replace_page_children",
+            operation_name="replace_page_markdown",
             target_page_key=self.page.local_page_key,
             arguments={
-                "blocks": self._render_root_page_blocks(),
+                "markdown": self._render_root_page_markdown(),
             },
         )
 
@@ -258,10 +253,10 @@ class SynthesisNotesMetadata:
         return [
             NotionWriteIntent(
                 operation_key=f"replace:{synthesis_page.local_page_key}",
-                operation_name="replace_page_children",
+                operation_name="replace_page_markdown",
                 target_page_key=synthesis_page.local_page_key,
                 arguments={
-                    "blocks": _render_synthesis_page_blocks(synthesis_page),
+                    "markdown": _render_synthesis_page_markdown(synthesis_page, self.page_registry()),
                 },
             )
             for synthesis_page in sorted(self.pages.values(), key=lambda page: page.synthesis_key)
@@ -283,29 +278,30 @@ class SynthesisNotesMetadata:
 
         return pages
 
-    def _render_root_page_blocks(self) -> list[dict[str, Any]]:
+    def _render_root_page_markdown(self) -> str:
         if not self.existing_page_mentions and not self.pages:
-            return [paragraph_block(text="No synthesis notes yet.")]
+            return "No synthesis notes yet."
 
-        blocks = []
+        page_registry = self.page_registry()
+        markdown_blocks = []
 
         for existing_page_mention in sorted(
             self.existing_page_mentions.values(),
             key=lambda page: (page.display_order, page.mention_key),
         ):
-            blocks.append(_render_existing_page_mention_block(existing_page_mention))
+            markdown_blocks.append(_render_existing_page_mention_markdown(existing_page_mention, page_registry))
 
         for synthesis_page in sorted(self.pages.values(), key=lambda page: page.synthesis_key):
-            blocks.append(_render_synthesis_page_mention_block(synthesis_page))
+            markdown_blocks.append(_synthesis_page_reference(synthesis_page, page_registry))
 
-        return blocks
+        return join_markdown_blocks(markdown_blocks)
 
-    def _page_creation_blocks(self, local_page_key: str) -> list[dict[str, Any]]:
+    def _page_creation_markdown(self, local_page_key: str) -> str:
         if local_page_key == self.page.local_page_key:
-            return self._render_root_page_blocks()
+            return self._render_root_page_markdown()
 
         synthesis_key = local_page_key.removeprefix("synthesis:")
-        return _render_synthesis_page_blocks(self.pages[synthesis_key])
+        return _render_synthesis_page_markdown(self.pages[synthesis_key], self.page_registry())
 
     def _validate_page_keys_match_page_values(self) -> None:
         for synthesis_key, synthesis_page in self.pages.items():
@@ -491,11 +487,11 @@ def _synthesis_page_pointer(
     )
 
 
-def _synthesis_page_pointer_to_snapshot(
+def _synthesis_page_pointer_to_tracker_state(
     root_page: PagePointer,
     synthesis_page: SynthesisPageMetadata,
 ) -> dict[str, Any]:
-    return page_pointer_to_snapshot(_synthesis_page_pointer(root_page, synthesis_page))
+    return page_pointer_to_tracker_state(_synthesis_page_pointer(root_page, synthesis_page))
 
 
 def _synthesis_existing_page_mention_pointer(existing_page_mention: ExistingSynthesisPageMention) -> PagePointer:
@@ -506,76 +502,81 @@ def _synthesis_existing_page_mention_pointer(existing_page_mention: ExistingSynt
     )
 
 
-def _render_synthesis_page_mention_block(synthesis_page: SynthesisPageMetadata) -> dict[str, Any]:
-    return page_mention_block(synthesis_page.local_page_key)
+def _synthesis_page_reference(
+    synthesis_page: SynthesisPageMetadata,
+    page_registry: NotionPageRegistry,
+) -> str:
+    if synthesis_page.notion_page_id is None:
+        return synthesis_page.title
+
+    return page_mention(synthesis_page.local_page_key, page_registry)
 
 
-def _render_existing_page_mention_block(existing_page_mention: ExistingSynthesisPageMention) -> dict[str, Any]:
-    if existing_page_mention.root_block_type == SYNTHESIS_ROOT_CHILD_PAGE_BLOCK:
-        return child_page_block(existing_page_mention.local_page_key)
-
-    if existing_page_mention.root_block_type == SYNTHESIS_ROOT_PAGE_MENTION_BLOCK:
-        return page_mention_block(existing_page_mention.local_page_key)
-
-    raise NotionPlanningError(
-        f"Unsupported synthesis root block type {existing_page_mention.root_block_type!r}"
+def _render_existing_page_mention_markdown(
+    existing_page_mention: ExistingSynthesisPageMention,
+    page_registry: NotionPageRegistry,
+) -> str:
+    return page_reference(
+        page_key=existing_page_mention.local_page_key,
+        root_block_type=existing_page_mention.root_block_type,
+        page_registry=page_registry,
     )
 
 
-def _render_synthesis_page_blocks(synthesis_page: SynthesisPageMetadata) -> list[dict[str, Any]]:
-    blocks = [heading_block(level=2, text=SYNTHESIS_PAGE_SOURCES_HEADING)]
+def _render_synthesis_page_markdown(
+    synthesis_page: SynthesisPageMetadata,
+    page_registry: NotionPageRegistry,
+) -> str:
+    markdown_blocks = [heading(2, SYNTHESIS_PAGE_SOURCES_HEADING)]
 
     if synthesis_page.sources:
         for source in synthesis_page.sources:
-            blocks.append(_render_synthesis_source_block(source))
+            markdown_blocks.append(_render_synthesis_source_markdown(source, page_registry))
     else:
-        blocks.append(paragraph_block(text="No sources recorded."))
+        markdown_blocks.append("No sources recorded.")
 
     if synthesis_page.summary:
-        blocks.append(paragraph_block(text=synthesis_page.summary))
+        markdown_blocks.append(synthesis_page.summary)
 
     for line in synthesis_page.lines:
-        blocks.append(
-            {
-                "type": "bulleted_list_item",
-                "depth": 0,
-                "text": line,
-            }
-        )
+        markdown_blocks.append(bullet(line))
 
     if not synthesis_page.summary and not synthesis_page.lines:
-        blocks.append(paragraph_block(text="No synthesis content yet."))
+        markdown_blocks.append("No synthesis content yet.")
 
-    return blocks
+    return join_markdown_blocks(markdown_blocks)
 
 
-def _render_synthesis_source_block(source: SynthesisSource) -> dict[str, Any]:
+def _render_synthesis_source_markdown(source: SynthesisSource, page_registry: NotionPageRegistry) -> str:
     text = f"{source.source_type}: {source.label}"
 
     if source.page_key is not None:
-        return linked_metadata_bullet_block(text=text, page_key=source.page_key)
+        try:
+            return bullet(f"{text}: {page_mention(source.page_key, page_registry)}")
+        except NotionPlanningError:
+            return bullet(text)
 
     if source.external_url is not None:
         text = f"{text}: {source.external_url}"
 
-    return metadata_bullet_block(text=text)
+    return bullet(text)
 
 
-def _synthesis_page_to_snapshot(synthesis_page: SynthesisPageMetadata) -> dict[str, Any]:
+def _synthesis_page_to_tracker_state(synthesis_page: SynthesisPageMetadata) -> dict[str, Any]:
     return {
         "synthesis_key": synthesis_page.synthesis_key,
         "title": synthesis_page.title,
         "summary": synthesis_page.summary,
         "lines": list(synthesis_page.lines),
         "sources": [
-            _synthesis_source_to_snapshot(source)
+            _synthesis_source_to_tracker_state(source)
             for source in synthesis_page.sources
         ],
         "notion_page_id": synthesis_page.notion_page_id,
     }
 
 
-def _synthesis_source_to_snapshot(source: SynthesisSource) -> dict[str, Any]:
+def _synthesis_source_to_tracker_state(source: SynthesisSource) -> dict[str, Any]:
     return {
         "source_type": source.source_type,
         "label": source.label,
@@ -584,7 +585,7 @@ def _synthesis_source_to_snapshot(source: SynthesisSource) -> dict[str, Any]:
     }
 
 
-def _synthesis_existing_page_mention_to_snapshot(existing_page_mention: ExistingSynthesisPageMention) -> dict[str, Any]:
+def _synthesis_existing_page_mention_to_tracker_state(existing_page_mention: ExistingSynthesisPageMention) -> dict[str, Any]:
     return {
         "mention_key": existing_page_mention.mention_key,
         "title": existing_page_mention.title,
@@ -594,34 +595,34 @@ def _synthesis_existing_page_mention_to_snapshot(existing_page_mention: Existing
     }
 
 
-def _synthesis_page_from_snapshot(snapshot: dict[str, Any]) -> SynthesisPageMetadata:
+def _synthesis_page_from_tracker_state(tracker_state: dict[str, Any]) -> SynthesisPageMetadata:
     return SynthesisPageMetadata(
-        synthesis_key=snapshot["synthesis_key"],
-        title=snapshot["title"],
-        summary=snapshot.get("summary", ""),
-        lines=list(snapshot.get("lines", [])),
+        synthesis_key=tracker_state["synthesis_key"],
+        title=tracker_state["title"],
+        summary=tracker_state.get("summary", ""),
+        lines=list(tracker_state.get("lines", [])),
         sources=[
-            _synthesis_source_from_snapshot(source_snapshot)
-            for source_snapshot in snapshot.get("sources", [])
+            _synthesis_source_from_tracker_state(source_state)
+            for source_state in tracker_state.get("sources", [])
         ],
-        notion_page_id=snapshot.get("notion_page_id"),
+        notion_page_id=tracker_state.get("notion_page_id"),
     )
 
 
-def _synthesis_existing_page_mention_from_snapshot(snapshot: dict[str, Any]) -> ExistingSynthesisPageMention:
+def _synthesis_existing_page_mention_from_tracker_state(tracker_state: dict[str, Any]) -> ExistingSynthesisPageMention:
     return ExistingSynthesisPageMention(
-        mention_key=snapshot["mention_key"],
-        title=snapshot["title"],
-        notion_page_id=snapshot["notion_page_id"],
-        display_order=snapshot.get("display_order", 0),
-        root_block_type=snapshot.get("root_block_type", SYNTHESIS_ROOT_PAGE_MENTION_BLOCK),
+        mention_key=tracker_state["mention_key"],
+        title=tracker_state["title"],
+        notion_page_id=tracker_state["notion_page_id"],
+        display_order=tracker_state.get("display_order", 0),
+        root_block_type=tracker_state.get("root_block_type", SYNTHESIS_ROOT_PAGE_MENTION_BLOCK),
     )
 
 
-def _synthesis_source_from_snapshot(snapshot: dict[str, Any]) -> SynthesisSource:
+def _synthesis_source_from_tracker_state(tracker_state: dict[str, Any]) -> SynthesisSource:
     return SynthesisSource(
-        source_type=snapshot["source_type"],
-        label=snapshot["label"],
-        page_key=snapshot.get("page_key"),
-        external_url=snapshot.get("external_url"),
+        source_type=tracker_state["source_type"],
+        label=tracker_state["label"],
+        page_key=tracker_state.get("page_key"),
+        external_url=tracker_state.get("external_url"),
     )

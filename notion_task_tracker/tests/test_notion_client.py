@@ -3,8 +3,8 @@ import json
 from pathlib import Path
 import pytest
 
-from notion_task_tracker.commands import CommandResult
-from notion_task_tracker.notion_pages import (
+from notion_task_tracker.apply_tracker_command import TrackerCommandResult
+from notion_task_tracker import (
     COMPLETED_LANDING_PAGE_TITLE,
     LANDING_PAGE_TITLE,
     NotionPageReference,
@@ -32,7 +32,7 @@ from notion_task_tracker.tasks.actions.create_task_page_in_database import execu
 from notion_task_tracker.tasks.pages.timeline_log import timeline_entries_from_fetched_task_page_content
 from notion_task_tracker.tasks.actions.reconcile_task_dependencies_from_notion import (
     reconcile_tracker_state_for_command_targets,
-    reconcile_tracker_state_from_notion_pages,
+    reconcile_tracker_state_from_notion,
 )
 from notion_task_tracker.tasks import Priority, TaskDependencyGraph, Task, TaskStatus
 from notion_task_tracker.tasks.database import default_task_database_tracker_state
@@ -156,7 +156,7 @@ def test_repair_and_write_reconciled_tracker_state_pushes_repairs_for_changed_ta
             destination_output_path=output_path,
             destination_backup_path=backup_path,
             before_tracker_state=before_tracker_state,
-            reconcile_result=CommandResult(
+            reconcile_result=TrackerCommandResult(
                 tracker_state=after_tracker_state,
                 warnings=[{"kind": "manual_repair", "message": "Derived Notion views need repair"}],
             ),
@@ -246,7 +246,7 @@ def test_repair_and_write_reconciled_tracker_state_skips_repairs_when_nothing_ch
             destination_output_path=output_path,
             destination_backup_path=backup_path,
             before_tracker_state=tracker_state,
-            reconcile_result=CommandResult(
+            reconcile_result=TrackerCommandResult(
                 tracker_state=tracker_state,
                 warnings=[],
             ),
@@ -268,7 +268,7 @@ def test_repair_result_for_command_context_plans_repairs_without_writing_them():
 
     repair_result = repair_result_for_command_context(
         before_tracker_state=before_tracker_state,
-        command_ready_result=CommandResult(tracker_state=after_tracker_state),
+        command_ready_result=TrackerCommandResult(tracker_state=after_tracker_state),
     )
 
     assert repair_result.tracker_state["tasks"]["ALOVYA-1"]["title"] == "Root task edited in Notion"
@@ -279,14 +279,14 @@ def test_repair_result_for_command_context_plans_repairs_without_writing_them():
 
 
 def test_command_result_with_context_repairs_keeps_one_ordered_write_set_and_command_wins():
-    context_repair_result = CommandResult(
+    context_repair_result = TrackerCommandResult(
         tracker_state={"phase": "ready"},
         write_intents=[
             NotionWriteIntent(
                 operation_key="replace:landing_page",
-                operation_name="replace_page_children",
+                operation_name="replace_page_markdown",
                 target_page_key="landing_page",
-                arguments={"blocks": [{"type": "paragraph", "text": "Stale landing"}]},
+                arguments={"markdown": "Stale landing"},
             ),
             NotionWriteIntent(
                 operation_key="update_properties:task:ALOVYA-1",
@@ -296,20 +296,20 @@ def test_command_result_with_context_repairs_keeps_one_ordered_write_set_and_com
             ),
         ],
     )
-    command_result = CommandResult(
+    command_result = TrackerCommandResult(
         tracker_state={"phase": "command"},
         write_intents=[
             NotionWriteIntent(
                 operation_key="replace:landing_page",
-                operation_name="replace_page_children",
+                operation_name="replace_page_markdown",
                 target_page_key="landing_page",
-                arguments={"blocks": [{"type": "paragraph", "text": "Command landing"}]},
+                arguments={"markdown": "Command landing"},
             ),
             NotionWriteIntent(
                 operation_key="update_timeline_log:task:ALOVYA-1:2026-05-26",
                 operation_name="update_timeline_log",
                 target_page_key="task:ALOVYA-1",
-                arguments={"blocks": [{"type": "heading_3", "text": "2026-05-26"}]},
+                arguments={"timeline_section_markdown": "### 2026-05-26"},
             ),
         ],
     )
@@ -322,21 +322,19 @@ def test_command_result_with_context_repairs_keeps_one_ordered_write_set_and_com
         "update_properties:task:ALOVYA-1",
         "update_timeline_log:task:ALOVYA-1:2026-05-26",
     ]
-    assert combined_result.write_intents[0].arguments["blocks"] == [
-        {"type": "paragraph", "text": "Command landing"}
-    ]
+    assert combined_result.write_intents[0].arguments["markdown"] == "Command landing"
 
 
 def test_execute_command_result_writes_compiles_mcp_calls_downstream():
     notion_client = _FakeNotionMcpClient()
-    command_result = CommandResult(
+    command_result = TrackerCommandResult(
         tracker_state={},
         write_intents=[
             NotionWriteIntent(
                 operation_key="replace:landing_page",
-                operation_name="replace_page_children",
+                operation_name="replace_page_markdown",
                 target_page_key="landing_page",
-                arguments={"blocks": [{"type": "paragraph", "text": "A"}]},
+                arguments={"markdown": "A"},
             ),
             NotionWriteIntent(
                 operation_key="update_properties:task:ALOVYA-1",
@@ -375,7 +373,7 @@ def test_execute_command_result_writes_compiles_mcp_calls_downstream():
     ]
 
 
-def test_reconcile_tracker_state_from_notion_pages_uses_database_view_when_configured():
+def test_reconcile_tracker_state_from_notion_uses_database_view_when_configured():
     tracker_state = _tracker_state_with_root_task()
     tracker_state["task_database"] = default_task_database_tracker_state()
     notion_client = _FakeNotionMcpClient(
@@ -392,7 +390,7 @@ def test_reconcile_tracker_state_from_notion_pages_uses_database_view_when_confi
     )
 
     command_result = asyncio.run(
-        reconcile_tracker_state_from_notion_pages(tracker_state, notion_client)
+        reconcile_tracker_state_from_notion(tracker_state, notion_client)
     )
 
     assert command_result.tracker_state["tasks"]["ALOVYA-1"]["title"] == "Root task edited in database"
@@ -405,7 +403,7 @@ def test_reconcile_tracker_state_from_notion_pages_uses_database_view_when_confi
     assert notion_client.fetched_pages == []
 
 
-def test_reconcile_tracker_state_from_notion_pages_uses_sql_when_view_is_not_configured():
+def test_reconcile_tracker_state_from_notion_uses_sql_when_view_is_not_configured():
     tracker_state = _tracker_state_with_root_task()
     tracker_state["task_database"] = default_task_database_tracker_state()
     tracker_state["task_database"].pop("view_url")
@@ -423,7 +421,7 @@ def test_reconcile_tracker_state_from_notion_pages_uses_sql_when_view_is_not_con
     )
 
     command_result = asyncio.run(
-        reconcile_tracker_state_from_notion_pages(tracker_state, notion_client)
+        reconcile_tracker_state_from_notion(tracker_state, notion_client)
     )
 
     assert command_result.tracker_state["tasks"]["ALOVYA-1"]["configured_priority"] == "P2"
@@ -565,7 +563,6 @@ def test_execute_task_creation_command_creates_database_row_then_refreshes_landi
                 "entry_date": "2026-05-25",
                 "heading": '<mention-date start="2026-05-25"/>',
                 "lines": [],
-                "blocks": [],
             }
         ]
     assert completed_operation_keys == [
@@ -763,7 +760,7 @@ def test_timeline_state_for_task_command_keeps_usable_timeline_log():
 
 
 def test_raise_if_call_plan_has_blocked_operations_rejects_plan_before_writes():
-    call_plan = NotionMcpCallPlan.from_snapshot(
+    call_plan = NotionMcpCallPlan.from_json(
         {
             "calls": [],
             "blocked_operations": [
@@ -820,11 +817,9 @@ class _FakeNotionMcpClient:
         self,
         data_source_id: str,
         properties: dict,
-        blocks: list[dict],
         content: str,
         operation_key: str,
     ):
-        del blocks
         tool_result = await self.send_call(
             NotionMcpToolCall(
                 operation_key=operation_key,
@@ -870,7 +865,7 @@ class _FakeNotionMcpClient:
         )
         return operation_key
 
-    async def execute_command_result(self, command_result: CommandResult):
+    async def execute_command_result(self, command_result: TrackerCommandResult):
         if command_result.page_registry is None:
             raise ValueError("MCP write execution requires a page registry")
 
@@ -909,7 +904,7 @@ def _tracker_state_with_root_task() -> dict:
             notion_page_id="22222222222222222222222222222222",
         )
     )
-    return work_graph.to_snapshot()
+    return work_graph.to_tracker_state()
 
 
 def _tracker_state_with_root_and_child_task() -> dict:
@@ -934,7 +929,7 @@ def _tracker_state_with_root_and_child_task() -> dict:
         )
     )
     work_graph.link_parent_to_child(parent_task_id="ALOVYA-1", child_task_id="ALOVYA-2")
-    return work_graph.to_snapshot()
+    return work_graph.to_tracker_state()
 
 
 def _fetched_task_page(

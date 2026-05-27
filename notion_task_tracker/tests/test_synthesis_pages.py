@@ -1,6 +1,6 @@
 import pytest
 
-from notion_task_tracker.notion_pages import NotionPlanningError
+from notion_task_tracker import NotionPlanningError
 from notion_task_tracker.synthesis_pages import (
     ExistingSynthesisPageMention,
     SynthesisNotesMetadata,
@@ -43,26 +43,10 @@ class TestSynthesisNotesMetadataCreateSynthesisPage:
         assert write_intent.operation_name == "create_synthesis_page"
         assert write_intent.target_page_key == "synthesis_notes"
         assert write_intent.arguments["page"]["parent_page_key"] == "synthesis_notes"
-        assert write_intent.arguments["root_page_child_block"] == {
-            "type": "page_mention",
-            "page_key": "synthesis:onnx_qdq_export",
-        }
-        assert write_intent.arguments["blocks"][0] == {
-            "type": "heading_2",
-            "text": "Sources",
-        }
-        assert {"type": "paragraph", "text": "Reusable notes on export behaviour."} in write_intent.arguments["blocks"]
-        assert {
-            "type": "bulleted_list_item",
-            "depth": 0,
-            "text": "Notion page: ALOVYA-2",
-            "page_key": "task:ALOVYA-2",
-        } in write_intent.arguments["blocks"]
-        assert {
-            "type": "bulleted_list_item",
-            "depth": 0,
-            "text": "Google doc: Export notes: https://example.invalid/doc",
-        } in write_intent.arguments["blocks"]
+        assert write_intent.arguments["markdown"].startswith("## Sources")
+        assert "Reusable notes on export behaviour." in write_intent.arguments["markdown"]
+        assert "- Notion page: ALOVYA-2" in write_intent.arguments["markdown"]
+        assert "- Google doc: Export notes: https://example.invalid/doc" in write_intent.arguments["markdown"]
 
 
 class TestSynthesisNotesMetadataBuildNotionWritePlan:
@@ -102,16 +86,10 @@ class TestSynthesisNotesMetadataBuildNotionWritePlan:
             "replace:synthesis_notes",
             "replace:synthesis:onnx_qdq_export",
         }
-        assert root_refresh_intent.arguments["blocks"] == [
-            {
-                "type": "page_mention",
-                "page_key": "existing_synthesis:existing_guide",
-            },
-            {
-                "type": "page_mention",
-                "page_key": "synthesis:onnx_qdq_export",
-            }
-        ]
+        assert root_refresh_intent.arguments["markdown"] == "\n".join([
+            '<mention-page url="https://www.notion.so/11111111111111111111111111111111"/>',
+            "ONNX QDQ export behaviour",
+        ])
 
 
 class TestSynthesisNotesMetadataReconcileRootPageMentionsFromContent:
@@ -163,16 +141,13 @@ class TestSynthesisNotesMetadataReconcileRootPageMentionsFromContent:
         )
 
         root_page_entry = synthesis_notes.existing_page_mentions["99999999999999999999999999999999"]
-        root_page_blocks = synthesis_notes.build_notion_write_plan()[1].arguments["blocks"]
+        root_page_markdown = synthesis_notes.build_notion_write_plan()[1].arguments["markdown"]
 
         assert root_page_entry.title == "Guide"
         assert root_page_entry.root_block_type == "child_page"
-        assert root_page_blocks == [
-            {
-                "type": "child_page",
-                "page_key": "existing_synthesis:99999999999999999999999999999999",
-            },
-        ]
+        assert root_page_markdown == (
+            '<page url="https://www.notion.so/99999999999999999999999999999999">Guide</page>'
+        )
 
     def test_uses_agent_supplied_titles_for_bare_new_page_mentions(self):
         synthesis_notes = SynthesisNotesMetadata()
@@ -248,9 +223,9 @@ class TestSynthesisNotesMetadataSnapshot:
             )
         )
 
-        loaded_synthesis_notes = SynthesisNotesMetadata.from_snapshot(synthesis_notes.to_snapshot())
+        loaded_synthesis_notes = SynthesisNotesMetadata.from_tracker_state(synthesis_notes.to_tracker_state())
 
-        assert loaded_synthesis_notes.to_snapshot() == synthesis_notes.to_snapshot()
+        assert loaded_synthesis_notes.to_tracker_state() == synthesis_notes.to_tracker_state()
         assert loaded_synthesis_notes.pages["activation_outliers"].summary == "Reusable explanation."
         assert loaded_synthesis_notes.pages["activation_outliers"].sources[0].source_type == "Slack thread"
 
@@ -270,7 +245,7 @@ class TestSynthesisNotesMetadataSnapshot:
             if write_intent.operation_name == "create_page"
         }
 
-        loaded_synthesis_notes = SynthesisNotesMetadata.from_snapshot(synthesis_notes.to_snapshot())
+        loaded_synthesis_notes = SynthesisNotesMetadata.from_tracker_state(synthesis_notes.to_tracker_state())
 
         assert loaded_synthesis_notes.existing_page_mentions["existing_guide"].title == "Existing guide"
         assert loaded_synthesis_notes.existing_page_mentions["existing_guide"].display_order == 3

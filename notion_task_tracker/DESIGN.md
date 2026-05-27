@@ -203,15 +203,15 @@ Normal writes compile to:
 ```text
 create data-source page
 update page properties
-append block children
-archive and replace generated page children
+replace page Markdown
+update page Markdown
 ```
 
 After miscellaneous or synthesis page creation, the CLI records the returned page id and runs the needed refresh command. Task creation captures the new database row and assigned `Ticket ID` during live command execution.
 
 The MCP client remains as a temporary fallback. Delete it once REST is reliable for task creation, logging, completion, reconciliation, and landing-page rendering.
 
-Footgun: page replacement moves existing top-level blocks to trash before appending regenerated blocks. Use it only for tracker-owned landing, miscellaneous, or synthesis pages.
+Footgun: page replacement overwrites the whole page body Markdown. Use it only for tracker-owned landing, miscellaneous, or synthesis pages.
 
 ## Runtime
 

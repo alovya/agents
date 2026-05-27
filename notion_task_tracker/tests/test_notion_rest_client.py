@@ -1,7 +1,7 @@
 import asyncio
 import json
 
-from notion_task_tracker.notion_pages import NotionPageReference, NotionPageRegistry, NotionWriteIntent
+from notion_task_tracker import NotionPageReference, NotionPageRegistry, NotionWriteIntent
 from notion_task_tracker.notion_rest_client import (
     NotionRestClient,
     _notion_rest_error_message,
@@ -9,7 +9,7 @@ from notion_task_tracker.notion_rest_client import (
 )
 
 
-def test_fetch_task_page_content_uses_page_properties_and_block_children():
+def test_fetch_task_page_content_uses_page_properties_and_markdown():
     notion_client = _FakeNotionRestClient(
         responses=[
             {
@@ -17,16 +17,7 @@ def test_fetch_task_page_content_uses_page_properties_and_block_children():
                 "url": "https://www.notion.so/22222222222222222222222222222222",
                 "properties": _task_properties(ticket_number=1),
             },
-            {
-                "results": [
-                    {
-                        "id": "block-a",
-                        "type": "heading_2",
-                        "heading_2": {"rich_text": [{"plain_text": "Timeline log"}]},
-                    }
-                ],
-                "has_more": False,
-            },
+            {"markdown": "## Timeline log"},
         ]
     )
 
@@ -38,7 +29,7 @@ def test_fetch_task_page_content_uses_page_properties_and_block_children():
     assert "## Timeline log" in fetched_page_content
     assert notion_client.requests == [
         ("GET", "/v1/pages/22222222222222222222222222222222", None),
-        ("GET", "/v1/blocks/22222222222222222222222222222222/children?page_size=100", None),
+        ("GET", "/v1/pages/22222222222222222222222222222222/markdown", None),
     ]
 
 
@@ -131,68 +122,41 @@ def test_update_properties_call_uses_rest_page_property_shape():
     ]
 
 
-def test_replace_content_archives_existing_blocks_then_appends_rest_blocks():
+def test_replace_content_uses_page_markdown_endpoint():
     notion_client = _FakeNotionRestClient(
-        responses=[
-            {
-                "results": [{"id": "old-block", "type": "paragraph", "paragraph": {"rich_text": []}}],
-                "has_more": False,
-            },
-            {},
-            {},
-        ]
+        responses=[{}]
     )
 
     asyncio.run(
         notion_client.execute_write_intent(
             NotionWriteIntent(
                 operation_key="replace:landing_page",
-                operation_name="replace_page_children",
+                operation_name="replace_page_markdown",
                 target_page_key="landing_page",
                 arguments={
-                    "blocks": [
-                        {"type": "heading_2", "text": "P1"},
-                        {"type": "bulleted_list_item", "depth": 0, "text": "Active task"},
-                    ],
+                    "markdown": "## P1\n- Active task",
                 },
             ),
             _page_registry(),
         )
     )
 
-    assert notion_client.requests[0] == (
-        "GET",
-        "/v1/blocks/11111111111111111111111111111111/children?page_size=100",
-        None,
-    )
-    assert notion_client.requests[1] == (
+    assert notion_client.requests == [
+        (
         "PATCH",
-        "/v1/blocks/old-block",
-        {"in_trash": True},
-    )
-    assert notion_client.requests[2][0:2] == (
-        "PATCH",
-        "/v1/blocks/11111111111111111111111111111111/children",
-    )
-    assert [block["type"] for block in notion_client.requests[2][2]["children"]] == [
-        "heading_2",
-        "bulleted_list_item",
+        "/v1/pages/11111111111111111111111111111111/markdown",
+        {
+            "type": "replace_content",
+            "replace_content": "## P1\n- Active task",
+        },
+        )
     ]
 
 
-def test_update_content_inserts_new_blocks_after_matching_heading():
+def test_update_content_inserts_new_markdown_after_matching_heading():
     notion_client = _FakeNotionRestClient(
         responses=[
-            {
-                "results": [
-                    {
-                        "id": "timeline-heading",
-                        "type": "heading_2",
-                        "heading_2": {"rich_text": [{"plain_text": "Timeline log"}]},
-                    }
-                ],
-                "has_more": False,
-            },
+            {"markdown": "## Timeline log\n\nExisting notes."},
             {},
         ]
     )
@@ -205,49 +169,28 @@ def test_update_content_inserts_new_blocks_after_matching_heading():
                 target_page_key="task:ALOVYA-1",
                 arguments={
                     "timeline_log_heading": "Timeline log",
-                    "blocks": [
-                        {"type": "heading_3", "text": '<mention-date start="2026-05-26"/>'},
-                        {"type": "bulleted_list_item", "depth": 0, "text": "New log."},
-                    ],
+                    "timeline_section_markdown": '### <mention-date start="2026-05-26"/>\n- New log.',
                 },
             ),
             _page_registry(),
         )
     )
 
-    assert notion_client.requests[1] == (
+    assert notion_client.requests == [
+        (
+            "GET",
+            "/v1/pages/22222222222222222222222222222222/markdown",
+            None,
+        ),
+        (
         "PATCH",
-        "/v1/blocks/22222222222222222222222222222222/children",
+        "/v1/pages/22222222222222222222222222222222/markdown",
         {
-            "children": [
-                {
-                    "object": "block",
-                    "type": "heading_3",
-                    "heading_3": {
-                        "rich_text": [
-                            {
-                                "type": "mention",
-                                "mention": {
-                                    "type": "date",
-                                    "date": {"start": "2026-05-26"},
-                                },
-                            }
-                        ],
-                        "is_toggleable": False,
-                    },
-                },
-                {
-                    "object": "block",
-                    "type": "bulleted_list_item",
-                    "bulleted_list_item": {
-                        "rich_text": [{"type": "text", "text": {"content": "New log."}}],
-                        "color": "default",
-                    },
-                },
-            ],
-            "position": {"type": "after_block", "after_block": {"id": "timeline-heading"}},
+            "type": "replace_content",
+            "replace_content": '## Timeline log\n### <mention-date start="2026-05-26"/>\n- New log.\n\nExisting notes.',
         },
-    )
+        ),
+    ]
 
 
 def test_create_pages_call_creates_database_page_with_children():
@@ -271,12 +214,7 @@ def test_create_pages_call_creates_database_page_with_children():
                     "https://www.notion.so/22222222222222222222222222222222"
                 ]),
             },
-            blocks=[
-                {
-                    "type": "heading_2",
-                    "text": "Timeline log",
-                },
-            ],
+            markdown="## Timeline log",
         )
     )
 
@@ -285,7 +223,7 @@ def test_create_pages_call_creates_database_page_with_children():
     assert notion_client.requests[0][2]["properties"]["Parent"] == {
         "relation": [{"id": "22222222222222222222222222222222"}]
     }
-    assert notion_client.requests[0][2]["children"][0]["type"] == "heading_2"
+    assert notion_client.requests[0][2]["markdown"] == "## Timeline log"
 
 
 def test_notion_rest_error_message_includes_request_context():

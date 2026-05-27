@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
-from notion_task_tracker.notion_pages.write_intents import NotionPlanningError
+from notion_task_tracker.notion_writes import NotionPlanningError
 
 
 _COMPACT_NOTION_PAGE_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
@@ -65,11 +65,11 @@ class NotionPageRegistry:
         )
 
     @classmethod
-    def from_snapshot(cls, snapshot: dict[str, Any]) -> "NotionPageRegistry":
+    def from_tracker_state(cls, tracker_state: dict[str, Any]) -> "NotionPageRegistry":
         return cls(
             pages={
-                local_page_key: notion_page_reference_from_snapshot(reference_snapshot)
-                for local_page_key, reference_snapshot in snapshot.items()
+                local_page_key: notion_page_reference_from_tracker_state(reference_state)
+                for local_page_key, reference_state in tracker_state.items()
             }
         )
 
@@ -109,9 +109,9 @@ class NotionPageRegistry:
         )
         return NotionPageRegistry(pages={**self.pages, local_page_key: updated_page})
 
-    def to_snapshot(self) -> dict[str, Any]:
+    def to_tracker_state(self) -> dict[str, Any]:
         return {
-            local_page_key: notion_page_reference_to_snapshot(page)
+            local_page_key: notion_page_reference_to_tracker_state(page)
             for local_page_key, page in sorted(self.pages.items())
         }
 
@@ -136,7 +136,7 @@ def notion_page_id_from_url(notion_url: str) -> str:
     return canonical_notion_page_id(page_id_match.group(1))
 
 
-def page_pointer_to_snapshot(page: PagePointer) -> dict[str, Any]:
+def page_pointer_to_tracker_state(page: PagePointer) -> dict[str, Any]:
     return {
         "local_page_key": page.local_page_key,
         "title": page.title,
@@ -145,7 +145,7 @@ def page_pointer_to_snapshot(page: PagePointer) -> dict[str, Any]:
     }
 
 
-def notion_page_reference_to_snapshot(page: NotionPageReference) -> dict[str, Any]:
+def notion_page_reference_to_tracker_state(page: NotionPageReference) -> dict[str, Any]:
     return {
         "local_page_key": page.local_page_key,
         "title": page.title,
@@ -155,26 +155,26 @@ def notion_page_reference_to_snapshot(page: NotionPageReference) -> dict[str, An
     }
 
 
-def notion_page_reference_from_snapshot(snapshot: dict[str, Any]) -> NotionPageReference:
+def notion_page_reference_from_tracker_state(tracker_state: dict[str, Any]) -> NotionPageReference:
     return NotionPageReference(
-        local_page_key=snapshot["local_page_key"],
-        title=snapshot["title"],
-        notion_page_id=snapshot.get("notion_page_id"),
-        notion_url=snapshot.get("notion_url"),
-        parent_page_key=snapshot.get("parent_page_key"),
+        local_page_key=tracker_state["local_page_key"],
+        title=tracker_state["title"],
+        notion_page_id=tracker_state.get("notion_page_id"),
+        notion_url=tracker_state.get("notion_url"),
+        parent_page_key=tracker_state.get("parent_page_key"),
     )
 
 
-def fixed_page_pointer_from_snapshot(
-    snapshot: dict[str, Any],
+def fixed_page_pointer_from_tracker_state(
+    tracker_state: dict[str, Any],
     local_page_key: str,
     title: str,
 ) -> PagePointer:
     return PagePointer(
         local_page_key=local_page_key,
         title=title,
-        notion_page_id=snapshot.get("notion_page_id"),
-        parent_page_key=snapshot.get("parent_page_key"),
+        notion_page_id=tracker_state.get("notion_page_id"),
+        parent_page_key=tracker_state.get("parent_page_key"),
     )
 
 

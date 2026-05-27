@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import json
 from typing import Any
 
-from notion_task_tracker.commands import apply_command_to_tracker_state
+from notion_task_tracker.apply_tracker_command import apply_command_to_tracker_state
 from notion_task_tracker.notion_client import NotionClient
 from notion_task_tracker.notion_write_executor import execute_command_result_writes
 from notion_task_tracker.tasks.actions.write_task_log import command_result_from_current_notion_state
@@ -32,7 +32,7 @@ async def execute_task_creation_command(
     tracker_state: dict[str, Any],
     notion_client: NotionClient,
 ) -> tuple[dict[str, Any], list[str]]:
-    work_graph = TaskDependencyGraph.from_snapshot(tracker_state)
+    work_graph = TaskDependencyGraph.from_tracker_state(tracker_state)
     task_creation = _task_creation_from_command(command, work_graph)
     created_page_id, created_task_id, create_operation_keys = await _create_database_page_and_read_ticket_id(
         task_creation=task_creation,
@@ -155,11 +155,6 @@ async def _create_database_page_and_read_ticket_id(
             task_title=task_creation.task_title,
             configured_priority=task_creation.configured_priority,
             status=task_creation.status,
-            parent_task_id=task_creation.parent_task_id,
-            work_graph=work_graph,
-        ),
-        blocks=_new_task_page_initial_blocks(
-            initial_timeline_entry=task_creation.initial_child_timeline_entry,
             parent_task_id=task_creation.parent_task_id,
             work_graph=work_graph,
         ),
@@ -307,30 +302,6 @@ def _new_task_page_initial_content(
             f'- Spawned from parent task: <mention-page url="{parent_page_url}"/>.',
         ]
     )
-
-
-def _new_task_page_initial_blocks(
-    initial_timeline_entry: dict[str, Any] | None,
-    parent_task_id: str | None,
-    work_graph: TaskDependencyGraph,
-) -> list[dict[str, Any]]:
-    blocks = [{"type": "heading_2", "text": TASK_PAGE_TIMELINE_LOG_HEADING}]
-    if initial_timeline_entry is None or parent_task_id is None:
-        return blocks
-
-    parent_page_url = _task_notion_url(work_graph, parent_task_id)
-    blocks.extend([
-        {
-            "type": "heading_3",
-            "text": timeline_entry_for_date(initial_timeline_entry["entry_date"])["heading"],
-        },
-        {
-            "type": "bulleted_list_item",
-            "depth": 0,
-            "text": f'Spawned from parent task: <mention-page url="{parent_page_url}"/>.',
-        },
-    ])
-    return blocks
 
 
 def _new_task_database_row_properties(

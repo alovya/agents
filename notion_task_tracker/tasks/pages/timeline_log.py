@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import re
-from typing import Any
 
-from notion_task_tracker.notion_pages import paragraph_block
+from notion_task_tracker.notion_markdown import heading, join_markdown_blocks
 from notion_task_tracker.tasks.task import (
     MENTION_DATE_START_PATTERN,
     PROPERTIES_BLOCK_PATTERN,
@@ -41,20 +40,18 @@ def fetched_task_page_has_usable_timeline_log(
     return _timeline_log_content_from_fetched_task_page_content(fetched_page_content) is not None and bool(timeline_entries)
 
 
-def initialised_task_timeline_blocks(
+def initialised_task_timeline_markdown(
     entry_date: str,
-    timeline_blocks: list[dict[str, Any]],
+    timeline_section_markdown: str,
     fetched_page_content: str,
-) -> list[dict[str, Any]]:
-    blocks = [
-        {"type": "heading_2", "text": TASK_PAGE_TIMELINE_LOG_HEADING},
-        {"type": "heading_3", "text": timeline_entry_for_date(entry_date)["heading"]},
-        *timeline_blocks,
-    ]
+) -> str:
+    del entry_date
     existing_body_content = body_content_to_subsume_under_initial_timeline_date(fetched_page_content)
-    if existing_body_content:
-        blocks.extend(_blocks_from_existing_body_content(existing_body_content))
-    return blocks
+    return join_markdown_blocks([
+        heading(2, TASK_PAGE_TIMELINE_LOG_HEADING),
+        timeline_section_markdown,
+        existing_body_content,
+    ])
 
 
 def timeline_entry_for_date(entry_date: str) -> dict[str, str]:
@@ -71,15 +68,6 @@ def body_content_to_subsume_under_initial_timeline_date(fetched_page_content: st
         return body_content.strip()
 
     return _content_below_first_markdown_heading(existing_timeline_content).strip()
-
-
-def _blocks_from_existing_body_content(existing_body_content: str) -> list[dict[str, Any]]:
-    blocks = []
-    for paragraph in existing_body_content.split("\n\n"):
-        paragraph_text = paragraph.strip()
-        if paragraph_text:
-            blocks.append(paragraph_block(paragraph_text))
-    return blocks
 
 
 def _body_content_from_fetched_task_page_content(fetched_page_content: str) -> str:

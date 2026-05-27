@@ -12,15 +12,13 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from notion_task_tracker.commands import CommandResult
-from notion_task_tracker.notion_pages import (
+from notion_task_tracker.apply_tracker_command import TrackerCommandResult
+from notion_task_tracker.json_file import write_json_file
+from notion_task_tracker.notion_writes import NotionPlanningError, NotionWriteIntent
+from notion_task_tracker.page_registry import (
     NotionPageRegistry,
-    NotionPlanningError,
-    NotionWriteIntent,
-    write_json_snapshot,
 )
 from notion_task_tracker.notion_client import CreatedTaskDatabasePage, NotionWriteExecutionResult
-from notion_task_tracker.notion_pages.markdown import NotionMarkdownRenderer
 from notion_task_tracker.tasks.database import (
     task_database_data_source_url_from_tracker_state,
     task_database_query_for_tracker_state,
@@ -95,11 +93,9 @@ class NotionMcpClient:
         self,
         data_source_id: str,
         properties: dict[str, Any],
-        blocks: list[dict[str, Any]],
         content: str,
         operation_key: str,
     ) -> CreatedTaskDatabasePage:
-        del blocks
         create_result = await self.send_call(
             NotionMcpToolCall(
                 operation_key=operation_key,
@@ -145,7 +141,7 @@ class NotionMcpClient:
         )
         return operation_key
 
-    async def execute_command_result(self, command_result: CommandResult) -> NotionWriteExecutionResult:
+    async def execute_command_result(self, command_result: TrackerCommandResult) -> NotionWriteExecutionResult:
         if command_result.page_registry is None:
             raise ValueError("MCP write execution requires a page registry")
 
@@ -163,7 +159,7 @@ class NotionMcpClient:
         tool_result = await self._call_notion_tool(tool_call.tool_name, tool_call.arguments)
         return {
             "tool_name": tool_call.tool_name,
-            "result": _snapshot_notion_mcp_tool_result(tool_result),
+            "result": _jsonable_notion_mcp_tool_result(tool_result),
         }
 
     async def _call_notion_tool_for_text(self, tool_name: str, tool_arguments: dict[str, Any]) -> str:
@@ -254,7 +250,7 @@ def _raise_if_call_plan_has_blocked_operations(call_plan: NotionMcpCallPlan) -> 
         json.dumps(
             {
                 "blocked_operations": [
-                    blocked_operation.to_snapshot()
+                    blocked_operation.to_json()
                     for blocked_operation in call_plan.blocked_operations
                 ],
             },
@@ -395,7 +391,7 @@ def _text_from_notion_mcp_content_item(content_item: Any) -> str:
     return str(getattr(content_item, "text", ""))
 
 
-def _snapshot_notion_mcp_tool_result(tool_result: Any) -> dict[str, Any]:
+def _jsonable_notion_mcp_tool_result(tool_result: Any) -> dict[str, Any]:
     return {
         "is_error": bool(getattr(tool_result, "isError", False) or getattr(tool_result, "is_error", False)),
         "text": _text_from_notion_mcp_tool_result(tool_result),
@@ -412,15 +408,15 @@ class NotionMcpToolCall:
     captures_page_key: str | None = None
 
     @classmethod
-    def from_snapshot(cls, snapshot: dict[str, Any]) -> "NotionMcpToolCall":
+    def from_json(cls, data: dict[str, Any]) -> "NotionMcpToolCall":
         return cls(
-            operation_key=snapshot["operation_key"],
-            tool_name=snapshot["tool_name"],
-            arguments=dict(snapshot["arguments"]),
-            captures_page_key=snapshot.get("captures_page_key"),
+            operation_key=data["operation_key"],
+            tool_name=data["tool_name"],
+            arguments=dict(data["arguments"]),
+            captures_page_key=data.get("captures_page_key"),
         )
 
-    def to_snapshot(self) -> dict[str, Any]:
+    def to_json(self) -> dict[str, Any]:
         return {
             "operation_key": self.operation_key,
             "tool_name": self.tool_name,
@@ -437,13 +433,13 @@ class BlockedNotionMcpOperation:
     reason: str
 
     @classmethod
-    def from_snapshot(cls, snapshot: dict[str, Any]) -> "BlockedNotionMcpOperation":
+    def from_json(cls, data: dict[str, Any]) -> "BlockedNotionMcpOperation":
         return cls(
-            operation_key=snapshot["operation_key"],
-            reason=snapshot["reason"],
+            operation_key=data["operation_key"],
+            reason=data["reason"],
         )
 
-    def to_snapshot(self) -> dict[str, Any]:
+    def to_json(self) -> dict[str, Any]:
         return {
             "operation_key": self.operation_key,
             "reason": self.reason,
@@ -458,29 +454,29 @@ class NotionMcpCallPlan:
     blocked_operations: list[BlockedNotionMcpOperation] = field(default_factory=list)
 
     @classmethod
-    def from_snapshot(cls, snapshot: dict[str, Any]) -> "NotionMcpCallPlan":
+    def from_json(cls, data: dict[str, Any]) -> "NotionMcpCallPlan":
         return cls(
             calls=[
-                NotionMcpToolCall.from_snapshot(call_snapshot)
-                for call_snapshot in snapshot.get("calls", [])
+                NotionMcpToolCall.from_json(call_state)
+                for call_state in data.get("calls", [])
             ],
             blocked_operations=[
-                BlockedNotionMcpOperation.from_snapshot(blocked_snapshot)
-                for blocked_snapshot in snapshot.get("blocked_operations", [])
+                BlockedNotionMcpOperation.from_json(blocked_state)
+                for blocked_state in data.get("blocked_operations", [])
             ],
         )
 
     def write_json(self, output_path: str | Path) -> None:
-        write_json_snapshot(self.to_snapshot(), output_path)
+        write_json_file(self.to_json(), output_path)
 
-    def to_snapshot(self) -> dict[str, Any]:
+    def to_json(self) -> dict[str, Any]:
         return {
             "calls": [
-                call.to_snapshot()
+                call.to_json()
                 for call in self.calls
             ],
             "blocked_operations": [
-                blocked_operation.to_snapshot()
+                blocked_operation.to_json()
                 for blocked_operation in self.blocked_operations
             ],
         }
@@ -491,7 +487,6 @@ class NotionMcpCallPlanner:
 
     def __init__(self, page_registry: NotionPageRegistry):
         self.page_registry = page_registry
-        self.markdown_renderer = NotionMarkdownRenderer(page_registry)
 
     def compile_write_intents(self, write_intents: list[NotionWriteIntent]) -> NotionMcpCallPlan:
         call_plan = NotionMcpCallPlan()
@@ -518,8 +513,8 @@ class NotionMcpCallPlanner:
         if write_intent.operation_name == "create_page":
             return self._compile_create_page_intent(write_intent)
 
-        if write_intent.operation_name == "replace_page_children":
-            return self._compile_replace_page_children_intent(write_intent)
+        if write_intent.operation_name == "replace_page_markdown":
+            return self._compile_replace_page_markdown_intent(write_intent)
 
         if write_intent.operation_name == "update_page_properties":
             return self._compile_update_page_properties_intent(write_intent)
@@ -545,15 +540,15 @@ class NotionMcpCallPlanner:
             local_page_key=arguments["local_page_key"],
             title=arguments["title"],
             parent_page_key=arguments.get("parent_page_key"),
-            blocks=arguments.get("blocks"),
+            content=arguments.get("markdown", ""),
         )
 
-    def _compile_replace_page_children_intent(self, write_intent: NotionWriteIntent) -> NotionMcpCallPlan:
+    def _compile_replace_page_markdown_intent(self, write_intent: NotionWriteIntent) -> NotionMcpCallPlan:
         target_page_key = self._required_target_page_key(write_intent)
         return self._plan_replace_page_content(
             operation_key=write_intent.operation_key,
             target_page_key=target_page_key,
-            blocks=write_intent.arguments["blocks"],
+            content=write_intent.arguments["markdown"],
         )
 
     def _compile_update_page_properties_intent(self, write_intent: NotionWriteIntent) -> NotionMcpCallPlan:
@@ -577,19 +572,19 @@ class NotionMcpCallPlanner:
         )
 
     def _compile_timeline_log_update_intent(self, write_intent: NotionWriteIntent) -> NotionMcpCallPlan:
-        if "existing_blocks" in write_intent.arguments:
-            return self._plan_insert_after_existing_timeline_heading(
+        if "old_timeline_section_markdown" in write_intent.arguments:
+            return self._plan_replace_timeline_section(
                 operation_key=write_intent.operation_key,
                 target_page_key=self._required_target_page_key(write_intent),
-                timeline_heading=write_intent.arguments["existing_timeline_heading"],
-                append_blocks=self._required_blocks(write_intent, "append_blocks"),
+                old_markdown=write_intent.arguments["old_timeline_section_markdown"],
+                new_markdown=write_intent.arguments["new_timeline_section_markdown"],
             )
 
         return self._plan_prepend_timeline_entry(
             operation_key=write_intent.operation_key,
             target_page_key=self._required_target_page_key(write_intent),
             timeline_log_heading=write_intent.arguments["timeline_log_heading"],
-            blocks=self._required_blocks(write_intent, "blocks"),
+            timeline_section_markdown=write_intent.arguments["timeline_section_markdown"],
         )
 
     def _compile_miscellaneous_context_append_intent(self, write_intent: NotionWriteIntent) -> NotionMcpCallPlan:
@@ -602,9 +597,9 @@ class NotionMcpCallPlanner:
         return self._plan_target_and_root_replacement(
             operation_key=write_intent.operation_key,
             target_page_key=dated_page_key,
-            target_blocks=self._required_blocks(write_intent, "dated_page_blocks"),
+            target_markdown=write_intent.arguments["dated_page_markdown"],
             root_page_key=write_intent.arguments["root_page_key"],
-            root_blocks=write_intent.arguments.get("root_page_blocks"),
+            root_markdown=write_intent.arguments.get("root_page_markdown"),
         )
 
     def _compile_synthesis_page_creation_intent(self, write_intent: NotionWriteIntent) -> NotionMcpCallPlan:
@@ -617,9 +612,9 @@ class NotionMcpCallPlanner:
         return self._plan_target_and_root_replacement(
             operation_key=write_intent.operation_key,
             target_page_key=synthesis_page_key,
-            target_blocks=self._required_blocks(write_intent, "blocks"),
+            target_markdown=write_intent.arguments["markdown"],
             root_page_key=write_intent.arguments["root_page_key"],
-            root_blocks=write_intent.arguments.get("root_page_blocks"),
+            root_markdown=write_intent.arguments.get("root_page_markdown"),
         )
 
     def _plan_miscellaneous_page_creation_before_refresh(
@@ -632,7 +627,7 @@ class NotionMcpCallPlanner:
             local_page_key=dated_page["local_page_key"],
             title=dated_page["title"],
             parent_page_key=dated_page.get("parent_page_key"),
-            blocks=write_intent.arguments["dated_page_blocks"],
+            content=write_intent.arguments["dated_page_markdown"],
         )
         create_plan.blocked_operations.append(
             BlockedNotionMcpOperation(
@@ -655,7 +650,7 @@ class NotionMcpCallPlanner:
             local_page_key=synthesis_page["local_page_key"],
             title=synthesis_page["title"],
             parent_page_key=synthesis_page.get("parent_page_key"),
-            blocks=write_intent.arguments["blocks"],
+            content=write_intent.arguments["markdown"],
         )
         create_plan.blocked_operations.append(
             BlockedNotionMcpOperation(
@@ -672,21 +667,21 @@ class NotionMcpCallPlanner:
         self,
         operation_key: str,
         target_page_key: str,
-        target_blocks: list[dict[str, Any]],
+        target_markdown: str,
         root_page_key: str,
-        root_blocks: list[dict[str, Any]] | None,
+        root_markdown: str | None,
     ) -> NotionMcpCallPlan:
         call_plan = self._plan_replace_page_content(
             operation_key=f"replace:{target_page_key}:{operation_key}",
             target_page_key=target_page_key,
-            blocks=target_blocks,
+            content=target_markdown,
         )
 
-        if root_blocks is not None:
+        if root_markdown is not None:
             root_plan = self._plan_replace_page_content(
                 operation_key=f"replace:{root_page_key}:{operation_key}",
                 target_page_key=root_page_key,
-                blocks=root_blocks,
+                content=root_markdown,
             )
             call_plan.calls.extend(root_plan.calls)
             call_plan.blocked_operations.extend(root_plan.blocked_operations)
@@ -699,10 +694,10 @@ class NotionMcpCallPlanner:
         local_page_key: str,
         title: str,
         parent_page_key: str | None,
-        blocks: list[dict[str, Any]] | None,
+        content: str,
     ) -> NotionMcpCallPlan:
         try:
-            arguments = self._create_page_arguments(title, parent_page_key, blocks)
+            arguments = self._create_page_arguments(title, parent_page_key, content)
         except NotionPlanningError as error:
             return self._blocked_plan(operation_key, str(error))
 
@@ -721,13 +716,13 @@ class NotionMcpCallPlanner:
         self,
         title: str,
         parent_page_key: str | None,
-        blocks: list[dict[str, Any]] | None,
+        content: str,
     ) -> dict[str, Any]:
         page = {
             "properties": {
                 "title": title,
             },
-            "content": self.markdown_renderer.render_blocks(blocks or []),
+            "content": content,
         }
         arguments = {"pages": [page]}
 
@@ -743,11 +738,10 @@ class NotionMcpCallPlanner:
         self,
         operation_key: str,
         target_page_key: str,
-        blocks: list[dict[str, Any]],
+        content: str,
     ) -> NotionMcpCallPlan:
         try:
             page_id = self.page_registry.page_id(target_page_key)
-            content = self.markdown_renderer.render_blocks(blocks)
         except NotionPlanningError as error:
             return self._blocked_plan(operation_key, str(error))
 
@@ -770,14 +764,11 @@ class NotionMcpCallPlanner:
         operation_key: str,
         target_page_key: str,
         timeline_log_heading: str,
-        blocks: list[dict[str, Any]],
+        timeline_section_markdown: str,
     ) -> NotionMcpCallPlan:
         try:
             page_id = self.page_registry.page_id(target_page_key)
-            heading_content = self.markdown_renderer.render_blocks([
-                {"type": "heading_2", "text": timeline_log_heading}
-            ])
-            content = self.markdown_renderer.render_blocks(blocks)
+            heading_content = f"## {timeline_log_heading}"
         except NotionPlanningError as error:
             return self._blocked_plan(operation_key, str(error))
 
@@ -792,7 +783,7 @@ class NotionMcpCallPlanner:
                         "content_updates": [
                             {
                                 "old_str": heading_content,
-                                "new_str": f"{heading_content}\n{content}",
+                                "new_str": f"{heading_content}\n{timeline_section_markdown}",
                             }
                         ],
                     },
@@ -800,17 +791,15 @@ class NotionMcpCallPlanner:
             ]
         )
 
-    def _plan_insert_after_existing_timeline_heading(
+    def _plan_replace_timeline_section(
         self,
         operation_key: str,
         target_page_key: str,
-        timeline_heading: str,
-        append_blocks: list[dict[str, Any]],
+        old_markdown: str,
+        new_markdown: str,
     ) -> NotionMcpCallPlan:
         try:
             page_id = self.page_registry.page_id(target_page_key)
-            heading_content = self.markdown_renderer.render_blocks([{"type": "heading_3", "text": timeline_heading}])
-            appended_content = self.markdown_renderer.render_blocks(append_blocks)
         except NotionPlanningError as error:
             return self._blocked_plan(operation_key, str(error))
 
@@ -824,8 +813,8 @@ class NotionMcpCallPlanner:
                         "command": "update_content",
                         "content_updates": [
                             {
-                                "old_str": heading_content,
-                                "new_str": f"{heading_content}\n{appended_content}",
+                                "old_str": old_markdown,
+                                "new_str": new_markdown,
                             }
                         ],
                     },
@@ -846,14 +835,6 @@ class NotionMcpCallPlanner:
             raise NotionPlanningError(f"Intent {write_intent.operation_key!r} has no target page key")
 
         return write_intent.target_page_key
-
-    def _required_blocks(self, write_intent: NotionWriteIntent, argument_key: str) -> list[dict[str, Any]]:
-        if argument_key not in write_intent.arguments:
-            raise NotionPlanningError(
-                f"Intent {write_intent.operation_key!r} has no {argument_key!r} blocks"
-            )
-
-        return write_intent.arguments[argument_key]
 
     def _blocked_plan(self, operation_key: str, reason: str) -> NotionMcpCallPlan:
         return NotionMcpCallPlan(

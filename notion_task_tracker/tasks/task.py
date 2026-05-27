@@ -7,7 +7,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from notion_task_tracker.notion_pages import ExternalLink, NotionWriteIntent, heading_block, toggle_block
+from notion_task_tracker.external_links import ExternalLink
+from notion_task_tracker.notion_markdown import bullet, heading, join_markdown_blocks, toggle
+from notion_task_tracker.notion_writes import NotionWriteIntent
 
 
 COMPLETED_TASK_PRIORITY_LABEL = "N/A"
@@ -82,37 +84,34 @@ class TimelineEntry:
     entry_date: str
     heading: str
     lines: list[str] = field(default_factory=list)
-    blocks: list[dict[str, Any]] = field(default_factory=list)
     subheading: str | None = None
 
-    def to_content_blocks(self) -> list[dict[str, Any]]:
-        line_blocks = self.blocks or [_timeline_line_block(line) for line in self.lines]
+    def to_content_markdown(self) -> str:
+        lines_markdown = join_markdown_blocks([bullet(line) for line in self.lines])
         if self.subheading:
-            return [toggle_block(text=self.subheading, children=line_blocks)]
+            return toggle(self.subheading, lines_markdown)
 
-        return line_blocks
+        return lines_markdown
 
-    def to_timeline_section_blocks(self) -> list[dict[str, Any]]:
-        return [
-            heading_block(level=3, text=self.heading),
-            *self.to_content_blocks(),
-        ]
+    def to_timeline_section_markdown(self) -> str:
+        return join_markdown_blocks([
+            heading(3, self.heading),
+            self.to_content_markdown(),
+        ])
 
-    def to_snapshot(self) -> dict[str, Any]:
+    def to_tracker_state(self) -> dict[str, Any]:
         return {
             "entry_date": self.entry_date,
             "heading": self.heading,
             "lines": [],
-            "blocks": [],
         }
 
     @classmethod
-    def from_snapshot(cls, snapshot: dict[str, Any]) -> "TimelineEntry":
+    def from_tracker_state(cls, tracker_state: dict[str, Any]) -> "TimelineEntry":
         return cls(
-            entry_date=snapshot["entry_date"],
-            heading=snapshot["heading"],
+            entry_date=tracker_state["entry_date"],
+            heading=tracker_state["heading"],
             lines=[],
-            blocks=[],
         )
 
     @classmethod
@@ -122,7 +121,6 @@ class TimelineEntry:
             entry_date=entry_date,
             heading=_date_only_timeline_heading(command.get("heading", ""), entry_date),
             lines=list(command.get("lines", [])),
-            blocks=list(command.get("blocks", [])),
             subheading=command.get("subheading"),
         )
 
@@ -199,13 +197,14 @@ class Task:
         arguments = {
             "task_id": self.task_id,
             "timeline_log_heading": TASK_PAGE_TIMELINE_LOG_HEADING,
-            "timeline_entry": timeline_entry.to_snapshot(),
-            "blocks": timeline_entry.to_timeline_section_blocks(),
+            "timeline_entry": timeline_entry.to_tracker_state(),
+            "timeline_section_markdown": timeline_entry.to_timeline_section_markdown(),
         }
         if existing_timeline_entry is not None:
             arguments["existing_timeline_heading"] = existing_timeline_entry.heading
-            arguments["existing_blocks"] = existing_timeline_entry.to_timeline_section_blocks()
-            arguments["append_blocks"] = appended_timeline_entry.to_content_blocks()
+            arguments["old_timeline_section_markdown"] = existing_timeline_entry.to_timeline_section_markdown()
+            arguments["new_timeline_section_markdown"] = timeline_entry.to_timeline_section_markdown()
+            arguments["appended_markdown"] = appended_timeline_entry.to_content_markdown()
 
         return NotionWriteIntent(
             operation_key=f"{UPDATE_TIMELINE_LOG_OPERATION_NAME}:{self.local_page_key}:{timeline_entry.entry_date}",
@@ -236,7 +235,6 @@ def _upsert_timeline_entry(
         return timeline_entry
 
     existing_entry.lines.extend(timeline_entry.lines)
-    existing_entry.blocks.extend(timeline_entry.blocks)
     return existing_entry
 
 
@@ -245,7 +243,6 @@ def _copy_timeline_entry(timeline_entry: TimelineEntry) -> TimelineEntry:
         entry_date=timeline_entry.entry_date,
         heading=timeline_entry.heading,
         lines=list(timeline_entry.lines),
-        blocks=[dict(block) for block in timeline_entry.blocks],
         subheading=timeline_entry.subheading,
     )
 
@@ -262,7 +259,6 @@ def _merged_timeline_entries_by_date(timeline_entries: list[TimelineEntry]) -> l
             continue
 
         existing_entry.lines.extend(timeline_entry.lines)
-        existing_entry.blocks.extend(timeline_entry.blocks)
 
     return merged_entries
 
@@ -276,14 +272,6 @@ def _timeline_entry_for_date(
             return timeline_entry
 
     return None
-
-
-def _timeline_line_block(line: str) -> dict[str, Any]:
-    return {
-        "type": "bulleted_list_item",
-        "depth": 0,
-        "text": line,
-    }
 
 
 def _date_only_timeline_heading(raw_heading: str, entry_date: str) -> str:

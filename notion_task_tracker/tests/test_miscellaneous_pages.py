@@ -20,15 +20,7 @@ class TestMiscellaneousNotesMetadataAppendToDatedPage:
         assert write_intent.target_page_key == "miscellaneous:2026-05-24"
         assert write_intent.arguments["root_page_key"] == "miscellaneous_notes"
         assert write_intent.arguments["dated_page"]["parent_page_key"] == "miscellaneous_notes"
-        assert write_intent.arguments["blocks"] == [
-            {
-                "type": "bulleted_list_item",
-                "depth": 0,
-                "text": "Random thought not yet tied to a task.",
-                "source_page_id": "source-page",
-                "source_block_id": "source-block",
-            }
-        ]
+        assert write_intent.arguments["markdown"] == "- Random thought not yet tied to a task."
 
 
 class TestMiscellaneousNotesMetadataBuildNotionWritePlan:
@@ -58,17 +50,8 @@ class TestMiscellaneousNotesMetadataBuildNotionWritePlan:
         )
 
         assert create_page_keys == {"miscellaneous_notes", "miscellaneous:2026-05-24"}
-        assert root_refresh_intent.arguments["blocks"] == [
-            {
-                "type": "bulleted_list_item",
-                "depth": 0,
-                "text": "2026-05-24",
-                "page_key": "miscellaneous:2026-05-24",
-            }
-        ]
-        assert dated_page_refresh_intent.arguments["blocks"][0]["text"] == (
-            "Meeting fragment that may become work later."
-        )
+        assert root_refresh_intent.arguments["markdown"] == "- 2026-05-24"
+        assert dated_page_refresh_intent.arguments["markdown"] == "- Meeting fragment that may become work later."
 
 
 class TestMiscellaneousNotesMetadataSnapshot:
@@ -79,6 +62,6 @@ class TestMiscellaneousNotesMetadataSnapshot:
             lines=["Meeting fragment that may become work later."],
         )
 
-        loaded_miscellaneous_notes = MiscellaneousNotesMetadata.from_snapshot(miscellaneous_notes.to_snapshot())
+        loaded_miscellaneous_notes = MiscellaneousNotesMetadata.from_tracker_state(miscellaneous_notes.to_tracker_state())
 
-        assert loaded_miscellaneous_notes.to_snapshot() == miscellaneous_notes.to_snapshot()
+        assert loaded_miscellaneous_notes.to_tracker_state() == miscellaneous_notes.to_tracker_state()
