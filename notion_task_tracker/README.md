@@ -264,7 +264,7 @@ The package is Python metadata and Notion write execution code. Live fetch/write
 
 - `__main__.py`: CLI for command JSON and direct task database reconciliation.
 - `apply_tracker_command.py`: command dispatcher from JSON to tracker-state updates and Notion writes.
-- `tasks/workflow.py`: top-level task command and reconciliation workflow.
+- `tracker_cli_workflow.py`: top-level command execution and tracker refresh workflow.
 - `tasks/dependency_graph.py`: task dependency graph validation, priority rollup, and task-write orchestration.
 - `tasks/database.py`: task database projection and database-row parsing.
 - `tasks/task.py`: task, priority, status, timeline-entry data, task property refresh intents, and timeline-log update intents.

@@ -1,4 +1,4 @@
-"""Command-line entrypoint for command planning and task-page reconciliation."""
+"""Command-line entrypoint for tracker commands and task-state refreshes."""
 
 from __future__ import annotations
 
@@ -7,12 +7,12 @@ import json
 
 from collections.abc import Sequence
 
-from notion_task_tracker.tasks.workflow import (
+from notion_task_tracker.tracker_cli_workflow import (
     DEFAULT_CREDENTIALS_PATH,
     DEFAULT_OUTPUT_PATH,
     DEFAULT_TRACKER_STATE_PATH,
     execute_command_file,
-    reconcile_task_dependency_graph_from_notion,
+    refresh_task_tracker_from_notion,
 )
 
 
@@ -34,13 +34,13 @@ def main(argv: Sequence[str] | None = None) -> None:
 
 def _run_requested_cli_action(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
     if args.reconcile_from_notion:
-        reconcile_summary = reconcile_task_dependency_graph_from_notion(
+        refresh_summary = refresh_task_tracker_from_notion(
             credentials_path=args.credentials_path or DEFAULT_CREDENTIALS_PATH,
             tracker_state_path=args.tracker_state_path or DEFAULT_TRACKER_STATE_PATH,
             output_path=args.output_path or DEFAULT_OUTPUT_PATH,
             notion_client=args.notion_transport,
         )
-        print(json.dumps(reconcile_summary.to_json_summary(), indent=2, sort_keys=True))
+        print(json.dumps(refresh_summary.to_json_summary(), indent=2, sort_keys=True))
         return
 
     if not args.command_path:

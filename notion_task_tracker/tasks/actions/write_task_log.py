@@ -16,9 +16,9 @@ from notion_task_tracker.tasks.pages.timeline_log import (
     timeline_entries_from_fetched_task_page_content,
     timeline_entry_for_date,
 )
-from notion_task_tracker.tasks.actions.reconcile_task_dependencies_from_notion import (
-    maybe_repair_reconciled_task_pages,
-    reconcile_tracker_state_for_command_targets,
+from notion_task_tracker.tasks.actions.refresh_task_tracker_state import (
+    repair_result_for_task_graph_changes,
+    refresh_tracker_state_for_command_targets,
 )
 from notion_task_tracker.tasks import TaskDependencyGraph
 
@@ -29,7 +29,7 @@ async def tracker_state_ready_for_command(
     notion_client: NotionClient,
 ) -> TrackerCommandResult:
     if _is_task_command(command):
-        return await reconcile_tracker_state_for_command_targets(
+        return await refresh_tracker_state_for_command_targets(
             command=command,
             tracker_state=tracker_state,
             notion_client=notion_client,
@@ -69,8 +69,8 @@ def repair_result_for_command_context(
     before_tracker_state: dict[str, Any],
     command_ready_result: TrackerCommandResult,
 ) -> TrackerCommandResult:
-    return maybe_repair_reconciled_task_pages(
-        reconcile_result=command_ready_result,
+    return repair_result_for_task_graph_changes(
+        refreshed_result=command_ready_result,
         task_graph_changes=TaskDependencyGraph.changes_between_tracker_states(
             before_tracker_state,
             command_ready_result.tracker_state,

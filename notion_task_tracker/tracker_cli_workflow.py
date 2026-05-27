@@ -1,4 +1,4 @@
-"""Top-level CLI workflows for Notion task tracking."""
+"""Top-level CLI workflow for tracker commands and full task refreshes."""
 
 from __future__ import annotations
 
@@ -21,9 +21,9 @@ from notion_task_tracker.tasks.actions.create_task_page_in_database import (
     command_creates_task_page_in_database,
     execute_task_creation_command,
 )
-from notion_task_tracker.tasks.actions.reconcile_task_dependencies_from_notion import (
-    maybe_repair_reconciled_task_pages,
-    reconcile_tracker_state_from_notion,
+from notion_task_tracker.tasks.actions.refresh_task_tracker_state import (
+    repair_result_for_task_graph_changes,
+    refresh_tracker_state_from_task_database,
 )
 from notion_task_tracker.tasks import TaskDependencyGraph
 
@@ -31,7 +31,7 @@ from notion_task_tracker.tasks import TaskDependencyGraph
 DEFAULT_CODEX_HOME_PATH = Path.home() / ".codex"
 DEFAULT_CREDENTIALS_PATH = DEFAULT_CODEX_HOME_PATH / ".credentials.json"
 DEFAULT_TRACKER_STATE_PATH = DEFAULT_CODEX_HOME_PATH / "memories" / "notion_tasks_graph.json"
-DEFAULT_OUTPUT_PATH = Path("/tmp/notion_task_reconcile_result.json")
+DEFAULT_OUTPUT_PATH = Path("/tmp/notion_task_refreshed_result.json")
 
 
 def execute_command_file(
@@ -52,14 +52,14 @@ def execute_command_file(
     ))
 
 
-def reconcile_task_dependency_graph_from_notion(
+def refresh_task_tracker_from_notion(
     credentials_path: str | Path = DEFAULT_CREDENTIALS_PATH,
     tracker_state_path: str | Path = DEFAULT_TRACKER_STATE_PATH,
     output_path: str | Path = DEFAULT_OUTPUT_PATH,
     backup_path: str | Path | None = None,
     notion_client: str = "rest",
-) -> "NotionTaskReconcileSummary":
-    return asyncio.run(_reconcile_task_dependency_graph_from_notion(
+) -> "TaskTrackerRefreshSummary":
+    return asyncio.run(_refresh_task_tracker_from_notion(
         credentials_path=credentials_path,
         tracker_state_path=tracker_state_path,
         output_path=output_path,
@@ -127,13 +127,13 @@ async def _execute_command_file(
     return execution_summary
 
 
-async def _reconcile_task_dependency_graph_from_notion(
+async def _refresh_task_tracker_from_notion(
     credentials_path: str | Path,
     tracker_state_path: str | Path,
     output_path: str | Path,
     backup_path: str | Path | None,
     notion_client: str,
-) -> "NotionTaskReconcileSummary":
+) -> "TaskTrackerRefreshSummary":
     source_tracker_state_path = Path(tracker_state_path)
     destination_output_path = Path(output_path)
     destination_backup_path = Path(backup_path) if backup_path else _timestamped_backup_path()
@@ -142,52 +142,52 @@ async def _reconcile_task_dependency_graph_from_notion(
     _write_json(destination_backup_path, tracker_state)
 
     client = notion_client_from_credentials_path(Path(credentials_path), notion_client)
-    reconcile_result = await reconcile_tracker_state_from_notion(tracker_state, client)
-    return await repair_and_write_reconciled_tracker_state(
+    refreshed_result = await refresh_tracker_state_from_task_database(tracker_state, client)
+    return await repair_and_write_refreshed_tracker_state(
         source_tracker_state_path=source_tracker_state_path,
         destination_output_path=destination_output_path,
         destination_backup_path=destination_backup_path,
         before_tracker_state=tracker_state,
-        reconcile_result=reconcile_result,
+        refreshed_result=refreshed_result,
         notion_client=client,
     )
 
 
-async def repair_and_write_reconciled_tracker_state(
+async def repair_and_write_refreshed_tracker_state(
     source_tracker_state_path: Path,
     destination_output_path: Path,
     destination_backup_path: Path,
     before_tracker_state: dict[str, Any],
-    reconcile_result,
+    refreshed_result,
     notion_client,
-) -> "NotionTaskReconcileSummary":
+) -> "TaskTrackerRefreshSummary":
     task_changes = TaskDependencyGraph.changes_between_tracker_states(
         before_tracker_state,
-        reconcile_result.tracker_state,
+        refreshed_result.tracker_state,
     )
-    repair_result = maybe_repair_reconciled_task_pages(
-        reconcile_result=reconcile_result,
+    repair_result = repair_result_for_task_graph_changes(
+        refreshed_result=refreshed_result,
         task_graph_changes=task_changes,
     )
     repaired_tracker_state, completed_operation_keys = await execute_command_result_writes(repair_result, notion_client)
     _write_json(source_tracker_state_path, repaired_tracker_state)
 
-    reconcile_summary = NotionTaskReconcileSummary(
+    refresh_summary = TaskTrackerRefreshSummary(
         backup_path=destination_backup_path,
         completed_operation_keys=completed_operation_keys,
         output_path=destination_output_path,
         tracker_state_path=source_tracker_state_path,
         task_count=len(repaired_tracker_state["tasks"]),
         task_graph_changes=task_changes,
-        warnings=reconcile_result.warnings or [],
+        warnings=refreshed_result.warnings or [],
         repair_operation_count=len(repair_result.write_intents),
     )
-    _write_json(destination_output_path, reconcile_summary.to_json_summary())
-    return reconcile_summary
+    _write_json(destination_output_path, refresh_summary.to_json_summary())
+    return refresh_summary
 
 
 @dataclass(frozen=True)
-class NotionTaskReconcileSummary:
+class TaskTrackerRefreshSummary:
     backup_path: Path
     completed_operation_keys: list[str]
     output_path: Path
@@ -231,7 +231,7 @@ class NotionCommandExecutionSummary:
 
 
 def _timestamped_backup_path() -> Path:
-    return Path("/tmp") / f"notion_tasks_graph_before_reconcile_{int(time.time())}.json"
+    return Path("/tmp") / f"notion_tasks_graph_before_refresh_{int(time.time())}.json"
 
 
 def _read_json(source_path: Path) -> dict[str, Any]:

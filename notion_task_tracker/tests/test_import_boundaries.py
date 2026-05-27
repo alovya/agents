@@ -27,10 +27,10 @@ def test_workflow_modules_do_not_import_notion_protocol_details():
         "send_call",
     ]
     workflow_files = [
-        "tasks/workflow.py",
+        "tracker_cli_workflow.py",
         "tasks/actions/write_task_log.py",
         "tasks/actions/create_task_page_in_database.py",
-        "tasks/actions/reconcile_task_dependencies_from_notion.py",
+        "tasks/actions/refresh_task_tracker_state.py",
         "notion_io/write_executor.py",
     ]
 

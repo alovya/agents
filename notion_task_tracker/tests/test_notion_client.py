@@ -19,7 +19,7 @@ from notion_task_tracker.notion_io.mcp_client import (
 )
 from notion_task_tracker.notion_io.client import CreatedTaskDatabasePage, NotionWriteExecutionResult
 from notion_task_tracker.notion_io.rest_client import NotionRestClient
-from notion_task_tracker.tasks.workflow import repair_and_write_reconciled_tracker_state
+from notion_task_tracker.tracker_cli_workflow import repair_and_write_refreshed_tracker_state
 from notion_task_tracker.notion_io.client import notion_client_from_credentials_path
 from notion_task_tracker.notion_io.write_executor import execute_command_result_writes
 from notion_task_tracker.tasks.actions.write_task_log import (
@@ -30,9 +30,9 @@ from notion_task_tracker.tasks.actions.write_task_log import (
 )
 from notion_task_tracker.tasks.actions.create_task_page_in_database import execute_task_creation_command
 from notion_task_tracker.tasks.pages.timeline_log import timeline_entries_from_fetched_task_page_content
-from notion_task_tracker.tasks.actions.reconcile_task_dependencies_from_notion import (
-    reconcile_tracker_state_for_command_targets,
-    reconcile_tracker_state_from_notion,
+from notion_task_tracker.tasks.actions.refresh_task_tracker_state import (
+    refresh_tracker_state_for_command_targets,
+    refresh_tracker_state_from_task_database,
 )
 from notion_task_tracker.tasks import Priority, TaskDependencyGraph, Task, TaskStatus
 from notion_task_tracker.tasks.database import default_task_database_tracker_state
@@ -82,7 +82,7 @@ def test_notion_client_from_credentials_path_keeps_mcp_fallback(tmp_path):
     assert isinstance(notion_client, NotionMcpClient)
 
 
-def test_repair_and_write_reconciled_tracker_state_pushes_repairs_for_changed_task(
+def test_repair_and_write_refreshed_tracker_state_pushes_repairs_for_changed_task(
     tmp_path: Path,
 ):
     notion_client = _FakeNotionMcpClient()
@@ -150,13 +150,13 @@ def test_repair_and_write_reconciled_tracker_state_pushes_repairs_for_changed_ta
     tracker_state_path.write_text(json.dumps(before_tracker_state), encoding="utf-8")
     backup_path.write_text(json.dumps(before_tracker_state), encoding="utf-8")
 
-    reconcile_summary = asyncio.run(
-        repair_and_write_reconciled_tracker_state(
+    refresh_summary = asyncio.run(
+        repair_and_write_refreshed_tracker_state(
             source_tracker_state_path=tracker_state_path,
             destination_output_path=output_path,
             destination_backup_path=backup_path,
             before_tracker_state=before_tracker_state,
-            reconcile_result=TrackerCommandResult(
+            refreshed_result=TrackerCommandResult(
                 tracker_state=after_tracker_state,
                 warnings=[{"kind": "manual_repair", "message": "Derived Notion views need repair"}],
             ),
@@ -175,7 +175,7 @@ def test_repair_and_write_reconciled_tracker_state_pushes_repairs_for_changed_ta
         "update_properties:task:ALOVYA-1",
         "replace:landing_page",
     ]
-    assert reconcile_summary.to_json_summary() == {
+    assert refresh_summary.to_json_summary() == {
         "backup_path": str(backup_path),
         "completed_operations": [
             "update_properties:task:ALOVYA-1",
@@ -201,7 +201,7 @@ def test_repair_and_write_reconciled_tracker_state_pushes_repairs_for_changed_ta
     }
 
 
-def test_repair_and_write_reconciled_tracker_state_skips_repairs_when_nothing_changed(
+def test_repair_and_write_refreshed_tracker_state_skips_repairs_when_nothing_changed(
     tmp_path: Path,
 ):
     notion_client = _FakeNotionMcpClient()
@@ -240,13 +240,13 @@ def test_repair_and_write_reconciled_tracker_state_skips_repairs_when_nothing_ch
     tracker_state_path.write_text(json.dumps(tracker_state), encoding="utf-8")
     backup_path.write_text(json.dumps(tracker_state), encoding="utf-8")
 
-    reconcile_summary = asyncio.run(
-        repair_and_write_reconciled_tracker_state(
+    refresh_summary = asyncio.run(
+        repair_and_write_refreshed_tracker_state(
             source_tracker_state_path=tracker_state_path,
             destination_output_path=output_path,
             destination_backup_path=backup_path,
             before_tracker_state=tracker_state,
-            reconcile_result=TrackerCommandResult(
+            refreshed_result=TrackerCommandResult(
                 tracker_state=tracker_state,
                 warnings=[],
             ),
@@ -257,8 +257,8 @@ def test_repair_and_write_reconciled_tracker_state_skips_repairs_when_nothing_ch
     output = json.loads(output_path.read_text(encoding="utf-8"))
     assert output["completed_operations"] == []
     assert notion_client.calls == []
-    assert reconcile_summary.to_json_summary()["task_graph_changes"] == []
-    assert reconcile_summary.to_json_summary()["repair_operation_count"] == 0
+    assert refresh_summary.to_json_summary()["task_graph_changes"] == []
+    assert refresh_summary.to_json_summary()["repair_operation_count"] == 0
 
 
 def test_repair_result_for_command_context_plans_repairs_without_writing_them():
@@ -373,7 +373,7 @@ def test_execute_command_result_writes_compiles_mcp_calls_downstream():
     ]
 
 
-def test_reconcile_tracker_state_from_notion_uses_database_view_when_configured():
+def test_refresh_tracker_state_from_task_database_uses_database_view_when_configured():
     tracker_state = _tracker_state_with_root_task()
     tracker_state["task_database"] = default_task_database_tracker_state()
     notion_client = _FakeNotionMcpClient(
@@ -390,7 +390,7 @@ def test_reconcile_tracker_state_from_notion_uses_database_view_when_configured(
     )
 
     command_result = asyncio.run(
-        reconcile_tracker_state_from_notion(tracker_state, notion_client)
+        refresh_tracker_state_from_task_database(tracker_state, notion_client)
     )
 
     assert command_result.tracker_state["tasks"]["ALOVYA-1"]["title"] == "Root task edited in database"
@@ -403,7 +403,7 @@ def test_reconcile_tracker_state_from_notion_uses_database_view_when_configured(
     assert notion_client.fetched_pages == []
 
 
-def test_reconcile_tracker_state_from_notion_uses_sql_when_view_is_not_configured():
+def test_refresh_tracker_state_from_task_database_uses_sql_when_view_is_not_configured():
     tracker_state = _tracker_state_with_root_task()
     tracker_state["task_database"] = default_task_database_tracker_state()
     tracker_state["task_database"].pop("view_url")
@@ -421,7 +421,7 @@ def test_reconcile_tracker_state_from_notion_uses_sql_when_view_is_not_configure
     )
 
     command_result = asyncio.run(
-        reconcile_tracker_state_from_notion(tracker_state, notion_client)
+        refresh_tracker_state_from_task_database(tracker_state, notion_client)
     )
 
     assert command_result.tracker_state["tasks"]["ALOVYA-1"]["configured_priority"] == "P2"
@@ -437,7 +437,7 @@ def test_reconcile_tracker_state_from_notion_uses_sql_when_view_is_not_configure
     ]
 
 
-def test_reconcile_tracker_state_for_command_targets_fetches_only_relevant_pages():
+def test_refresh_tracker_state_for_command_targets_fetches_only_relevant_pages():
     tracker_state = _tracker_state_with_root_and_child_task()
     notion_client = _FakeNotionMcpClient(
         fetched_page_content_by_id={
@@ -459,7 +459,7 @@ def test_reconcile_tracker_state_for_command_targets_fetches_only_relevant_pages
     )
 
     command_result = asyncio.run(
-        reconcile_tracker_state_for_command_targets(
+        refresh_tracker_state_for_command_targets(
             command={
                 "command": "create_sibling_task",
                 "sibling_task_id": "ALOVYA-2",
@@ -486,13 +486,13 @@ def test_reconcile_tracker_state_for_command_targets_fetches_only_relevant_pages
     assert notion_client.queries == []
 
 
-def test_reconcile_tracker_state_for_command_targets_requires_known_tasks():
+def test_refresh_tracker_state_for_command_targets_requires_known_tasks():
     tracker_state = _tracker_state_with_root_task()
     notion_client = _FakeNotionMcpClient()
 
     with pytest.raises(ValueError, match="ALOVYA-99"):
         asyncio.run(
-            reconcile_tracker_state_for_command_targets(
+            refresh_tracker_state_for_command_targets(
                 command={
                     "command": "complete_task",
                     "task_id": "ALOVYA-99",

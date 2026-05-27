@@ -26,9 +26,9 @@ from notion_task_tracker.apply_tracker_command import (
     apply_command_files,
     apply_command_to_tracker_state,
 )
-from notion_task_tracker.tasks.workflow import (
-    NotionTaskReconcileSummary,
-    reconcile_task_dependency_graph_from_notion,
+from notion_task_tracker.tracker_cli_workflow import (
+    TaskTrackerRefreshSummary,
+    refresh_task_tracker_from_notion,
 )
 from notion_task_tracker.miscellaneous_pages import (
     MiscellaneousNoteEntry,
@@ -69,7 +69,7 @@ __all__ = [
     "NotionPageReference",
     "NotionPageRegistry",
     "NotionPlanningError",
-    "NotionTaskReconcileSummary",
+    "TaskTrackerRefreshSummary",
     "NotionWriteIntent",
     "Priority",
     "TrackedPage",
@@ -85,6 +85,6 @@ __all__ = [
     "apply_command_files",
     "apply_command_to_tracker_state",
     "parse_synthesis_root_page_mentions",
-    "reconcile_task_dependency_graph_from_notion",
+    "refresh_task_tracker_from_notion",
     "write_json_file",
 ]

@@ -1,4 +1,4 @@
-"""Reconcile task graph metadata from Notion task database state."""
+"""Refresh local task tracker state from task database rows."""
 
 from __future__ import annotations
 
@@ -13,17 +13,17 @@ from notion_task_tracker.tasks.database import (
 )
 
 
-async def reconcile_tracker_state_from_notion(
+async def refresh_tracker_state_from_task_database(
     tracker_state: dict[str, Any],
     notion_client: NotionClient,
 ) -> TrackerCommandResult:
     if "task_database" in tracker_state:
-        return await _reconcile_tracker_state_from_task_database(tracker_state, notion_client)
+        return await _refresh_tracker_state_from_task_database(tracker_state, notion_client)
 
     raise ValueError("Task reconciliation requires task_database in tracker state")
 
 
-async def reconcile_tracker_state_for_command_targets(
+async def refresh_tracker_state_for_command_targets(
     command: dict[str, Any],
     tracker_state: dict[str, Any],
     notion_client: NotionClient,
@@ -64,31 +64,31 @@ async def reconcile_tracker_state_for_command_targets(
     )
 
 
-def maybe_repair_reconciled_task_pages(
-    reconcile_result: TrackerCommandResult,
+def repair_result_for_task_graph_changes(
+    refreshed_result: TrackerCommandResult,
     task_graph_changes: list[dict[str, Any]],
 ) -> TrackerCommandResult:
-    if not task_graph_changes and not reconcile_result.warnings:
-        return reconcile_result
+    if not task_graph_changes and not refreshed_result.warnings:
+        return refreshed_result
 
     repair_result = apply_command_to_tracker_state(
         command={
             "command": "refresh_task_pages",
             "operation_keys": TaskDependencyGraph.from_tracker_state(
-                reconcile_result.tracker_state
+                refreshed_result.tracker_state
             ).repair_operation_keys_for_changes(task_graph_changes),
         },
-        tracker_state=reconcile_result.tracker_state,
+        tracker_state=refreshed_result.tracker_state,
     )
     return TrackerCommandResult(
         tracker_state=repair_result.tracker_state,
         write_intents=repair_result.write_intents,
         page_registry=repair_result.page_registry,
-        warnings=reconcile_result.warnings,
+        warnings=refreshed_result.warnings,
     )
 
 
-async def _reconcile_tracker_state_from_task_database(
+async def _refresh_tracker_state_from_task_database(
     tracker_state: dict[str, Any],
     notion_client: NotionClient,
 ) -> TrackerCommandResult:
