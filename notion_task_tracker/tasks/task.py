@@ -82,6 +82,7 @@ class TimelineEntry:
     entry_date: str
     heading: str
     lines: list[str] = field(default_factory=list)
+    blocks: list[dict[str, str]] = field(default_factory=list)
     subheading: str | None = None
 
     def to_tracker_state(self) -> dict[str, Any]:
@@ -97,6 +98,7 @@ class TimelineEntry:
             entry_date=tracker_state["entry_date"],
             heading=tracker_state["heading"],
             lines=[],
+            blocks=[],
         )
 
     @classmethod
@@ -106,6 +108,7 @@ class TimelineEntry:
             entry_date=entry_date,
             heading=_date_only_timeline_heading(command.get("heading", ""), entry_date),
             lines=list(command.get("lines", [])),
+            blocks=_timeline_blocks_from_command(command),
             subheading=command.get("subheading"),
         )
 
@@ -202,6 +205,7 @@ def _upsert_timeline_entry(
         return timeline_entry
 
     existing_entry.lines.extend(timeline_entry.lines)
+    existing_entry.blocks.extend(timeline_entry.blocks)
     return existing_entry
 
 
@@ -210,6 +214,7 @@ def _copy_timeline_entry(timeline_entry: TimelineEntry) -> TimelineEntry:
         entry_date=timeline_entry.entry_date,
         heading=timeline_entry.heading,
         lines=list(timeline_entry.lines),
+        blocks=[dict(block) for block in timeline_entry.blocks],
         subheading=timeline_entry.subheading,
     )
 
@@ -226,6 +231,7 @@ def _merged_timeline_entries_by_date(timeline_entries: list[TimelineEntry]) -> l
             continue
 
         existing_entry.lines.extend(timeline_entry.lines)
+        existing_entry.blocks.extend(timeline_entry.blocks)
 
     return merged_entries
 
@@ -247,6 +253,38 @@ def _date_only_timeline_heading(raw_heading: str, entry_date: str) -> str:
         return f'<mention-date start="{date_match.group(1)}"/>'
 
     return f'<mention-date start="{entry_date}"/>'
+
+
+def _timeline_blocks_from_command(command: dict[str, Any]) -> list[dict[str, str]]:
+    timeline_blocks = command.get("blocks", [])
+    if not isinstance(timeline_blocks, list):
+        raise ValueError("timeline_entry.blocks must be a list when provided.")
+
+    return [_timeline_block_from_command(block) for block in timeline_blocks]
+
+
+def _timeline_block_from_command(block: Any) -> dict[str, str]:
+    if not isinstance(block, dict):
+        raise ValueError("Each timeline_entry.blocks item must be an object.")
+
+    block_type = block.get("type")
+    text = block.get("text")
+    if block_type not in {"paragraph", "code"}:
+        raise ValueError(f"Unsupported timeline_entry block type {block_type!r}.")
+    if not isinstance(text, str):
+        raise ValueError("Each timeline_entry block must include string text.")
+
+    timeline_block = {
+        "type": block_type,
+        "text": text,
+    }
+    if block_type == "code":
+        language = block.get("language", "")
+        if not isinstance(language, str):
+            raise ValueError("timeline_entry code block language must be a string.")
+        timeline_block["language"] = language
+
+    return timeline_block
 
 
 def _render_visible_strikethrough_text(text: str) -> str:

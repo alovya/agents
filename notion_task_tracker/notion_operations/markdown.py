@@ -19,6 +19,15 @@ def bullet(text: str, depth: int = 0, colour: str | None = None) -> str:
     return f"{'\t' * depth}- {text}{colour_suffix}"
 
 
+def code_block(text: str, language: str = "") -> str:
+    fence_language = language.strip()
+    return join_markdown_blocks([
+        f"```{fence_language}",
+        text,
+        "```",
+    ])
+
+
 def page_mention(page_key: str, page_registry: NotionPageRegistry) -> str:
     return f'<mention-page url="{page_registry.page_url(page_key)}"/>'
 

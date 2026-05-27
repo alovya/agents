@@ -75,7 +75,7 @@ Normal task commands do not query the full saved database view. They use targete
 5. Use a heading of `<mention-date start="YYYY-MM-DD"/>`.
 6. Use `append_task_timeline_log`.
 7. The tracker preserves handwritten Notion timeline content: before writing, it fetches the task page and records existing date headings under `Timeline log`. If the page has no usable `Timeline log` section with at least one date, the tracker initialises the body as `Timeline log`, today's date, then any existing body content underneath. New date sections are prepended under `Timeline log`; existing date headings receive new lines under the existing heading.
-8. For normal paragraphs and code blocks, use `timeline_entry.blocks` instead of `timeline_entry.lines`. The tracker renders `lines` as bullet list items. Use `blocks` entries such as `{"type": "paragraph", "text": "Summary."}` and `{"type": "code", "language": "bash", "text": "st status"}` for command transcripts, paths, tensor/input lists, shapes, mappings, stack traces, and multi-line snippets. Do not put fenced Markdown inside `lines`.
+8. For normal paragraphs and code blocks, use `timeline_entry.blocks` instead of `timeline_entry.lines`. The tracker renders `lines` as bullet list items. Use paragraph blocks for prose and code blocks for commands, stack traces, structured output, tensor/input lists, shapes, mappings, and multi-line snippets. Put inline technical text in backticks inside paragraph text, for example `scp -O`, `/var/cache/qnn_sdk`, `allow_missing_cameras=False`, `QnnExec`, and `ValueError`. Prefer code blocks over inline text when the content is a full command, command output, traceback, or multi-line snippet. Use entries such as `{"type": "paragraph", "text": "The target failed to create `/var/cache/qnn_sdk/test_write`."}` and `{"type": "code", "language": "bash", "text": "ssh root@target '/mnt/bin/touch /var/cache/qnn_sdk/test_write'"}`. Do not put fenced Markdown inside `lines`.
 9. Do not force numbering into timeline lines. The tracker renders `lines` as bullets. Use plain bullet-style sentences unless the user explicitly asks for ordered steps, and avoid Markdown ordered-list prefixes like `1.` or `2.` because Notion may reinterpret the formatting.
 
 `notion_task log <number> sub:<subheading> [notes]` writes the new lines under a Notion toggle inside today's date entry. Put `<subheading>` in `timeline_entry.subheading`; do not fold it into the first log line.
@@ -95,7 +95,11 @@ Normal task commands do not query the full saved database view. They use targete
 1. Default priority is `P1`.
 2. Default status is `Active`.
 3. Use `[title]` when provided; ask for a title if the user did not provide one.
-4. Use `create_top_level_task`; Notion assigns `Ticket ID` and the tracker records the assigned task id.
+4. If the user asks to log, capture, file, or record a new problem, bug, investigation, incident, or context while creating the task, include that context in the same `create_top_level_task` command as `timeline_entry`. Do not create a bare task and then append the first log afterwards when the initial context is already available.
+5. Summarise relevant current conversation context into concise initial timeline content. Use `timeline_entry.blocks` for paragraph prose and code blocks. Put inline technical text in backticks inside paragraph text. Use code blocks for full commands, command output, stack traces, paths grouped with outputs, structured observations, and multi-line snippets. Use `timeline_entry.lines` only when the user explicitly wants bullet-style notes.
+6. Use today's date for `entry_date`.
+7. Use a heading of `<mention-date start="YYYY-MM-DD"/>`.
+8. Use `create_top_level_task`; Notion assigns `Ticket ID` and the tracker records the assigned task id.
 
 `notion_task child <parent-number> [pX] [title]` creates a child task under an existing parent.
 

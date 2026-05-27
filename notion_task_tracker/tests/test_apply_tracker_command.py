@@ -120,6 +120,38 @@ class TestApplyCommandToTrackerState:
             "</details>",
         ])
 
+    def test_append_task_timeline_log_with_blocks_renders_paragraphs_and_code_without_bullets(self):
+        command_result = apply_command_to_tracker_state(
+            command={
+                "command": "append_task_timeline_log",
+                "task_id": "ALOVYA-1",
+                "timeline_entry": {
+                    "entry_date": "2026-05-24",
+                    "heading": '<mention-date start="2026-05-24"/>',
+                    "blocks": [
+                        {
+                            "type": "paragraph",
+                            "text": "Investigated the target-side file creation failure.",
+                        },
+                        {
+                            "type": "code",
+                            "language": "bash",
+                            "text": "ssh root@target '/mnt/bin/touch /var/cache/qnn_sdk/test_write'",
+                        },
+                    ],
+                },
+            },
+            tracker_state=_combined_tracker_state(),
+        )
+
+        assert command_result.write_intents[0].arguments["timeline_section_markdown"] == "\n".join([
+            '### <mention-date start="2026-05-24"/>',
+            "Investigated the target-side file creation failure.",
+            "```bash",
+            "ssh root@target '/mnt/bin/touch /var/cache/qnn_sdk/test_write'",
+            "```",
+        ])
+
     def test_complete_task_updates_status_and_produces_write_intents(self):
         tracker_state = _combined_tracker_state()
         tracker_state["completed_landing_page"]["notion_page_id"] = "33333333333333333333333333333333"

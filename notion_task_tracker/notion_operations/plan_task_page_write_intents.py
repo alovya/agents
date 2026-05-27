@@ -10,7 +10,14 @@ from notion_task_tracker.fixed_pages import (
     ONGOING_LANDING_PAGE_LOCAL_KEY,
     ONGOING_LANDING_PAGE_TITLE,
 )
-from notion_task_tracker.notion_operations.markdown import bullet, heading, join_markdown_blocks, page_mention, toggle
+from notion_task_tracker.notion_operations.markdown import (
+    bullet,
+    code_block,
+    heading,
+    join_markdown_blocks,
+    page_mention,
+    toggle,
+)
 from notion_task_tracker.notion_operations.page_registry import NotionPageRegistry
 from notion_task_tracker.notion_operations.write_intent import NotionWriteIntent
 from notion_task_tracker.tasks.landing_pages import (
@@ -175,11 +182,14 @@ def render_completed_landing_page_markdown(
 
 
 def render_timeline_entry_content_markdown(timeline_entry: TimelineEntry) -> str:
-    lines_markdown = join_markdown_blocks([bullet(line) for line in timeline_entry.lines])
+    content_markdown = join_markdown_blocks([
+        *[_render_timeline_entry_block_markdown(block) for block in timeline_entry.blocks],
+        *[bullet(line) for line in timeline_entry.lines],
+    ])
     if timeline_entry.subheading:
-        return toggle(timeline_entry.subheading, lines_markdown)
+        return toggle(timeline_entry.subheading, content_markdown)
 
-    return lines_markdown
+    return content_markdown
 
 
 def render_timeline_entry_section_markdown(timeline_entry: TimelineEntry) -> str:
@@ -187,6 +197,15 @@ def render_timeline_entry_section_markdown(timeline_entry: TimelineEntry) -> str
         heading(3, timeline_entry.heading),
         render_timeline_entry_content_markdown(timeline_entry),
     ])
+
+
+def _render_timeline_entry_block_markdown(block: dict[str, str]) -> str:
+    if block["type"] == "paragraph":
+        return block["text"]
+    if block["type"] == "code":
+        return code_block(block["text"], language=block.get("language", ""))
+
+    raise ValueError(f"Unsupported timeline entry block type {block['type']!r}.")
 
 
 def _plan_missing_page_creation_intents(
