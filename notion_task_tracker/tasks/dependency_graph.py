@@ -18,8 +18,8 @@ from notion_task_tracker.fixed_pages import (
     LANDING_PAGE_TITLE,
 )
 from notion_task_tracker.json_file import write_json_file
-from notion_task_tracker.notion_writes import NotionPlanningError, NotionWriteIntent
-from notion_task_tracker.page_registry import (
+from notion_task_tracker.notion_io.writes import NotionPlanningError, NotionWriteIntent
+from notion_task_tracker.notion_io.page_registry import (
     NotionPageRegistry,
     PagePointer,
     fixed_page_pointer_from_tracker_state,

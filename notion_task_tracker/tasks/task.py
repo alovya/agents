@@ -8,8 +8,8 @@ from enum import Enum
 from typing import Any
 
 from notion_task_tracker.external_links import ExternalLink
-from notion_task_tracker.notion_markdown import bullet, heading, join_markdown_blocks, toggle
-from notion_task_tracker.notion_writes import NotionWriteIntent
+from notion_task_tracker.notion_io.markdown import bullet, heading, join_markdown_blocks, toggle
+from notion_task_tracker.notion_io.writes import NotionWriteIntent
 
 
 COMPLETED_TASK_PRIORITY_LABEL = "N/A"

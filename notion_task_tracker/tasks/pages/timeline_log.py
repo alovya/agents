@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from notion_task_tracker.notion_markdown import heading, join_markdown_blocks
+from notion_task_tracker.notion_io.markdown import heading, join_markdown_blocks
 from notion_task_tracker.tasks.task import (
     MENTION_DATE_START_PATTERN,
     PROPERTIES_BLOCK_PATTERN,

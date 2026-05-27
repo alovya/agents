@@ -1,5 +1,5 @@
 from notion_task_tracker import PagePointer
-from notion_task_tracker.page_registry import NotionPageRegistry
+from notion_task_tracker.notion_io.page_registry import NotionPageRegistry
 from notion_task_tracker.tasks import Priority, Task, TaskStatus
 from notion_task_tracker.tasks.pages.landing_pages import CompletedTasksLandingPage, OngoingTasksLandingPage
 

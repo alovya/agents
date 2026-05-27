@@ -12,17 +12,17 @@ from notion_client import AsyncClient
 from notion_client.errors import APIResponseError
 
 from notion_task_tracker.apply_tracker_command import TrackerCommandResult
-from notion_task_tracker.page_registry import (
+from notion_task_tracker.notion_io.page_registry import (
     NotionPageRegistry,
     canonical_notion_page_id,
     notion_page_id_from_url,
 )
-from notion_task_tracker.notion_writes import NotionWriteIntent
-from notion_task_tracker.notion_database_properties import (
+from notion_task_tracker.notion_io.writes import NotionWriteIntent
+from notion_task_tracker.notion_io.database_properties import (
     plain_text_from_rich_text_items,
     rich_text_items,
 )
-from notion_task_tracker.notion_client import CreatedTaskDatabasePage, NotionWriteExecutionResult
+from notion_task_tracker.notion_io.client import CreatedTaskDatabasePage, NotionWriteExecutionResult
 from notion_task_tracker.tasks.database import (
     TASK_DATABASE_DATA_SOURCE_ID,
     TASK_DATABASE_PARENT_PROPERTY,

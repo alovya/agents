@@ -7,8 +7,8 @@ import json
 from typing import Any
 
 from notion_task_tracker.apply_tracker_command import apply_command_to_tracker_state
-from notion_task_tracker.notion_client import NotionClient
-from notion_task_tracker.notion_write_executor import execute_command_result_writes
+from notion_task_tracker.notion_io.client import NotionClient
+from notion_task_tracker.notion_io.write_executor import execute_command_result_writes
 from notion_task_tracker.tasks.actions.write_task_log import command_result_from_current_notion_state
 from notion_task_tracker.tasks import TaskDependencyGraph, Task, TimelineEntry
 from notion_task_tracker.tasks.database import (

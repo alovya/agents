@@ -1,4 +1,4 @@
-from notion_task_tracker.notion_writes import NotionWriteIntent
+from notion_task_tracker.notion_io.writes import NotionWriteIntent
 
 
 def test_notion_write_intent_records_operation_and_target():

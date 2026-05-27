@@ -14,11 +14,11 @@ from typing import Any
 
 from notion_task_tracker.apply_tracker_command import TrackerCommandResult
 from notion_task_tracker.json_file import write_json_file
-from notion_task_tracker.notion_writes import NotionPlanningError, NotionWriteIntent
-from notion_task_tracker.page_registry import (
+from notion_task_tracker.notion_io.writes import NotionPlanningError, NotionWriteIntent
+from notion_task_tracker.notion_io.page_registry import (
     NotionPageRegistry,
 )
-from notion_task_tracker.notion_client import CreatedTaskDatabasePage, NotionWriteExecutionResult
+from notion_task_tracker.notion_io.client import CreatedTaskDatabasePage, NotionWriteExecutionResult
 from notion_task_tracker.tasks.database import (
     task_database_data_source_url_from_tracker_state,
     task_database_query_for_tracker_state,

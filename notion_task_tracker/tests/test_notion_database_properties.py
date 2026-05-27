@@ -1,4 +1,4 @@
-from notion_task_tracker.notion_database_properties import rich_text_items
+from notion_task_tracker.notion_io.database_properties import rich_text_items
 
 
 def test_rich_text_items_preserves_date_mentions_as_notion_mentions():

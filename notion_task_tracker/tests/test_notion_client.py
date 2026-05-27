@@ -11,17 +11,17 @@ from notion_task_tracker import (
     NotionPageRegistry,
     NotionWriteIntent,
 )
-from notion_task_tracker.notion_mcp_client import NotionMcpCallPlan, NotionMcpCallPlanner, NotionMcpToolCall
-from notion_task_tracker.notion_mcp_client import (
+from notion_task_tracker.notion_io.mcp_client import NotionMcpCallPlan, NotionMcpCallPlanner, NotionMcpToolCall
+from notion_task_tracker.notion_io.mcp_client import (
     NotionMcpClient,
     _notion_page_id_from_tool_result,
     _raise_if_call_plan_has_blocked_operations,
 )
-from notion_task_tracker.notion_client import CreatedTaskDatabasePage, NotionWriteExecutionResult
-from notion_task_tracker.notion_rest_client import NotionRestClient
+from notion_task_tracker.notion_io.client import CreatedTaskDatabasePage, NotionWriteExecutionResult
+from notion_task_tracker.notion_io.rest_client import NotionRestClient
 from notion_task_tracker.tasks.workflow import repair_and_write_reconciled_tracker_state
-from notion_task_tracker.notion_client import notion_client_from_credentials_path
-from notion_task_tracker.notion_write_executor import execute_command_result_writes
+from notion_task_tracker.notion_io.client import notion_client_from_credentials_path
+from notion_task_tracker.notion_io.write_executor import execute_command_result_writes
 from notion_task_tracker.tasks.actions.write_task_log import (
     command_result_with_context_repairs,
     repair_result_for_command_context,
@@ -45,7 +45,7 @@ from notion_task_tracker.tasks.database import (
 
 def test_rest_client_does_not_import_notion_mcp_runtime():
     package_path = Path(__file__).resolve().parents[1]
-    runtime_source = (package_path / "notion_rest_client.py").read_text(encoding="utf-8")
+    runtime_source = (package_path / "notion_io" / "rest_client.py").read_text(encoding="utf-8")
 
     assert "from mcp" not in runtime_source
     assert "import mcp" not in runtime_source

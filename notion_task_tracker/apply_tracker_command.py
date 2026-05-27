@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from notion_task_tracker.json_file import write_json_file
-from notion_task_tracker.notion_writes import NotionPlanningError, NotionWriteIntent
-from notion_task_tracker.page_registry import NotionPageRegistry
+from notion_task_tracker.notion_io.writes import NotionPlanningError, NotionWriteIntent
+from notion_task_tracker.notion_io.page_registry import NotionPageRegistry
 from notion_task_tracker.miscellaneous_pages import MiscellaneousNotesMetadata
 from notion_task_tracker.synthesis_pages import SynthesisNotesMetadata, SynthesisPageMetadata, SynthesisSource
 from notion_task_tracker.tasks import (

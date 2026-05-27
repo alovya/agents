@@ -53,12 +53,12 @@ class NotionClient(Protocol):
 
 def notion_client_from_credentials_path(credentials_path: Path, notion_client: str = "rest") -> NotionClient:
     if notion_client == "rest":
-        from notion_task_tracker.notion_rest_client import NotionRestClient
+        from notion_task_tracker.notion_io.rest_client import NotionRestClient
 
         return NotionRestClient.from_credentials_path(credentials_path)
 
     if notion_client == "mcp":
-        from notion_task_tracker.notion_mcp_client import NotionMcpClient
+        from notion_task_tracker.notion_io.mcp_client import NotionMcpClient
 
         return NotionMcpClient.from_credentials_path(credentials_path)
 

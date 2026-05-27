@@ -271,12 +271,8 @@ The package is Python metadata and Notion write execution code. Live fetch/write
 - `tasks/pages/landing_pages.py`: ongoing and completed task landing-page rendering and refresh intents.
 - `tasks/pages/timeline_log.py`: task page body parsing for timeline logs.
 - `tasks/actions/`: task actions for timeline logging, database-backed creation, and dependency reconciliation.
-- `page_registry.py`, `fixed_pages.py`, `notion_writes.py`: local tracker concepts used before writes reach a Notion client.
-- `notion_markdown.py`: small helpers for the Notion enhanced Markdown the tracker intentionally emits for page bodies.
-- `notion_database_properties.py`: Notion database property rich-text conversion at the REST boundary.
-- `notion_rest_client.py`: Notion REST client using the Python Notion SDK and page Markdown endpoints for body content.
-- `notion_mcp_client.py`: temporary Notion MCP fallback client and call compiler.
-- `notion_client.py`: workflow-facing Notion client protocol and client factory.
+- `notion_io/`: Notion boundary code for page references, write intents, Markdown helpers, database-property conversion, live clients, and write execution.
+- `fixed_pages.py`: names and local keys for fixed tracker pages.
 - `miscellaneous_pages.py`: dated miscellaneous notes.
 - `synthesis_pages.py`: flat synthesis root mentions and synthesis subpages with sources.
 

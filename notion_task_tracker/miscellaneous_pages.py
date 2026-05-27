@@ -9,9 +9,9 @@ from notion_task_tracker.fixed_pages import (
     MISCELLANEOUS_NOTES_PAGE_LOCAL_KEY,
     MISCELLANEOUS_NOTES_PAGE_TITLE,
 )
-from notion_task_tracker.notion_markdown import bullet, join_markdown_blocks, page_mention
-from notion_task_tracker.notion_writes import NotionWriteIntent
-from notion_task_tracker.page_registry import (
+from notion_task_tracker.notion_io.markdown import bullet, join_markdown_blocks, page_mention
+from notion_task_tracker.notion_io.writes import NotionWriteIntent
+from notion_task_tracker.notion_io.page_registry import (
     NotionPageRegistry,
     PagePointer,
     fixed_page_pointer_from_tracker_state,

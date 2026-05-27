@@ -7,8 +7,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from notion_task_tracker.notion_writes import NotionPlanningError
-from notion_task_tracker.page_registry import PagePointer, canonical_notion_page_id, notion_page_id_from_url
+from notion_task_tracker.notion_io.writes import NotionPlanningError
+from notion_task_tracker.notion_io.page_registry import PagePointer, canonical_notion_page_id, notion_page_id_from_url
 from notion_task_tracker.tasks.dependency_graph import TaskDependencyGraph
 from notion_task_tracker.tasks.pages.landing_pages import CompletedTasksLandingPage, OngoingTasksLandingPage
 from notion_task_tracker.tasks.task import (

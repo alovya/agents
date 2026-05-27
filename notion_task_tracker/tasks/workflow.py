@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from notion_task_tracker.notion_client import notion_client_from_credentials_path
-from notion_task_tracker.notion_write_executor import execute_command_result_writes
+from notion_task_tracker.notion_io.client import notion_client_from_credentials_path
+from notion_task_tracker.notion_io.write_executor import execute_command_result_writes
 from notion_task_tracker.tasks.actions.write_task_log import (
     command_result_from_current_notion_state,
     command_result_with_context_repairs,

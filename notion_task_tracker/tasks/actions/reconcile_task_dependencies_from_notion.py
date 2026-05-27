@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from notion_task_tracker.apply_tracker_command import TrackerCommandResult, apply_command_to_tracker_state
-from notion_task_tracker.notion_client import NotionClient
+from notion_task_tracker.notion_io.client import NotionClient
 from notion_task_tracker.tasks import TaskDependencyGraph
 from notion_task_tracker.tasks.database import (
     task_database_row_from_fetched_task_database_page,

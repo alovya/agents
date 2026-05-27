@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from notion_task_tracker.notion_writes import NotionPlanningError
-from notion_task_tracker.page_registry import NotionPageRegistry
+from notion_task_tracker.notion_io.writes import NotionPlanningError
+from notion_task_tracker.notion_io.page_registry import NotionPageRegistry
 
 
 def join_markdown_blocks(markdown_blocks: list[str]) -> str:

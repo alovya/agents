@@ -1,7 +1,7 @@
 import pytest
 
 from notion_task_tracker import NotionPlanningError
-from notion_task_tracker.page_registry import canonical_notion_page_id, notion_page_id_from_url
+from notion_task_tracker.notion_io.page_registry import canonical_notion_page_id, notion_page_id_from_url
 
 
 def test_canonical_notion_page_id_accepts_hyphenated_page_ids():

@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from notion_task_tracker.page_registry import canonical_notion_page_id, notion_page_id_from_url
+from notion_task_tracker.notion_io.page_registry import canonical_notion_page_id, notion_page_id_from_url
 
 
 _DATE_MENTION_PATTERN = re.compile(r'<mention-date\s+[^>]*start="([^"]+)"[^>]*/>')

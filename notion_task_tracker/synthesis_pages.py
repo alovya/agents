@@ -10,9 +10,9 @@ from notion_task_tracker.fixed_pages import (
     SYNTHESIS_NOTES_PAGE_LOCAL_KEY,
     SYNTHESIS_NOTES_PAGE_TITLE,
 )
-from notion_task_tracker.notion_markdown import bullet, heading, join_markdown_blocks, page_mention, page_reference
-from notion_task_tracker.notion_writes import NotionPlanningError, NotionWriteIntent
-from notion_task_tracker.page_registry import (
+from notion_task_tracker.notion_io.markdown import bullet, heading, join_markdown_blocks, page_mention, page_reference
+from notion_task_tracker.notion_io.writes import NotionPlanningError, NotionWriteIntent
+from notion_task_tracker.notion_io.page_registry import (
     NotionPageRegistry,
     PagePointer,
     canonical_notion_page_id,

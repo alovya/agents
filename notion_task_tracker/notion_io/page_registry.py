@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
-from notion_task_tracker.notion_writes import NotionPlanningError
+from notion_task_tracker.notion_io.writes import NotionPlanningError
 
 
 _COMPACT_NOTION_PAGE_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")

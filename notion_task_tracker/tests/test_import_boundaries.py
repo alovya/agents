@@ -5,14 +5,14 @@ PACKAGE_PATH = Path(__file__).resolve().parents[1]
 
 
 def test_rest_client_does_not_import_mcp_symbols():
-    source = _source("notion_rest_client.py")
+    source = _source("notion_io/rest_client.py")
 
     assert "notion_task_tracker.mcp" not in source
     assert "NotionMcp" not in source
 
 
 def test_mcp_client_does_not_import_rest_symbols():
-    source = _source("notion_mcp_client.py")
+    source = _source("notion_io/mcp_client.py")
 
     assert "notion_task_tracker.rest" not in source
     assert "NotionRest" not in source
@@ -31,7 +31,7 @@ def test_workflow_modules_do_not_import_notion_protocol_details():
         "tasks/actions/write_task_log.py",
         "tasks/actions/create_task_page_in_database.py",
         "tasks/actions/reconcile_task_dependencies_from_notion.py",
-        "notion_write_executor.py",
+        "notion_io/write_executor.py",
     ]
 
     for workflow_file in workflow_files:
@@ -62,7 +62,7 @@ def test_internal_page_body_block_layer_has_been_deleted():
 
 
 def test_rest_client_uses_notion_sdk_not_raw_http_transport():
-    source = _source("notion_rest_client.py")
+    source = _source("notion_io/rest_client.py")
 
     assert "from notion_client import AsyncClient" in source
     assert "urlopen" not in source

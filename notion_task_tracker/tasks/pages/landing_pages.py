@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from notion_task_tracker.notion_markdown import bullet, heading, join_markdown_blocks, page_mention
-from notion_task_tracker.notion_writes import NotionWriteIntent
-from notion_task_tracker.page_registry import NotionPageRegistry, PagePointer
+from notion_task_tracker.notion_io.markdown import bullet, heading, join_markdown_blocks, page_mention
+from notion_task_tracker.notion_io.writes import NotionWriteIntent
+from notion_task_tracker.notion_io.page_registry import NotionPageRegistry, PagePointer
 from notion_task_tracker.tasks.task import (
     COMPLETED_TASK_PRIORITY_LABEL,
     LANDING_COLOR_BY_PRIORITY,
