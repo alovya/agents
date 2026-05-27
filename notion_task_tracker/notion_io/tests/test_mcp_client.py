@@ -3,13 +3,14 @@ from dataclasses import dataclass
 
 import pytest
 
-from notion_task_tracker.notion_io.mcp_client import NotionMcpToolCall
+from notion_task_tracker.notion_io.mcp_client import NotionMcpCallPlan, NotionMcpToolCall
 from notion_task_tracker.notion_io.mcp_client import (
     NotionMcpClient,
     _available_tool_names_from_session,
     _fetched_page_text_from_notion_mcp_tool_result,
     _http_status_code_from_exception,
     _notion_query_results_from_tool_text,
+    _raise_if_call_plan_has_blocked_operations,
     _text_from_notion_mcp_tool_result,
     _tool_names_from_list_tools_result,
 )
@@ -213,6 +214,23 @@ def test_notion_mcp_client_queries_database_view_rows():
             },
         }
     ]
+
+
+def test_raise_if_call_plan_has_blocked_operations_rejects_plan_before_writes():
+    call_plan = NotionMcpCallPlan.from_json(
+        {
+            "calls": [],
+            "blocked_operations": [
+                {
+                    "operation_key": "create_synthesis_page:synthesis:onnx_qdq",
+                    "reason": "Capture page id for synthesis:onnx_qdq.",
+                }
+            ],
+        }
+    )
+
+    with pytest.raises(ValueError, match="blocked_operations"):
+        _raise_if_call_plan_has_blocked_operations(call_plan)
 
 
 @dataclass(frozen=True)

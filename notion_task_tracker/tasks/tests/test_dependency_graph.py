@@ -15,7 +15,7 @@ from notion_task_tracker.tasks import (
     TaskStatus,
     TimelineEntry,
 )
-from notion_task_tracker.tasks.tests.test_helpers import (
+from notion_task_tracker.tasks.tests.helpers import (
     _build_recursive_work_graph,
     _visible_strikethrough_text,
 )
