@@ -180,6 +180,13 @@ class Task:
             timeline_log_change=self.append_timeline_log(timeline_entry),
         )
 
+    def cancel_with_timeline_log(self, timeline_entry: TimelineEntry) -> TaskCompletionChange:
+        self.status = TaskStatus.CANCELLED
+        return TaskCompletionChange(
+            task_id=self.task_id,
+            timeline_log_change=self.append_timeline_log(timeline_entry),
+        )
+
     def normalise_timeline_entries(self) -> None:
         self.timeline_entries = _merged_timeline_entries_by_date(self.timeline_entries)
 

@@ -57,6 +57,9 @@ def apply_command_to_tracker_state(command: dict[str, Any], tracker_state: dict[
     if command_name == "complete_task":
         return _apply_task_command(command, tracker_state, _complete_task)
 
+    if command_name == "cancel_task":
+        return _apply_task_command(command, tracker_state, _cancel_task)
+
     if command_name == "refresh_task_pages":
         return _refresh_task_pages(command, tracker_state)
 
@@ -153,6 +156,16 @@ def _complete_task(
     command: dict[str, Any],
 ):
     return work_graph.complete_task(
+        task_id=command["task_id"],
+        timeline_entry=TimelineEntry.from_command(command["timeline_entry"]),
+    )
+
+
+def _cancel_task(
+    work_graph: TaskDependencyGraph,
+    command: dict[str, Any],
+):
+    return work_graph.cancel_task(
         task_id=command["task_id"],
         timeline_entry=TimelineEntry.from_command(command["timeline_entry"]),
     )

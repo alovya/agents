@@ -65,7 +65,7 @@ Ordinary commands do not query the full database view. They fetch the task pages
 
 Normal commands are fast because they only refresh the task pages they touch. They do not discover every remote database edit.
 
-1. `append_task_timeline_log` and `complete_task` fetch the target task page, refresh that task's database properties in local state, fetch timeline headings, then write.
+1. `append_task_timeline_log`, `complete_task`, and `cancel_task` fetch the target task page, refresh that task's database properties in local state, fetch timeline headings, then write.
 2. `create_child_task` fetches the parent task and parent chain, creates the child database row, updates the parent timeline, and refreshes derived landing pages.
 3. `create_sibling_task` fetches the existing sibling and parent chain, creates the new database row beside it, updates the parent timeline when there is a parent, and refreshes derived landing pages.
 4. `create_top_level_task` creates a new top-level database row without fetching the full database view.
@@ -119,6 +119,20 @@ Complete a task. The tracker marks the task `Complete`, appends or merges the ti
     "entry_date": "2026-05-24",
     "heading": "<mention-date start=\"2026-05-24\"/>",
     "lines": ["Completed the task."]
+  }
+}
+```
+
+Cancel a task. The tracker marks the task `Cancelled`, appends or merges the timeline entry by `entry_date`, updates database properties, and refreshes the ongoing and completed landing pages:
+
+```json
+{
+  "command": "cancel_task",
+  "task_id": "ALOVYA-5",
+  "timeline_entry": {
+    "entry_date": "2026-05-24",
+    "heading": "<mention-date start=\"2026-05-24\"/>",
+    "lines": ["Cancelled the task."]
   }
 }
 ```
@@ -247,6 +261,7 @@ This replaces the local existing-page mention list with exactly the page mention
 
 - `append_task_timeline_log`: add a dated timeline entry to one task with targeted page content. New dates are prepended under `Timeline log`; existing dates are updated under their date heading. It must not replace the task page or landing pages.
 - `complete_task`: mark one task complete, append or merge a dated timeline entry, update database properties, and refresh the ongoing and completed landing pages.
+- `cancel_task`: mark one task cancelled, append or merge a dated timeline entry, update database properties, and refresh the ongoing and completed landing pages.
 - `create_top_level_task`: create a top-level task database row and use Notion's assigned `Ticket ID`.
 - `create_child_task`: create a child task database row under an existing parent, initialise the child Timeline log with a parent link, and append a parent timeline entry linking to the child.
 - `create_sibling_task`: create a task database row under the same parent as an existing task, or top-level when the existing task has no parent. If the sibling has a parent, initialise the new page with a parent link and append a parent timeline entry linking to the new page.

@@ -372,7 +372,7 @@ def _choose_landing_color_for_task(task: Task, displayed_priority: Priority) -> 
 
 
 def _format_priority_label_for_task(task: Task, displayed_priority: Priority) -> str:
-    if task.status == TaskStatus.COMPLETE:
+    if task.status in {TaskStatus.COMPLETE, TaskStatus.CANCELLED}:
         return COMPLETED_TASK_PRIORITY_LABEL
 
     return displayed_priority.value

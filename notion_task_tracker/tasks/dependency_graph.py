@@ -191,6 +191,17 @@ class TaskDependencyGraph:
         self.recalculate_display_priorities()
         return completion_change
 
+    def cancel_task(
+        self,
+        task_id: str,
+        timeline_entry: TimelineEntry,
+    ) -> TaskCompletionChange:
+        task = self.tasks[task_id]
+        cancellation_change = task.cancel_with_timeline_log(timeline_entry)
+        self.validate()
+        self.recalculate_display_priorities()
+        return cancellation_change
+
     def task_ids_grouped_for_landing_page(self) -> dict[Priority, list[str]]:
         self.recalculate_display_priorities()
         return self.ongoing_tasks_landing_page.task_ids_grouped_by_priority(self.tasks)

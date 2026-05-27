@@ -14,7 +14,7 @@ from notion_task_tracker.tasks.timeline_log import (
 
 
 def find_task_id_whose_timeline_is_written_by_command(command: dict[str, Any]) -> str | None:
-    if command["command"] in {"append_task_timeline_log", "complete_task"}:
+    if command["command"] in {"append_task_timeline_log", "complete_task", "cancel_task"}:
         return command["task_id"]
 
     return None

@@ -296,6 +296,51 @@ class TestApplyCommandToTrackerState:
         )
 
 
+def test_cancel_task_updates_status_and_produces_write_intents():
+    tracker_state = _combined_tracker_state()
+    tracker_state["completed_landing_page"]["notion_page_id"] = "33333333333333333333333333333333"
+
+    command_result = apply_command_to_tracker_state(
+        command={
+            "command": "cancel_task",
+            "task_id": "ALOVYA-1",
+            "timeline_entry": {
+                "entry_date": "2026-05-24",
+                "heading": '<mention-date start="2026-05-24"/>',
+                "blocks": [
+                    {
+                        "type": "paragraph",
+                        "text": "Cancelled because the task is no longer needed.",
+                    }
+                ],
+            },
+        },
+        tracker_state=tracker_state,
+    )
+
+    write_intents_by_key = {
+        write_intent.operation_key: write_intent
+        for write_intent in command_result.write_intents
+    }
+
+    assert command_result.tracker_state["tasks"]["ALOVYA-1"]["status"] == "Cancelled"
+    assert [write_intent.operation_key for write_intent in command_result.write_intents] == [
+        "update_properties:task:ALOVYA-1",
+        "replace:ongoing_landing_page",
+        "replace:completed_landing_page",
+        "update_timeline_log:task:ALOVYA-1:2026-05-24",
+    ]
+    assert write_intents_by_key["update_properties:task:ALOVYA-1"].arguments["properties"]["Status"] == "Cancelled"
+    assert "## Cancelled" in write_intents_by_key["replace:completed_landing_page"].arguments["markdown"]
+    assert "[N/A]" in write_intents_by_key["replace:completed_landing_page"].arguments["markdown"]
+    assert write_intents_by_key["update_timeline_log:task:ALOVYA-1:2026-05-24"].arguments[
+        "timeline_section_markdown"
+    ] == "\n".join([
+        '### <mention-date start="2026-05-24"/>',
+        "Cancelled because the task is no longer needed.",
+    ])
+
+
 def _combined_tracker_state():
     tracker_state = _task_tracker_state()
     tracker_state["miscellaneous_notes"] = {

@@ -140,6 +140,7 @@ def _needs_task_context_for_command(command: dict[str, Any]) -> bool:
     return command["command"] in {
         "append_task_timeline_log",
         "complete_task",
+        "cancel_task",
         "create_child_task",
         "create_sibling_task",
     }

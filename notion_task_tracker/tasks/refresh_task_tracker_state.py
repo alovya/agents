@@ -68,7 +68,7 @@ def refresh_command_tasks_in_tracker_state(
 
 def find_task_ids_to_refresh_before_command(command: dict[str, Any], tracker_state: dict[str, Any]) -> list[str]:
     command_name = command["command"]
-    if command_name in {"append_task_timeline_log", "complete_task"}:
+    if command_name in {"append_task_timeline_log", "complete_task", "cancel_task"}:
         return [command["task_id"]]
 
     if command_name == "create_child_task":

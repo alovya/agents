@@ -1,6 +1,6 @@
 ---
 name: notion_task
-description: Work or create ALOVYA tasks, log ALOVYA task progress, complete ALOVYA tasks, capture miscellaneous notes, or create synthesis notes from the personal Notion task graph. Use when the user types notion_task work N, notion_task log N [notes], notion_task complete N [notes], notion_task new [pX] [title], notion_task child PARENT [pX] [title], notion_task sibling EXISTING [pX] [title], notion_task misc [title] NOTES, notion_task synth [title] SOURCES NOTES, asks to continue an existing ALOVYA task, or asks to write task/misc/synthesis context to Notion.
+description: Work or create ALOVYA tasks, log ALOVYA task progress, complete or cancel ALOVYA tasks, capture miscellaneous notes, or create synthesis notes from the personal Notion task graph. Use when the user types notion_task work N, notion_task log N [notes], notion_task complete N [notes], notion_task cancel N [notes], notion_task new [pX] [title], notion_task child PARENT [pX] [title], notion_task sibling EXISTING [pX] [title], notion_task misc [title] NOTES, notion_task synth [title] SOURCES NOTES, asks to continue an existing ALOVYA task, or asks to write task/misc/synthesis context to Notion.
 ---
 
 # Notion Task
@@ -89,6 +89,16 @@ Normal task commands do not query the full saved database view. They use targete
 5. Use a heading of `<mention-date start="YYYY-MM-DD"/>`.
 6. Use `complete_task`.
 7. The tracker owns completion behaviour: it sets status `Complete`, renders priority as `N/A` in derived views, applies completed-title styling, updates the ongoing and completed landing pages, and appends or merges the timeline entry by date.
+
+`notion_task cancel <number> [notes]` marks an existing task cancelled.
+
+1. Resolve `<number>` to `ALOVYA-<number>`.
+2. Fail if the task does not exist.
+3. Summarise relevant current conversation context plus `[notes]` as concise cancellation lines.
+4. Use today's date for `entry_date`.
+5. Use a heading of `<mention-date start="YYYY-MM-DD"/>`.
+6. Use `cancel_task`.
+7. The tracker owns cancellation behaviour: it sets status `Cancelled`, renders priority as `N/A` in derived views, updates the ongoing and completed landing pages, and appends or merges the timeline entry by date.
 
 `notion_task new [pX] [title]` creates a top-level task.
 
