@@ -8,7 +8,7 @@ import pytest
 import yaml
 
 
-RALPH_MODULE_PATH = Path(__file__).resolve().parents[1] / "ralph.py"
+RALPH_MODULE_PATH = Path(__file__).resolve().parents[1] / "run_ralph_loop.py"
 spec = importlib.util.spec_from_file_location("ralph", RALPH_MODULE_PATH)
 ralph = importlib.util.module_from_spec(spec)
 sys.modules["ralph"] = ralph

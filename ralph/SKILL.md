@@ -68,7 +68,7 @@ Do not copy task prose or full implementation notes into the ledger.
 Run:
 
 ```bash
-python ~/agents/ralph/ralph.py run --repo-path /path/to/repo --project-name example
+python ~/agents/ralph/run_ralph_loop.py run --repo-path /path/to/repo --project-name example
 ```
 
 The runner owns task selection, verification, ledger advancement, and commits.
