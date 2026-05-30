@@ -1,0 +1,22 @@
+version: 1
+project_name: example
+tasks:
+  - id: R1
+    title: Add parser
+    status: pending
+    depends_on: []
+    touchable_paths:
+      - src/parser.py
+      - tests/test_parser.py
+    verification_commands:
+      - python -m pytest tests/test_parser.py
+  - id: R2
+    title: Add command line entrypoint
+    status: pending
+    depends_on:
+      - R1
+    touchable_paths:
+      - src/cli.py
+      - tests/test_cli.py
+    verification_commands:
+      - python -m pytest tests/test_cli.py
