@@ -32,28 +32,75 @@ When creating a Ralph plan, pair the Ralph project with ALOVYA tasks through the
 `notion_task_tracker` skill. Notion is the human-facing project/task record; Ralph's
 `PLAN.md` and `ledger.yaml` are private execution control files.
 
+Ralph plans must encode the intended Notion task pairing up front, but must not
+materialize every planned task in Notion up front. The ledger distinguishes the
+planned task relationship from the actual Notion task id created later.
+
 If the user mentions `parent:<id>` while asking for a Ralph plan:
 
-1. Treat `<id>` as the parent ALOVYA ticket for the initial Ralph task set.
-2. Create the initial Notion task or tasks as children of that parent with
-   `notion_task child <id> [title]`.
-3. For later subtasks discovered while planning or executing, decide the relationship
+1. Treat `<id>` as the root parent ALOVYA ticket for the initial Ralph task set.
+2. Record that root parent in `ledger.yaml`.
+3. For each planned Ralph task, record its intended Notion relationship in the
+   task's ledger entry, usually as a child of the root parent.
+4. Do not create those Notion child tasks during planning. Leave their
+   `materialized_task_id` as `null` until the worker starts that Ralph slice.
+5. For later subtasks discovered while planning or executing, decide the relationship
    from the work structure:
    - Use `notion_task child <existing-child-id> [title]` when the new work is a
      narrower implementation slice, investigation, follow-up, or blocker under an
      existing child task.
    - Use `notion_task sibling <existing-child-id> [title]` when the new work is a
      peer track next to an existing child task under the same parent.
-4. Do not force every later task directly under the original `parent:<id>`; use that
+6. Do not force every later task directly under the original `parent:<id>`; use that
    parent as the root of the initial task tree, then attach new tasks where they
    semantically belong.
 
 If the user does not mention `parent:<id>`, create a top-level task with
-`notion_task parent [title]` when the Ralph work is substantial enough to track. For
-small one-off loops, ask whether they want a Notion task before creating one.
+`notion_task parent [title]` only when the Ralph work needs a root human-facing
+container. For small one-off loops, ask whether they want a Notion task before
+creating one.
 
-Record the paired ALOVYA task ids in Ralph project metadata or `ledger.yaml`, but do
-not copy Notion task prose or implementation notes into `ledger.yaml`.
+Each planned Ralph task should have a `notion_task` entry in `ledger.yaml`:
+
+```yaml
+notion:
+  root_parent_task_id: ALOVYA-89
+
+tasks:
+  - id: R1
+    title: Delete redundant Notion client wrapper
+    status: pending
+    notion_task:
+      planned: true
+      relationship: child
+      parent_task_id: ALOVYA-89
+      title: Delete redundant Notion client wrapper
+      materialized_task_id: null
+```
+
+When the worker starts a Ralph task, it must materialize the planned Notion task if
+`materialized_task_id` is `null`, using the planned relationship and title from the
+ledger. After creation, update the ledger with the assigned task id. A planned task
+is not considered paired for execution until `materialized_task_id` is set.
+
+Materializing the Notion task is not enough. Each Ralph worker must keep the paired
+Notion task useful as a human-facing execution log:
+
+1. At slice start, log the Ralph task id, goal, touchable paths, verification
+   commands, and any immediate assumptions or constraints.
+2. During execution, log meaningful discoveries, blockers, design decisions, failed
+   commands, stack traces, and changed approach when they affect the work.
+3. At slice completion, log the concrete files changed, behaviour changed,
+   verification commands run, command outputs or failures, unresolved risks, and the
+   commit hash if the runner committed the slice.
+4. Use detailed `notion_task_tracker` log content with paragraph and code blocks.
+   Do not write vague entries such as "implemented R1" or "ran tests" when the
+   useful content is the command, output, diff summary, or error.
+5. If the worker creates discovered follow-up tasks, log the reason and relationship
+   on both the current task and the new child/sibling task when relevant.
+
+Record paired ALOVYA task ids in `ledger.yaml`, but do not copy Notion task prose or
+implementation notes into `ledger.yaml`.
 
 ## Plan Format
 
@@ -78,10 +125,18 @@ Keep `ledger.yaml` minimal. It may contain ids, titles, statuses, dependencies, 
 ```yaml
 version: 1
 project_name: example
+notion:
+  root_parent_task_id: ALOVYA-89
 tasks:
   - id: R1
     title: Add parser
     status: pending
+    notion_task:
+      planned: true
+      relationship: child
+      parent_task_id: ALOVYA-89
+      title: Add parser
+      materialized_task_id: null
     depends_on: []
     touchable_paths:
       - src/parser.py
