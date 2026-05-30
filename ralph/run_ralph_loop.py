@@ -531,9 +531,16 @@ def _parse_worker_promise(output: str) -> str:
 
 def _create_run_directory(runs_path: Path, task_id: str) -> Path:
     timestamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    run_path = runs_path / f"{timestamp}-{task_id}"
+    run_path = runs_path / f"{_safe_run_directory_component(task_id)}_{timestamp}"
     run_path.mkdir(parents=True, exist_ok=False)
     return run_path
+
+
+def _safe_run_directory_component(value: str) -> str:
+    safe_value = re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip("-")
+    if not safe_value:
+        raise ValueError("Run directory task id cannot be empty after sanitization.")
+    return safe_value
 
 
 def _path_exists_under_repo(repo_path: Path, name: str) -> bool:

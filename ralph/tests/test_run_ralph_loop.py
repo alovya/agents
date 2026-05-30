@@ -144,6 +144,20 @@ def test_write_run_status_appends_status_lines(tmp_path: Path) -> None:
     assert len(status_text.splitlines()) == 2
 
 
+def test_create_run_directory_prefixes_task_id(tmp_path: Path) -> None:
+    run_path = ralph._create_run_directory(tmp_path, "R1")
+
+    assert run_path.name.startswith("R1_")
+    assert run_path.is_dir()
+
+
+def test_create_run_directory_sanitizes_task_id(tmp_path: Path) -> None:
+    run_path = ralph._create_run_directory(tmp_path, "R 1/cleanup")
+
+    assert run_path.name.startswith("R-1-cleanup_")
+    assert run_path.is_dir()
+
+
 def test_rendered_prompt_excludes_unrelated_task_slice(tmp_path: Path) -> None:
     ledger = _ledger()
     selection = ralph.TaskSelection(
