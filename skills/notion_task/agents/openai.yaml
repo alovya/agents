@@ -1,4 +1,0 @@
-interface:
-  display_name: "Notion Task"
-  short_description: "Task, misc, and synthesis Notion workflow"
-  default_prompt: "Use $notion_task misc to preserve the current context."

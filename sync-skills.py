@@ -5,20 +5,38 @@ from pathlib import Path
 
 
 def main() -> None:
-    repo_root_path = Path(__file__).resolve().parents[1]
+    agents_repo_path = Path(__file__).resolve().parent
     codex_home_path = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
 
     _install_symlink(
-        source_path=repo_root_path / "skills" / "notion_task",
-        destination_path=codex_home_path / "skills" / "notion_task",
-    )
-    _install_symlink(
-        source_path=repo_root_path / "AGENTS.md",
+        source_path=agents_repo_path / "AGENTS.md",
         destination_path=codex_home_path / "AGENTS.md",
     )
-    _install_symlink(
-        source_path=repo_root_path / "notion_task_tracker",
-        destination_path=codex_home_path / "memories" / "notion_task_tracker",
+    _install_codex_skills_from_agent_directories(
+        agents_repo_path=agents_repo_path,
+        codex_skills_path=codex_home_path / "skills",
+    )
+
+
+def _install_codex_skills_from_agent_directories(
+    agents_repo_path: Path,
+    codex_skills_path: Path,
+) -> None:
+    for agent_directory_path in sorted(agents_repo_path.iterdir()):
+        if not _is_codex_skill_directory(agent_directory_path):
+            continue
+
+        _install_symlink(
+            source_path=agent_directory_path,
+            destination_path=codex_skills_path / agent_directory_path.name,
+        )
+
+
+def _is_codex_skill_directory(agent_directory_path: Path) -> bool:
+    return (
+        agent_directory_path.is_dir()
+        and not agent_directory_path.name.startswith(".")
+        and (agent_directory_path / "SKILL.md").is_file()
     )
 
 

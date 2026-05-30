@@ -1,24 +1,25 @@
 # Agents
 
-Private source of truth for personal agent tooling.
+Private source of truth for personal agent instructions and agent-specific prompts.
 
 ## Shape
 
 ```text
-skills/
-  notion_task/
-    SKILL.md
-
 AGENTS.md
-notion_task_tracker/
-  README.md
-  DESIGN.md
-  *.py
-  tests/
-
-scripts/
-  sync.py
+sync-skills.py
+ralph/
+  PROMPT.md
 ```
+
+Each immediate child directory can become a Codex skill by adding a `SKILL.md` file:
+
+```text
+example_agent/
+  SKILL.md
+  PROMPT.md
+```
+
+Directories without `SKILL.md` are kept in Git but are not installed as Codex skills.
 
 ## Runtime Links
 
@@ -27,38 +28,17 @@ This repo is canonical. `~/.codex` is the installed runtime location.
 Run:
 
 ```bash
-python scripts/sync.py
+python sync-skills.py
 ```
 
 This installs symlinks:
 
 ```text
-~/.codex/skills/notion_task
-  -> ~/agents/skills/notion_task
-
 ~/.codex/AGENTS.md
   -> ~/agents/AGENTS.md
 
-~/.codex/memories/notion_task_tracker
-  -> ~/agents/notion_task_tracker
+~/.codex/skills/<agent-directory>
+  -> ~/agents/<agent-directory>
 ```
 
-The local tracker state remains outside git:
-
-```text
-~/.codex/memories/notion_tasks_graph.json
-```
-
-Auth remains outside git:
-
-```text
-~/.codex/.credentials.json
-```
-
-## Test
-
-```bash
-PYTHONPATH=$PWD /workspace/venv/bin/python -m pytest \
-  notion_task_tracker/tests \
-  notion_task_tracker/task_pages/tests
-```
+`notion_task_tracker` now lives in its own repository at `~/notion_task_tracker`.
