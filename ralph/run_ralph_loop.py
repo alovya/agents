@@ -6,10 +6,8 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
-from string import Formatter
 from typing import Any
 
 try:
@@ -21,6 +19,7 @@ except ImportError as error:
 RALPH_HOME_PATH = Path.home() / ".ralph"
 DEFAULT_MAX_ITERATIONS = 10
 PROMISE_PATTERN = re.compile(r"<promise>(DONE|BLOCKED|ABORT)</promise>")
+PROMISE_LINE_PATTERN = re.compile(r"^<promise>(DONE|BLOCKED|ABORT)</promise>$")
 TASK_BLOCK_PATTERN = re.compile(
     r"<!--\s*ralph-task:start\s+(?P<task_id>[A-Za-z0-9_.-]+)\s*-->\n"
     r"(?P<body>.*?)"
@@ -87,30 +86,50 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
             return
 
         run_path = _create_run_directory(project.runs_path, selection.task["id"])
-        prompt = _render_worker_prompt(repo_path=repo_path, ledger=ledger, selection=selection)
-        worker_result = _run_codex_worker(
-            repo_path=repo_path,
-            prompt=prompt,
-            codex_command=arguments.codex_command,
-            output_path=run_path / "worker-output.txt",
+        _write_run_status(
+            run_path=run_path,
+            status=f"selected {selection.task['id']}: {selection.task['title']}",
         )
+        print(f"Ralph run: {run_path}")
+        prompt = _render_worker_prompt(repo_path=repo_path, ledger=ledger, selection=selection)
+        try:
+            worker_result = _run_codex_worker(
+                repo_path=repo_path,
+                prompt=prompt,
+                codex_command=arguments.codex_command,
+                output_path=run_path / "worker-output.txt",
+                tee_output=arguments.tee_worker_output,
+            )
+        except Exception as error:
+            _write_run_status(run_path=run_path, status=f"worker failed: {error}")
+            _write_text(run_path / "error.txt", f"{type(error).__name__}: {error}\n")
+            raise
+        _write_run_status(run_path=run_path, status=f"worker returned {worker_result.promise}")
         _write_text(run_path / "promise.txt", worker_result.promise)
 
         if worker_result.promise != "DONE":
             print(f"Worker stopped with {worker_result.promise}. See {run_path}")
             return
 
-        verification_output = _run_verification_commands(
-            repo_path=repo_path,
-            task=selection.task,
-            output_path=run_path / "verification-output.txt",
-        )
+        try:
+            _write_run_status(run_path=run_path, status="running verification")
+            verification_output = _run_verification_commands(
+                repo_path=repo_path,
+                task=selection.task,
+                output_path=run_path / "verification-output.txt",
+            )
+        except Exception as error:
+            _write_run_status(run_path=run_path, status=f"verification failed: {error}")
+            _write_text(run_path / "error.txt", f"{type(error).__name__}: {error}\n")
+            raise
         _write_text(run_path / "verification-output.txt", verification_output)
 
         ledger = _mark_task_done(ledger, selection.task["id"])
         _write_yaml_file(project.ledger_path, ledger)
+        _write_run_status(run_path=run_path, status="ledger advanced")
         commit_hash = _commit_target_repo_changes(repo_path=repo_path, task=selection.task)
         _write_text(run_path / "commit.txt", commit_hash)
+        _write_run_status(run_path=run_path, status=f"committed {commit_hash}")
         print(f"Completed {selection.task['id']}: {commit_hash}")
 
     raise SystemExit(f"Reached max iterations: {arguments.max_iterations}")
@@ -125,6 +144,13 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
     run_parser.add_argument("--project-name", required=True)
     run_parser.add_argument("--max-iterations", type=int, default=DEFAULT_MAX_ITERATIONS)
     run_parser.add_argument("--codex-command", default=_default_codex_command())
+    run_parser.add_argument(
+        "--no-tee-worker-output",
+        action="store_false",
+        dest="tee_worker_output",
+        help="Stream the Codex worker transcript to this terminal while also saving worker-output.txt.",
+    )
+    run_parser.set_defaults(tee_worker_output=True)
 
     smoke_parser = subparsers.add_parser("smoke-test", help="Verify the worker sandbox hides ~/.ralph.")
     smoke_parser.add_argument("--repo-path", required=True)
@@ -214,21 +240,70 @@ def _run_codex_worker(
     prompt: str,
     codex_command: str,
     output_path: Path,
+    tee_output: bool,
 ) -> WorkerResult:
+    _write_text(output_path, "")
     command = _build_bwrap_codex_command(repo_path=repo_path, codex_command=codex_command)
-    completed_process = subprocess.run(
-        command,
-        input=prompt,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        check=False,
-    )
-    _write_text(output_path, completed_process.stdout)
+    if tee_output:
+        completed_process = _run_command_and_tee_output(
+            command=command,
+            input_text=prompt,
+            output_path=output_path,
+        )
+    else:
+        completed_process = subprocess.run(
+            command,
+            input=prompt,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        _write_text(output_path, completed_process.stdout)
+
+    output = completed_process.stdout or ""
     if completed_process.returncode != 0:
         raise RuntimeError(f"Codex worker failed with exit code {completed_process.returncode}. See {output_path}")
-    promise = _parse_worker_promise(completed_process.stdout)
-    return WorkerResult(promise=promise, output=completed_process.stdout)
+    promise = _parse_worker_promise(output)
+    return WorkerResult(promise=promise, output=output)
+
+
+def _run_command_and_tee_output(
+    command: list[str],
+    input_text: str,
+    output_path: Path,
+) -> subprocess.CompletedProcess[str]:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_chunks: list[str] = []
+    with output_path.open("w", encoding="utf-8") as output_file:
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+
+        if process.stdin is None or process.stdout is None:
+            raise RuntimeError("Could not open worker stdin/stdout pipes.")
+
+        process.stdin.write(input_text)
+        process.stdin.close()
+
+        for line in process.stdout:
+            print(line, end="", flush=True)
+            output_file.write(line)
+            output_file.flush()
+            output_chunks.append(line)
+
+    return_code = process.wait()
+    output = "".join(output_chunks)
+    return subprocess.CompletedProcess(
+        args=command,
+        returncode=return_code,
+        stdout=output,
+    )
 
 
 def _run_worker_visibility_smoke_test(repo_path: Path, codex_command: str) -> None:
@@ -445,10 +520,13 @@ def _remove_plan_like_fields(value: Any) -> Any:
 
 
 def _parse_worker_promise(output: str) -> str:
+    for raw_line in reversed(output.splitlines()):
+        match = PROMISE_LINE_PATTERN.match(raw_line.strip())
+        if match:
+            return match.group(1)
+
     promises = PROMISE_PATTERN.findall(output)
-    if len(promises) != 1:
-        raise RuntimeError(f"Expected exactly one worker promise, found {len(promises)}.")
-    return promises[0]
+    raise RuntimeError(f"Expected one final worker promise line, found {len(promises)} promise tag(s).")
 
 
 def _create_run_directory(runs_path: Path, task_id: str) -> Path:
@@ -491,6 +569,13 @@ def _run_git(repo_path: Path, *arguments: str) -> str:
 def _write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)
+
+
+def _write_run_status(run_path: Path, status: str) -> None:
+    status_path = run_path / "status.txt"
+    status_path.parent.mkdir(parents=True, exist_ok=True)
+    with status_path.open("a", encoding="utf-8") as status_file:
+        status_file.write(f"{dt.datetime.now(dt.timezone.utc).isoformat()} {status}\n")
 
 
 def _last_non_empty_line(text: str) -> str:

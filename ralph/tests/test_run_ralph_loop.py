@@ -75,8 +75,73 @@ Second task context.
 
 def test_parses_exactly_one_promise() -> None:
     assert ralph._parse_worker_promise("done\n<promise>DONE</promise>") == "DONE"
-    with pytest.raises(RuntimeError, match="Expected exactly one"):
-        ralph._parse_worker_promise("<promise>DONE</promise>\n<promise>DONE</promise>")
+    assert ralph._parse_worker_promise(
+        "\n".join(
+            [
+                "<promise>DONE</promise>",
+                "<promise>BLOCKED</promise>",
+                "<promise>ABORT</promise>",
+                "final answer",
+                "<promise>DONE</promise>",
+            ]
+        )
+    ) == "DONE"
+    with pytest.raises(RuntimeError, match="Expected one final"):
+        ralph._parse_worker_promise("No promise here.")
+
+
+def test_parse_args_streams_worker_output_by_default() -> None:
+    arguments = ralph._parse_arguments([
+        "run",
+        "--repo-path",
+        "/tmp/repo",
+        "--project-name",
+        "example",
+    ])
+
+    assert arguments.tee_worker_output is True
+
+
+def test_parse_args_can_disable_worker_output_teeing() -> None:
+    arguments = ralph._parse_arguments([
+        "run",
+        "--repo-path",
+        "/tmp/repo",
+        "--project-name",
+        "example",
+        "--no-tee-worker-output",
+    ])
+
+    assert arguments.tee_worker_output is False
+
+
+def test_run_command_and_tee_output_writes_to_terminal_and_file(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    output_path = tmp_path / "worker-output.txt"
+
+    completed_process = ralph._run_command_and_tee_output(
+        command=["bash", "-lc", "printf 'before\\n'; cat; printf 'after\\n'"],
+        input_text="middle\n",
+        output_path=output_path,
+    )
+
+    assert completed_process.returncode == 0
+    assert completed_process.stdout == "before\nmiddle\nafter\n"
+    assert output_path.read_text(encoding="utf-8") == "before\nmiddle\nafter\n"
+    assert capsys.readouterr().out == "before\nmiddle\nafter\n"
+
+
+def test_write_run_status_appends_status_lines(tmp_path: Path) -> None:
+    ralph._write_run_status(tmp_path, "selected R1")
+    ralph._write_run_status(tmp_path, "worker returned DONE")
+
+    status_text = tmp_path.joinpath("status.txt").read_text(encoding="utf-8")
+
+    assert "selected R1" in status_text
+    assert "worker returned DONE" in status_text
+    assert len(status_text.splitlines()) == 2
 
 
 def test_rendered_prompt_excludes_unrelated_task_slice(tmp_path: Path) -> None:
