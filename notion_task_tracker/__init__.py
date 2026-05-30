@@ -24,8 +24,8 @@ from notion_task_tracker.apply_tracker_command import (
     TrackerCommandResult,
     apply_command_to_tracker_state,
 )
-from notion_task_tracker.tracker_cli_workflow import (
-    TaskTrackerRefreshSummary,
+from notion_task_tracker.run_notion_task_tracker import (
+    TrackerActionExecutionSummary,
     refresh_task_tracker_from_notion,
 )
 from notion_task_tracker.miscellaneous_pages import (
@@ -67,7 +67,7 @@ __all__ = [
     "NotionPageReference",
     "NotionPageRegistry",
     "NotionPlanningError",
-    "TaskTrackerRefreshSummary",
+    "TrackerActionExecutionSummary",
     "NotionWriteIntent",
     "Priority",
     "TrackedPage",

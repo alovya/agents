@@ -11,6 +11,7 @@ from notion_task_tracker.tasks.refresh_task_tracker_state import (
     find_task_ids_to_refresh_before_command,
     refresh_tracker_state_from_database_rows,
     refresh_command_tasks_in_tracker_state,
+    refresh_task_ids_in_tracker_state,
 )
 from notion_task_tracker.tasks.database import (
     TaskDatabaseRow,
@@ -73,6 +74,23 @@ async def refresh_tracker_state_for_task_command(
     )
 
 
+async def refresh_tracker_state_for_task_ids(
+    task_ids: list[str],
+    tracker_state: dict[str, Any],
+    notion_client: NotionClient,
+) -> TrackerCommandResult:
+    database_rows_by_task_id = await _fetch_database_rows_for_task_ids(
+        task_ids=task_ids,
+        tracker_state=tracker_state,
+        notion_client=notion_client,
+    )
+    return refresh_task_ids_in_tracker_state(
+        task_ids=list(database_rows_by_task_id),
+        tracker_state=tracker_state,
+        database_rows_by_task_id=database_rows_by_task_id,
+    )
+
+
 async def _fetch_database_rows_for_command_tasks(
     command: dict[str, Any],
     tracker_state: dict[str, Any],
@@ -82,6 +100,32 @@ async def _fetch_database_rows_for_command_tasks(
     database_rows_by_task_id = {}
     refreshed_task_ids = set()
     pending_task_ids = list(dict.fromkeys(find_task_ids_to_refresh_before_command(command, tracker_state)))
+
+    while pending_task_ids:
+        task_id = pending_task_ids.pop(0)
+        if task_id in refreshed_task_ids:
+            continue
+
+        database_row = await _fetch_known_task_database_row(task_id, work_graph, notion_client)
+        database_rows_by_task_id[task_id] = database_row
+        refreshed_task_ids.add(task_id)
+
+        parent_task_id = _derive_parent_task_id_from_database_row(database_row, work_graph)
+        if parent_task_id is not None and parent_task_id not in refreshed_task_ids:
+            pending_task_ids.append(parent_task_id)
+
+    return database_rows_by_task_id
+
+
+async def _fetch_database_rows_for_task_ids(
+    task_ids: list[str],
+    tracker_state: dict[str, Any],
+    notion_client: NotionClient,
+) -> dict[str, TaskDatabaseRow]:
+    work_graph = TaskDependencyGraph.from_tracker_state(tracker_state)
+    database_rows_by_task_id = {}
+    refreshed_task_ids = set()
+    pending_task_ids = list(dict.fromkeys(task_ids))
 
     while pending_task_ids:
         task_id = pending_task_ids.pop(0)

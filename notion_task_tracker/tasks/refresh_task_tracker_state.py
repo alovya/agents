@@ -37,7 +37,36 @@ def refresh_command_tasks_in_tracker_state(
     work_graph = TaskDependencyGraph.from_tracker_state(tracker_state)
     refreshed_task_ids = set()
     pending_task_ids = list(dict.fromkeys(find_task_ids_to_refresh_before_command(command, tracker_state)))
+    return _refresh_task_ids_in_work_graph(
+        work_graph=work_graph,
+        tracker_state=tracker_state,
+        database_rows_by_task_id=database_rows_by_task_id,
+        refreshed_task_ids=refreshed_task_ids,
+        pending_task_ids=pending_task_ids,
+    )
 
+
+def refresh_task_ids_in_tracker_state(
+    task_ids: list[str],
+    tracker_state: dict[str, Any],
+    database_rows_by_task_id: dict[str, TaskDatabaseRow],
+) -> TrackerCommandResult:
+    return _refresh_task_ids_in_work_graph(
+        work_graph=TaskDependencyGraph.from_tracker_state(tracker_state),
+        tracker_state=tracker_state,
+        database_rows_by_task_id=database_rows_by_task_id,
+        refreshed_task_ids=set(),
+        pending_task_ids=list(dict.fromkeys(task_ids)),
+    )
+
+
+def _refresh_task_ids_in_work_graph(
+    work_graph: TaskDependencyGraph,
+    tracker_state: dict[str, Any],
+    database_rows_by_task_id: dict[str, TaskDatabaseRow],
+    refreshed_task_ids: set[str],
+    pending_task_ids: list[str],
+) -> TrackerCommandResult:
     while pending_task_ids:
         task_id = pending_task_ids.pop(0)
         if task_id in refreshed_task_ids:

@@ -1,6 +1,6 @@
 # Notion Task Tracker
 
-This package turns small agent-written JSON commands into Notion writes. The agent supplies intent; the tracker owns graph projection, page shape, rendering, write ordering, and Notion SDK calls. Task metadata now comes from `Alovya's task database`; task page bodies contain timeline logs only, and the ongoing and completed task landing pages are derived views.
+This package turns explicit CLI actions into Notion writes. The agent supplies intent; the tracker owns graph projection, page shape, rendering, write ordering, and Notion SDK calls. Task metadata now comes from `Alovya's task database`; task page bodies contain timeline logs only, and the ongoing and completed task landing pages are derived views.
 
 Fixed page names live in `fixed_pages.py`:
 
@@ -14,18 +14,20 @@ Notion page ids live in tracker state because Notion assigns them. The task data
 ## Agent Workflow
 
 1. Read the current tracker state, usually `~/.codex/memories/notion_tasks_graph.json`.
-2. Write a command JSON file for the user intent.
-3. Run the tracker CLI with `--command-path`.
-4. The CLI fetches only task pages needed by that command, updates their local metadata projection, applies the command, writes to Notion, and saves tracker state after successful writes.
-5. Read `command_result.json` for completed operation keys and warnings.
+2. Choose one explicit CLI action such as `--log`, `--child`, or `--read`.
+3. Put multi-paragraph or nested content in a JSON file passed through `--content-path`.
+4. The CLI fetches only task pages needed by that action, updates their local metadata projection, applies the command, writes to Notion when the action is mutating, and saves tracker state after successful writes.
+5. Read the output JSON for completed operation keys, read summaries, and warnings.
 6. Treat a CLI failure as a failed write. Do not manually send Notion writes unless debugging with the user.
 
-Run command JSON from the local virtual environment:
+Run an explicit action from the local virtual environment:
 
 ```bash
 cd /home/alovyachowdhury/.codex/memories
 /workspace/venv/bin/python -m notion_task_tracker \
-  --command-path command.json \
+  --log \
+  --ticket-number 67 \
+  --content-path /tmp/notion_task_log.json \
   --tracker-state-path notion_tasks_graph.json \
   --output-path command_result.json
 ```
@@ -38,15 +40,77 @@ Install runtime dependencies into the local venv with:
 /workspace/venv/bin/python -m pip install -r /home/alovyachowdhury/agents/requirements.txt
 ```
 
-`command_result.json` contains:
+Mutating action output contains:
 
 1. `backup_path`: tracker state backup from before the command.
-2. `command_path`: command JSON that was run.
+2. `action_name`: explicit CLI action that ran.
 3. `completed_operations`: operation keys successfully written to Notion.
 4. `tracker_state_path`: canonical tracker-state path written after Notion writes succeeded.
 5. `warnings`: non-fatal reconciliation warnings.
 
 The live path uses the Notion REST client by default. The MCP client remains in-tree as a temporary fallback; delete it once REST is reliable for task creation, logging, completion, reconciliation, and landing-page rendering.
+
+## Explicit CLI Actions
+
+Use these actions for normal agent operation. The action flag freezes the accepted schema; `--content-path` carries the rich content.
+
+```bash
+python -m notion_task_tracker --read --ticket-number 67 --ticket-number 80
+python -m notion_task_tracker --work --ticket-number 67
+python -m notion_task_tracker --log --ticket-number 67 --content-path /tmp/log.json
+python -m notion_task_tracker --complete --ticket-number 67 --content-path /tmp/complete.json
+python -m notion_task_tracker --cancel --ticket-number 67 --content-path /tmp/cancel.json
+python -m notion_task_tracker --parent --title "Measure activation mismatch" --priority P1 --content-path /tmp/initial.json
+python -m notion_task_tracker --child --parent-ticket-number 67 --title "Add explicit CLI actions" --priority P1 --content-path /tmp/initial.json
+python -m notion_task_tracker --sibling --sibling-ticket-number 67 --title "Document explicit CLI actions" --priority P2 --content-path /tmp/initial.json
+python -m notion_task_tracker --misc --content-path /tmp/misc.json
+python -m notion_task_tracker --synth --synthesis-key explicit_tracker_cli --title "Explicit tracker CLI" --content-path /tmp/synth.json
+```
+
+`--read` and `--work` are read-only with respect to Notion. They fetch live task pages, refresh local task metadata, write a JSON summary to `--output-path`, and perform no Notion writes.
+
+Timeline content files for `--log`, `--complete`, `--cancel`, `--parent`, `--child`, and `--sibling` use this shape:
+
+```json
+{
+  "subheading": "Optional toggle title",
+  "blocks": [
+    {
+      "type": "paragraph",
+      "text": "Investigated the REST migration boundary."
+    },
+    {
+      "type": "code",
+      "language": "bash",
+      "text": "python -m notion_task_tracker --read --ticket-number 67"
+    }
+  ]
+}
+```
+
+Miscellaneous content files use `lines` or paragraph `blocks`:
+
+```json
+{
+  "lines": ["Captured context that does not yet belong on a task."]
+}
+```
+
+Synthesis content files use this shape:
+
+```json
+{
+  "summary": "Reusable tracker CLI design.",
+  "sources": [
+    {
+      "source_type": "Notion page",
+      "label": "ALOVYA-67",
+      "page_key": "task:ALOVYA-67"
+    }
+  ],
+  "lines": ["Actions freeze schemas; content remains free-form."]
+}
+```
 
 ## Fetch And Reconcile From Notion
 
@@ -277,9 +341,10 @@ This replaces the local existing-page mention list with exactly the page mention
 
 The package is Python metadata and Notion write execution code. Live fetch/write execution uses the authenticated Notion REST client by default through `notion-client`. The MCP client is a temporary fallback while REST reliability is proven.
 
-- `__main__.py`: CLI for command JSON and direct task database reconciliation.
-- `apply_tracker_command.py`: command dispatcher from JSON to tracker-state updates and Notion writes.
-- `tracker_cli_workflow.py`: top-level command execution and tracker refresh workflow.
+- `__main__.py`: tiny shim for `python -m notion_task_tracker`.
+- `build_tracker_command.py`: build deterministic tracker commands from explicit CLI flags.
+- `run_notion_task_tracker.py`: parse explicit CLI actions, build tracker commands, run reads, writes, and full database reconciliation.
+- `apply_tracker_command.py`: apply one already-built tracker command to local state and derive Notion write intents.
 - `tasks/dependency_graph.py`: task dependency graph validation, priority rollup, and task-write orchestration.
 - `tasks/database.py`: task database projection and database-row parsing.
 - `tasks/task.py`: task, priority, status, timeline-entry data, task property refresh intents, and timeline-log update intents.
