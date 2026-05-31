@@ -18,7 +18,6 @@ except ImportError as error:
 
 RALPH_HOME_PATH = Path.home() / ".ralph"
 NOTION_TASK_TRACKER_HOME_PATH = Path.home() / ".notion-task-tracker"
-CODEX_HOME_MOUNT_PATH = Path("/worker-codex-home")
 DEFAULT_MAX_ITERATIONS = 10
 PROMISE_PATTERN = re.compile(r"<promise>(DONE|BLOCKED|ABORT)</promise>")
 PROMISE_LINE_PATTERN = re.compile(r"^<promise>(DONE|BLOCKED|ABORT)</promise>$")
@@ -383,9 +382,6 @@ def _build_bwrap_codex_command(
         str(Path.home()),
         "--tmpfs",
         "/tmp",
-        "--bind",
-        str(codex_home_path),
-        str(CODEX_HOME_MOUNT_PATH),
         "--ro-bind",
         str(local_path),
         str(local_path),
@@ -399,7 +395,7 @@ def _build_bwrap_codex_command(
         str(Path.home()),
         "--setenv",
         "CODEX_HOME",
-        str(CODEX_HOME_MOUNT_PATH),
+        str(codex_home_path),
         "--setenv",
         "PATH",
         _worker_path_value(python_venv_path),
@@ -415,6 +411,7 @@ def _build_bwrap_codex_command(
         "--ignore-rules",
         "-",
     ]
+    _insert_bwrap_mount_before_codex(command, "--bind", codex_home_path, codex_home_path)
     if python_venv_path is not None:
         _insert_bwrap_mount_before_codex(command, "--ro-bind", python_venv_path, python_venv_path)
         _insert_bwrap_setenv_before_codex(command, "VIRTUAL_ENV", str(python_venv_path))
