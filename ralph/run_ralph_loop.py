@@ -159,7 +159,7 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
     run_parser.add_argument("--codex-command", default=_default_codex_command())
     run_parser.add_argument(
         "--python-venv",
-        help="Optional Python venv mounted into workers with its bin directory first on PATH.",
+        help="Python venv mounted into workers with its bin directory first on PATH. Defaults to $VIRTUAL_ENV.",
     )
     run_parser.add_argument(
         "--no-tee-worker-output",
@@ -415,6 +415,7 @@ def _build_bwrap_codex_command(
     if python_venv_path is not None:
         _insert_bwrap_mount_before_codex(command, "--ro-bind", python_venv_path, python_venv_path)
         _insert_bwrap_setenv_before_codex(command, "VIRTUAL_ENV", str(python_venv_path))
+        _insert_bwrap_setenv_before_codex(command, "BASH_ENV", str(python_venv_path / "bin" / "activate"))
     # TODO: Replace this ntt-specific state bind with a generic worker-state story.
     # For now Ralph workers need installed ntt to see the same tracker cache path
     # that ntt uses by default: ~/.notion-task-tracker/notion_tasks_graph.json.
@@ -431,6 +432,8 @@ def _build_bwrap_codex_command(
 
 
 def _resolve_python_venv_path(python_venv: str | None) -> Path | None:
+    if python_venv is None:
+        python_venv = os.environ.get("VIRTUAL_ENV")
     if python_venv is None:
         return None
 
@@ -710,7 +713,8 @@ def _tool_environment_context(python_venv_path: Path | None) -> str:
             f"Python venv: {python_venv_path}",
             f"`{python_venv_path / 'bin'}` is already first on PATH.",
             f"`VIRTUAL_ENV` is already set to `{python_venv_path}`.",
-            "Use installed CLIs directly, for example `ntt ...`; you do not need to run `source bin/activate`.",
+            f"`BASH_ENV` points at `{python_venv_path / 'bin' / 'activate'}` so Codex shell tool calls keep the venv active.",
+            "Use installed CLIs directly, for example `ntt ...`.",
         ]
     )
 

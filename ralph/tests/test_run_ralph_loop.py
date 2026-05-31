@@ -225,6 +225,7 @@ def test_build_bwrap_command_mounts_python_venv(tmp_path: Path, monkeypatch) -> 
 
     assert _contains_subsequence(command, ["--ro-bind", str(python_venv_path), str(python_venv_path)])
     assert _contains_subsequence(command, ["--setenv", "VIRTUAL_ENV", str(python_venv_path)])
+    assert _contains_subsequence(command, ["--setenv", "BASH_ENV", str(python_venv_path / "bin" / "activate")])
     assert str(python_venv_path / "bin") in command[command.index("PATH") + 1].split(":")[0]
 
 
