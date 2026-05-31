@@ -10,10 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-try:
-    import yaml
-except ImportError as error:
-    raise SystemExit("Ralph requires PyYAML. Install it with: python -m pip install PyYAML") from error
+import yaml
 
 
 RALPH_HOME_PATH = Path.home() / ".ralph"
@@ -92,11 +89,7 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
             print("No runnable Ralph tasks remain.")
             return
 
-        run_path = _create_task_run_directory(job.tasks_path, selection.task["id"])
-        _write_run_status(
-            run_path=run_path,
-            status=f"selected {selection.task['id']}: {selection.task['title']}",
-        )
+        run_path = _create_run_directory(job.tasks_path, selection.task["id"])
         print(f"Ralph run: {run_path}")
         prompt = _render_worker_prompt(
             repo_path=repo_path,
@@ -104,48 +97,52 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
             selection=selection,
             python_venv_path=python_venv_path,
         )
-        try:
-            worker_result = _run_codex_worker(
-                repo_path=repo_path,
-                prompt=prompt,
-                codex_command=arguments.codex_command,
-                python_venv_path=python_venv_path,
-                output_path=run_path / "worker-output.txt",
-                tee_output=arguments.tee_worker_output,
-            )
-        except Exception as error:
-            _write_run_status(run_path=run_path, status=f"worker failed: {error}")
-            _write_text(run_path / "error.txt", f"{type(error).__name__}: {error}\n")
-            raise
-        _write_run_status(run_path=run_path, status=f"worker returned {worker_result.promise}")
+        worker_result = _run_codex_worker(
+            repo_path=repo_path,
+            prompt=prompt,
+            codex_command=arguments.codex_command,
+            python_venv_path=python_venv_path,
+            output_path=run_path / "worker-output.txt",
+            tee_output=arguments.tee_worker_output,
+        )
         _write_text(run_path / "promise.txt", worker_result.promise)
 
         if worker_result.promise != "DONE":
             print(f"Worker stopped with {worker_result.promise}. See {run_path}")
             return
 
-        try:
-            _write_run_status(run_path=run_path, status="running verification")
-            verification_output = _run_verification_commands(
-                repo_path=repo_path,
-                task=selection.task,
-                output_path=run_path / "verification-output.txt",
-            )
-        except Exception as error:
-            _write_run_status(run_path=run_path, status=f"verification failed: {error}")
-            _write_text(run_path / "error.txt", f"{type(error).__name__}: {error}\n")
-            raise
-        _write_text(run_path / "verification-output.txt", verification_output)
-
-        ledger = _mark_task_done(ledger, selection.task["id"])
-        _write_yaml_file(job.ledger_path, ledger)
-        _write_run_status(run_path=run_path, status="ledger advanced")
-        commit_hash = _commit_target_repo_changes(repo_path=repo_path, task=selection.task)
-        _write_text(run_path / "commit.txt", commit_hash)
-        _write_run_status(run_path=run_path, status=f"committed {commit_hash}")
+        commit_hash = _finish_task_after_worker_done(
+            repo_path=repo_path,
+            job=job,
+            ledger=ledger,
+            selection=selection,
+            run_path=run_path,
+        )
         print(f"Completed {selection.task['id']}: {commit_hash}")
 
     raise SystemExit(f"Reached max iterations: {arguments.max_iterations}")
+
+
+def _finish_task_after_worker_done(
+    repo_path: Path,
+    job: RalphJob,
+    ledger: dict[str, Any],
+    selection: TaskSelection,
+    run_path: Path,
+) -> str:
+    verification_output = _run_verification_commands(
+        repo_path=repo_path,
+        task=selection.task,
+        output_path=run_path / "verification-output.txt",
+    )
+    _write_text(run_path / "verification-output.txt", verification_output)
+
+    commit_hash = _commit_target_repo_changes(repo_path=repo_path, task=selection.task)
+    _write_text(run_path / "commit.txt", commit_hash)
+
+    advanced_ledger = _mark_task_done(ledger, selection.task["id"])
+    _write_yaml_file(job.ledger_path, advanced_ledger)
+    return commit_hash
 
 
 def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
@@ -156,7 +153,7 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
     run_parser.add_argument("--repo-path", required=True)
     run_parser.add_argument("--job-name", required=True)
     run_parser.add_argument("--max-iterations", type=int, default=DEFAULT_MAX_ITERATIONS)
-    run_parser.add_argument("--codex-command", default=_default_codex_command())
+    run_parser.add_argument("--codex-command", default=_read_default_codex_command())
     run_parser.add_argument(
         "--python-venv",
         help="Python venv mounted into workers with its bin directory first on PATH. Defaults to $VIRTUAL_ENV.",
@@ -171,7 +168,7 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
 
     smoke_parser = subparsers.add_parser("smoke-test", help="Verify the worker sandbox hides ~/.ralph.")
     smoke_parser.add_argument("--repo-path", required=True)
-    smoke_parser.add_argument("--codex-command", default=_default_codex_command())
+    smoke_parser.add_argument("--codex-command", default=_read_default_codex_command())
     smoke_parser.add_argument("--python-venv")
 
     return parser.parse_args(argv)
@@ -201,13 +198,13 @@ def _refuse_unsafe_starting_state(repo_path: Path, job: RalphJob) -> None:
         raise FileNotFoundError(f"Target repo does not exist: {repo_path}")
     if _is_path_inside(child_path=job.job_path, parent_path=repo_path):
         raise RuntimeError(f"Ralph job path must not be inside target repo: {job.job_path}")
-    if _path_exists_under_repo(repo_path, "PLAN.md"):
+    if _contains_path_named_under_repo(repo_path, "PLAN.md"):
         raise RuntimeError("Refusing to run because PLAN.md exists under the target repo.")
-    if _path_exists_under_repo(repo_path, "ledger.yaml"):
+    if _contains_path_named_under_repo(repo_path, "ledger.yaml"):
         raise RuntimeError("Refusing to run because ledger.yaml exists under the target repo.")
-    if _path_exists_under_repo(repo_path, ".ralph"):
+    if _contains_path_named_under_repo(repo_path, ".ralph"):
         raise RuntimeError("Refusing to run because .ralph exists under the target repo.")
-    if _git_status(repo_path):
+    if _read_git_status(repo_path):
         raise RuntimeError("Refusing to run because the target repo is dirty.")
 
 
@@ -247,7 +244,7 @@ def _render_worker_prompt(
 
     return prompt_template.format(
         repo_path=repo_path,
-        tool_environment_context=_tool_environment_context(python_venv_path),
+        tool_environment_context=_describe_tool_environment(python_venv_path),
         active_task_yaml=_dump_yaml(active_task),
         visible_ledger_yaml=_dump_yaml(visible_ledger),
         shared_plan_context=selection.shared_plan_context.strip(),
@@ -356,7 +353,7 @@ def _run_worker_visibility_smoke_test(
     )
     if completed_process.returncode != 0:
         raise RuntimeError(f"Ralph worker sandbox smoke test failed:\n{completed_process.stdout}")
-    if _last_non_empty_line(completed_process.stdout) != "HIDDEN":
+    if _find_last_non_empty_line(completed_process.stdout) != "HIDDEN":
         raise RuntimeError(f"Ralph worker can see ~/.ralph. Refusing to run:\n{completed_process.stdout}")
 
 
@@ -373,61 +370,46 @@ def _build_bwrap_codex_command(
     codex_home_path = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")).expanduser().resolve()
     local_path = Path.home() / ".local"
 
-    command = [
-        bwrap_path,
-        "--ro-bind",
-        "/",
-        "/",
-        "--tmpfs",
-        str(Path.home()),
-        "--tmpfs",
-        "/tmp",
-        "--ro-bind",
-        str(local_path),
-        str(local_path),
-        "--bind",
-        str(repo_path),
-        str(repo_path),
-        "--dev",
-        "/dev",
-        "--setenv",
-        "HOME",
-        str(Path.home()),
-        "--setenv",
-        "CODEX_HOME",
-        str(codex_home_path),
-        "--setenv",
-        "PATH",
-        _worker_path_value(python_venv_path),
-        str(codex_binary_path),
-        "--ask-for-approval",
-        "never",
-        "exec",
-        "-C",
-        str(repo_path),
-        "--sandbox",
-        "danger-full-access",
-        "--ephemeral",
-        "--ignore-rules",
-        "-",
-    ]
-    _insert_bwrap_mount_before_codex(command, "--bind", codex_home_path, codex_home_path)
+    command = [bwrap_path]
+    command += ["--ro-bind", "/", "/"]
+    command += ["--tmpfs", str(Path.home())]
+    command += ["--tmpfs", "/tmp"]
+    command += ["--ro-bind", str(local_path), str(local_path)]
+    command += ["--bind", str(repo_path), str(repo_path)]
+    command += ["--dev", "/dev"]
+
+    command += _build_bwrap_home_dir_options(codex_home_path)
+    command += ["--bind", str(codex_home_path), str(codex_home_path)]
+
     if python_venv_path is not None:
-        _insert_bwrap_mount_before_codex(command, "--ro-bind", python_venv_path, python_venv_path)
-        _insert_bwrap_setenv_before_codex(command, "VIRTUAL_ENV", str(python_venv_path))
-        _insert_bwrap_setenv_before_codex(command, "BASH_ENV", str(python_venv_path / "bin" / "activate"))
+        command += _build_bwrap_home_dir_options(python_venv_path)
+        command += ["--ro-bind", str(python_venv_path), str(python_venv_path)]
+
     # TODO: Replace this ntt-specific state bind with a generic worker-state story.
     # For now Ralph workers need installed ntt to see the same tracker cache path
     # that ntt uses by default: ~/.notion-task-tracker/notion_tasks_graph.json.
     if NOTION_TASK_TRACKER_HOME_PATH.is_dir():
-        _insert_bwrap_mount_before_codex(
-            command,
-            "--bind",
-            NOTION_TASK_TRACKER_HOME_PATH,
-            NOTION_TASK_TRACKER_HOME_PATH,
-        )
+        command += _build_bwrap_home_dir_options(NOTION_TASK_TRACKER_HOME_PATH)
+        command += ["--bind", str(NOTION_TASK_TRACKER_HOME_PATH), str(NOTION_TASK_TRACKER_HOME_PATH)]
+
+    command += ["--setenv", "HOME", str(Path.home())]
+    command += ["--setenv", "CODEX_HOME", str(codex_home_path)]
+    command += ["--setenv", "PATH", _build_worker_path_value(python_venv_path)]
+
+    if python_venv_path is not None:
+        command += ["--setenv", "VIRTUAL_ENV", str(python_venv_path)]
+        command += ["--setenv", "BASH_ENV", str(python_venv_path / "bin" / "activate")]
+
     if "NOTION_API_KEY" in os.environ:
-        _insert_bwrap_setenv_before_codex(command, "NOTION_API_KEY", os.environ["NOTION_API_KEY"])
+        command += ["--setenv", "NOTION_API_KEY", os.environ["NOTION_API_KEY"]]
+
+    command += [str(codex_binary_path)]
+    command += ["--ask-for-approval", "never"]
+    command += ["exec", "-C", str(repo_path)]
+    command += ["--sandbox", "danger-full-access"]
+    command += ["--ephemeral"]
+    command += ["--ignore-rules"]
+    command += ["-"]
     return command
 
 
@@ -449,40 +431,12 @@ def _resolve_python_venv_path(python_venv: str | None) -> Path | None:
     return python_venv_path
 
 
-def _insert_bwrap_mount_before_codex(
-    command: list[str],
-    option: str,
-    source: Path,
-    destination: Path,
-) -> None:
-    codex_index = _codex_binary_index(command)
-    command[codex_index:codex_index] = (
-        _bwrap_home_dir_options(destination)
-        + [
-            option,
-            str(source),
-            str(destination),
-        ]
-    )
-
-
-def _insert_bwrap_setenv_before_codex(command: list[str], name: str, value: str) -> None:
-    codex_index = _codex_binary_index(command)
-    command[codex_index:codex_index] = ["--setenv", name, value]
-
-
-def _codex_binary_index(command: list[str]) -> int:
-    approval_index = command.index("--ask-for-approval")
-    return approval_index - 1
-
-
-def _bwrap_home_dir_options(path: Path) -> list[str]:
+def _build_bwrap_home_dir_options(path: Path) -> list[str]:
     home_path = Path.home()
-    try:
-        relative_path = path.relative_to(home_path)
-    except ValueError:
+    if not path.is_relative_to(home_path):
         return []
 
+    relative_path = path.relative_to(home_path)
     options: list[str] = []
     current_path = home_path
     for part in relative_path.parts:
@@ -518,7 +472,7 @@ def _run_verification_commands(repo_path: Path, task: dict[str, Any], output_pat
 
 
 def _commit_target_repo_changes(repo_path: Path, task: dict[str, Any]) -> str:
-    if not _git_status(repo_path):
+    if not _read_git_status(repo_path):
         raise RuntimeError(f"Task {task['id']} returned DONE but produced no target repo changes.")
     _run_git(repo_path, "add", ".")
     message = f"Ralph: {task['id']} {task['title']}"
@@ -637,33 +591,29 @@ def _parse_worker_promise(output: str) -> str:
     raise RuntimeError(f"Expected one final worker promise line, found {len(promises)} promise tag(s).")
 
 
-def _create_task_run_directory(tasks_path: Path, task_id: str) -> Path:
+def _create_run_directory(tasks_path: Path, task_id: str) -> Path:
     timestamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    run_path = tasks_path / f"{_safe_run_directory_component(task_id)}_{timestamp}"
+    run_path = tasks_path / f"{_build_safe_dirname(task_id)}_{timestamp}"
     run_path.mkdir(parents=True, exist_ok=False)
     return run_path
 
 
-def _safe_run_directory_component(value: str) -> str:
+def _build_safe_dirname(value: str) -> str:
     safe_value = re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip("-")
     if not safe_value:
-        raise ValueError("Run directory task id cannot be empty after sanitization.")
+        raise ValueError("Directory name cannot be empty after sanitization.")
     return safe_value
 
 
-def _path_exists_under_repo(repo_path: Path, name: str) -> bool:
+def _contains_path_named_under_repo(repo_path: Path, name: str) -> bool:
     return any(path.name == name for path in repo_path.rglob(name))
 
 
 def _is_path_inside(child_path: Path, parent_path: Path) -> bool:
-    try:
-        child_path.resolve().relative_to(parent_path.resolve())
-    except ValueError:
-        return False
-    return True
+    return child_path.resolve().is_relative_to(parent_path.resolve())
 
 
-def _git_status(repo_path: Path) -> str:
+def _read_git_status(repo_path: Path) -> str:
     return _run_git(repo_path, "status", "--short").strip()
 
 
@@ -686,25 +636,18 @@ def _write_text(path: Path, text: str) -> None:
     path.write_text(text)
 
 
-def _write_run_status(run_path: Path, status: str) -> None:
-    status_path = run_path / "status.txt"
-    status_path.parent.mkdir(parents=True, exist_ok=True)
-    with status_path.open("a", encoding="utf-8") as status_file:
-        status_file.write(f"{dt.datetime.now(dt.timezone.utc).isoformat()} {status}\n")
-
-
-def _last_non_empty_line(text: str) -> str:
+def _find_last_non_empty_line(text: str) -> str:
     for line in reversed(text.splitlines()):
         if line.strip():
             return line.strip()
     return ""
 
 
-def _default_codex_command() -> str:
+def _read_default_codex_command() -> str:
     return os.environ.get("RALPH_CODEX_COMMAND", "codex")
 
 
-def _tool_environment_context(python_venv_path: Path | None) -> str:
+def _describe_tool_environment(python_venv_path: Path | None) -> str:
     if python_venv_path is None:
         return "No Python venv was configured for worker tools. Use only tools already available on PATH."
 
@@ -719,7 +662,7 @@ def _tool_environment_context(python_venv_path: Path | None) -> str:
     )
 
 
-def _worker_path_value(python_venv_path: Path | None) -> str:
+def _build_worker_path_value(python_venv_path: Path | None) -> str:
     path_entries = []
     if python_venv_path is not None:
         path_entries.append(str(python_venv_path / "bin"))
