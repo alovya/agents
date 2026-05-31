@@ -11,8 +11,9 @@ from ralph.run_ralph_loop import (
     RalphJob,
     TaskSelection,
     _build_bwrap_codex_command,
-    _create_run_directory,
-    _finish_task_after_worker_done,
+    _create_task_directory,
+    _commit_verified_task,
+    _verify_task_result,
     _mark_task_done,
     _parse_arguments,
     _parse_worker_promise,
@@ -155,18 +156,18 @@ def test_run_command_and_tee_output_writes_to_terminal_and_file(
     assert capsys.readouterr().out == "before\nmiddle\nafter\n"
 
 
-def test_create_run_directory_prefixes_task_id(tmp_path: Path) -> None:
-    run_path = _create_run_directory(tmp_path, "R1")
+def test_create_task_directory_prefixes_task_id(tmp_path: Path) -> None:
+    task_path = _create_task_directory(tmp_path, "R1")
 
-    assert run_path.name.startswith("R1_")
-    assert run_path.is_dir()
+    assert task_path.name.startswith("R1_")
+    assert task_path.is_dir()
 
 
-def test_create_run_directory_sanitizes_task_id(tmp_path: Path) -> None:
-    run_path = _create_run_directory(tmp_path, "R 1/cleanup")
+def test_create_task_directory_sanitizes_task_id(tmp_path: Path) -> None:
+    task_path = _create_task_directory(tmp_path, "R 1/cleanup")
 
-    assert run_path.name.startswith("R-1-cleanup_")
-    assert run_path.is_dir()
+    assert task_path.name.startswith("R-1-cleanup_")
+    assert task_path.is_dir()
 
 
 def test_render_worker_prompt_excludes_unrelated_task_slice(tmp_path: Path) -> None:
@@ -244,13 +245,13 @@ def test_marks_task_done_without_mutating_input() -> None:
     assert "completed_at" in updated_ledger["tasks"][0]
 
 
-def test_finishes_worker_done_task_by_committing_before_advancing_ledger(
+def test_commits_verified_task_before_advancing_ledger(
     tmp_path: Path,
 ) -> None:
     repo_path = _initialise_git_repo(tmp_path / "target-repo")
     ledger = _build_example_ledger()
     job = _create_job_with_ledger(tmp_path, ledger)
-    run_path = tmp_path / "run"
+    task_path = tmp_path / "task"
     observed_ledger_at_commit_path = tmp_path / "ledger-at-commit.yaml"
     parser_path = repo_path / "src" / "parser.py"
     parser_path.parent.mkdir()
@@ -261,12 +262,17 @@ def test_finishes_worker_done_task_by_committing_before_advancing_ledger(
         observed_ledger_path=observed_ledger_at_commit_path,
     )
 
-    commit_hash = _finish_task_after_worker_done(
+    _verify_task_result(
+        repo_path=repo_path,
+        task=_select_first_task(ledger).task,
+        task_path=task_path,
+    )
+    commit_hash = _commit_verified_task(
         repo_path=repo_path,
         job=job,
         ledger=ledger,
         selection=_select_first_task(ledger),
-        run_path=run_path,
+        task_path=task_path,
     )
 
     committed_subject = _run_git(repo_path, "log", "--format=%s", "-1").strip()
@@ -275,34 +281,39 @@ def test_finishes_worker_done_task_by_committing_before_advancing_ledger(
     assert committed_subject == "Ralph: R1 Add parser"
     assert yaml.safe_load(observed_ledger_at_commit_path.read_text())["tasks"][0]["status"] == "pending"
     assert yaml.safe_load(job.ledger_path.read_text())["tasks"][0]["status"] == "done"
-    assert "$ test -f src/parser.py" in run_path.joinpath("verification-output.txt").read_text()
-    assert run_path.joinpath("commit.txt").read_text() == commit_hash
+    assert "$ test -f src/parser.py" in task_path.joinpath("verification-output.txt").read_text()
+    assert task_path.joinpath("commit.txt").read_text() == commit_hash
 
 
-def test_finish_worker_done_task_keeps_ledger_pending_when_commit_fails(
+def test_commit_verified_task_keeps_ledger_pending_when_commit_fails(
     tmp_path: Path,
 ) -> None:
     repo_path = _initialise_git_repo(tmp_path / "target-repo")
     ledger = _build_example_ledger()
     job = _create_job_with_ledger(tmp_path, ledger)
-    run_path = tmp_path / "run"
+    task_path = tmp_path / "task"
     parser_path = repo_path / "src" / "parser.py"
     parser_path.parent.mkdir()
     parser_path.write_text("def parse_value(value):\n    return value\n")
     _install_failing_pre_commit_hook(repo_path)
 
     with pytest.raises(RuntimeError, match="pre-commit refused commit"):
-        _finish_task_after_worker_done(
+        _verify_task_result(
+            repo_path=repo_path,
+            task=_select_first_task(ledger).task,
+            task_path=task_path,
+        )
+        _commit_verified_task(
             repo_path=repo_path,
             job=job,
             ledger=ledger,
             selection=_select_first_task(ledger),
-            run_path=run_path,
+            task_path=task_path,
         )
 
     assert yaml.safe_load(job.ledger_path.read_text())["tasks"][0]["status"] == "pending"
-    assert "$ test -f src/parser.py" in run_path.joinpath("verification-output.txt").read_text()
-    assert not run_path.joinpath("commit.txt").exists()
+    assert "$ test -f src/parser.py" in task_path.joinpath("verification-output.txt").read_text()
+    assert not task_path.joinpath("commit.txt").exists()
 
 
 def test_accepts_example_ledger() -> None:

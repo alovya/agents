@@ -89,8 +89,8 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
             print("No runnable Ralph tasks remain.")
             return
 
-        run_path = _create_run_directory(job.tasks_path, selection.task["id"])
-        print(f"Ralph run: {run_path}")
+        task_path = _create_task_directory(job.tasks_path, selection.task["id"])
+        print(f"Ralph task: {task_path}")
         prompt = _render_worker_prompt(
             repo_path=repo_path,
             ledger=ledger,
@@ -102,43 +102,54 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
             prompt=prompt,
             codex_command=arguments.codex_command,
             python_venv_path=python_venv_path,
-            output_path=run_path / "worker-output.txt",
+            output_path=task_path / "worker-output.txt",
             tee_output=arguments.tee_worker_output,
         )
-        _write_text(run_path / "promise.txt", worker_result.promise)
+        _write_text(task_path / "promise.txt", worker_result.promise)
 
         if worker_result.promise != "DONE":
-            print(f"Worker stopped with {worker_result.promise}. See {run_path}")
+            print(f"Worker stopped with {worker_result.promise}. See {task_path}")
             return
 
-        commit_hash = _finish_task_after_worker_done(
+        _verify_task_result(
+            repo_path=repo_path,
+            task=selection.task,
+            task_path=task_path,
+        )
+        commit_hash = _commit_verified_task(
             repo_path=repo_path,
             job=job,
             ledger=ledger,
             selection=selection,
-            run_path=run_path,
+            task_path=task_path,
         )
         print(f"Completed {selection.task['id']}: {commit_hash}")
 
     raise SystemExit(f"Reached max iterations: {arguments.max_iterations}")
 
 
-def _finish_task_after_worker_done(
+def _verify_task_result(
+    repo_path: Path,
+    task: dict[str, Any],
+    task_path: Path,
+) -> None:
+    verification_output = _run_verification_commands(
+        repo_path=repo_path,
+        task=task,
+        output_path=task_path / "verification-output.txt",
+    )
+    _write_text(task_path / "verification-output.txt", verification_output)
+
+
+def _commit_verified_task(
     repo_path: Path,
     job: RalphJob,
     ledger: dict[str, Any],
     selection: TaskSelection,
-    run_path: Path,
+    task_path: Path,
 ) -> str:
-    verification_output = _run_verification_commands(
-        repo_path=repo_path,
-        task=selection.task,
-        output_path=run_path / "verification-output.txt",
-    )
-    _write_text(run_path / "verification-output.txt", verification_output)
-
     commit_hash = _commit_target_repo_changes(repo_path=repo_path, task=selection.task)
-    _write_text(run_path / "commit.txt", commit_hash)
+    _write_text(task_path / "commit.txt", commit_hash)
 
     advanced_ledger = _mark_task_done(ledger, selection.task["id"])
     _write_yaml_file(job.ledger_path, advanced_ledger)
@@ -591,11 +602,11 @@ def _parse_worker_promise(output: str) -> str:
     raise RuntimeError(f"Expected one final worker promise line, found {len(promises)} promise tag(s).")
 
 
-def _create_run_directory(tasks_path: Path, task_id: str) -> Path:
+def _create_task_directory(tasks_path: Path, task_id: str) -> Path:
     timestamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    run_path = tasks_path / f"{_build_safe_dirname(task_id)}_{timestamp}"
-    run_path.mkdir(parents=True, exist_ok=False)
-    return run_path
+    task_path = tasks_path / f"{_build_safe_dirname(task_id)}_{timestamp}"
+    task_path.mkdir(parents=True, exist_ok=False)
+    return task_path
 
 
 def _build_safe_dirname(value: str) -> str:
