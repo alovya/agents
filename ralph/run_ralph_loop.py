@@ -49,7 +49,7 @@ class TaskSelection:
 
 
 @dataclass(frozen=True)
-class WorkerResult:
+class AgentResult:
     promise: str
     output: str
 
@@ -60,9 +60,9 @@ def main(argv: list[str] | None = None) -> None:
         _run_ralph_loop(arguments)
         return
     if arguments.command == "smoke-test":
-        _run_worker_visibility_smoke_test(
+        _run_agent_visibility_smoke_test(
             repo_path=Path(arguments.repo_path).expanduser(),
-            codex_command=arguments.codex_command,
+            agent_command=arguments.agent_command,
             python_venv_path=_resolve_python_venv_path(arguments.python_venv),
         )
         return
@@ -75,9 +75,9 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
     job = _find_ralph_job(arguments.job_name)
     _prepare_job_directories(job)
     _refuse_unsafe_starting_state(repo_path, job)
-    _run_worker_visibility_smoke_test(
+    _run_agent_visibility_smoke_test(
         repo_path=repo_path,
-        codex_command=arguments.codex_command,
+        agent_command=arguments.agent_command,
         python_venv_path=python_venv_path,
     )
 
@@ -91,24 +91,24 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
 
         task_path = _create_task_directory(job.tasks_path, selection.task["id"])
         print(f"Ralph task: {task_path}")
-        prompt = _render_worker_prompt(
+        prompt = _render_agent_prompt(
             repo_path=repo_path,
             ledger=ledger,
             selection=selection,
             python_venv_path=python_venv_path,
         )
-        worker_result = _run_codex_worker(
+        agent_result = _run_agent(
             repo_path=repo_path,
             prompt=prompt,
-            codex_command=arguments.codex_command,
+            agent_command=arguments.agent_command,
             python_venv_path=python_venv_path,
-            output_path=task_path / "worker-output.txt",
-            tee_output=arguments.tee_worker_output,
+            output_path=task_path / "agent-output.txt",
+            tee_output=arguments.tee_agent_output,
         )
-        _write_text(task_path / "promise.txt", worker_result.promise)
+        _write_text(task_path / "promise.txt", agent_result.promise)
 
-        if worker_result.promise != "DONE":
-            print(f"Worker stopped with {worker_result.promise}. See {task_path}")
+        if agent_result.promise != "DONE":
+            print(f"Agent stopped with {agent_result.promise}. See {task_path}")
             return
 
         _verify_task_result(
@@ -157,29 +157,29 @@ def _commit_verified_task(
 
 
 def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run Codex Ralph loops with sliced plan context.")
+    parser = argparse.ArgumentParser(description="Run Ralph task loops with sliced plan context.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     run_parser = subparsers.add_parser("run", help="Run the Ralph loop for one job.")
     run_parser.add_argument("--repo-path", required=True)
     run_parser.add_argument("--job-name", required=True)
     run_parser.add_argument("--max-iterations", type=int, default=DEFAULT_MAX_ITERATIONS)
-    run_parser.add_argument("--codex-command", default=_read_default_codex_command())
+    run_parser.add_argument("--agent-command", default=_read_default_agent_command())
     run_parser.add_argument(
         "--python-venv",
-        help="Python venv mounted into workers with its bin directory first on PATH. Defaults to $VIRTUAL_ENV.",
+        help="Python venv mounted into agents with its bin directory first on PATH. Defaults to $VIRTUAL_ENV.",
     )
     run_parser.add_argument(
-        "--no-tee-worker-output",
+        "--no-tee-agent-output",
         action="store_false",
-        dest="tee_worker_output",
-        help="Stream the Codex worker transcript to this terminal while also saving worker-output.txt.",
+        dest="tee_agent_output",
+        help="Stream the agent transcript to this terminal while also saving agent-output.txt.",
     )
-    run_parser.set_defaults(tee_worker_output=True)
+    run_parser.set_defaults(tee_agent_output=True)
 
-    smoke_parser = subparsers.add_parser("smoke-test", help="Verify the worker sandbox hides ~/.ralph.")
+    smoke_parser = subparsers.add_parser("smoke-test", help="Verify the agent sandbox hides ~/.ralph.")
     smoke_parser.add_argument("--repo-path", required=True)
-    smoke_parser.add_argument("--codex-command", default=_read_default_codex_command())
+    smoke_parser.add_argument("--agent-command", default=_read_default_agent_command())
     smoke_parser.add_argument("--python-venv")
 
     return parser.parse_args(argv)
@@ -242,7 +242,7 @@ def _select_next_task_from_plan_and_ledger(
     return None
 
 
-def _render_worker_prompt(
+def _render_agent_prompt(
     repo_path: Path,
     ledger: dict[str, Any],
     selection: TaskSelection,
@@ -263,18 +263,18 @@ def _render_worker_prompt(
     )
 
 
-def _run_codex_worker(
+def _run_agent(
     repo_path: Path,
     prompt: str,
-    codex_command: str,
+    agent_command: str,
     python_venv_path: Path | None,
     output_path: Path,
     tee_output: bool,
-) -> WorkerResult:
+) -> AgentResult:
     _write_text(output_path, "")
-    command = _build_bwrap_codex_command(
+    command = _build_bwrap_agent_command(
         repo_path=repo_path,
-        codex_command=codex_command,
+        agent_command=agent_command,
         python_venv_path=python_venv_path,
     )
     if tee_output:
@@ -296,9 +296,9 @@ def _run_codex_worker(
 
     output = completed_process.stdout or ""
     if completed_process.returncode != 0:
-        raise RuntimeError(f"Codex worker failed with exit code {completed_process.returncode}. See {output_path}")
-    promise = _parse_worker_promise(output)
-    return WorkerResult(promise=promise, output=output)
+        raise RuntimeError(f"Agent failed with exit code {completed_process.returncode}. See {output_path}")
+    promise = _parse_agent_promise(output)
+    return AgentResult(promise=promise, output=output)
 
 
 def _run_command_and_tee_output(
@@ -319,7 +319,7 @@ def _run_command_and_tee_output(
         )
 
         if process.stdin is None or process.stdout is None:
-            raise RuntimeError("Could not open worker stdin/stdout pipes.")
+            raise RuntimeError("Could not open agent stdin/stdout pipes.")
 
         process.stdin.write(input_text)
         process.stdin.close()
@@ -339,14 +339,14 @@ def _run_command_and_tee_output(
     )
 
 
-def _run_worker_visibility_smoke_test(
+def _run_agent_visibility_smoke_test(
     repo_path: Path,
-    codex_command: str,
+    agent_command: str,
     python_venv_path: Path | None,
 ) -> None:
-    command = _build_bwrap_codex_command(
+    command = _build_bwrap_agent_command(
         repo_path=repo_path,
-        codex_command=codex_command,
+        agent_command=agent_command,
         python_venv_path=python_venv_path,
     )
     prompt = (
@@ -363,22 +363,22 @@ def _run_worker_visibility_smoke_test(
         check=False,
     )
     if completed_process.returncode != 0:
-        raise RuntimeError(f"Ralph worker sandbox smoke test failed:\n{completed_process.stdout}")
+        raise RuntimeError(f"Ralph agent sandbox smoke test failed:\n{completed_process.stdout}")
     if _find_last_non_empty_line(completed_process.stdout) != "HIDDEN":
-        raise RuntimeError(f"Ralph worker can see ~/.ralph. Refusing to run:\n{completed_process.stdout}")
+        raise RuntimeError(f"Ralph agent can see ~/.ralph. Refusing to run:\n{completed_process.stdout}")
 
 
-def _build_bwrap_codex_command(
+def _build_bwrap_agent_command(
     repo_path: Path,
-    codex_command: str,
+    agent_command: str,
     python_venv_path: Path | None,
 ) -> list[str]:
     bwrap_path = shutil.which("bwrap")
     if bwrap_path is None:
         raise RuntimeError("Ralph requires bubblewrap installed as `bwrap`.")
 
-    codex_binary_path = _resolve_codex_binary_path(codex_command)
-    codex_home_path = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")).expanduser().resolve()
+    agent_binary_path = _resolve_agent_binary_path(agent_command)
+    agent_home_path = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")).expanduser().resolve()
     local_path = Path.home() / ".local"
 
     command = [bwrap_path]
@@ -389,23 +389,22 @@ def _build_bwrap_codex_command(
     command += ["--bind", str(repo_path), str(repo_path)]
     command += ["--dev", "/dev"]
 
-    command += _build_bwrap_home_dir_options(codex_home_path)
-    command += ["--bind", str(codex_home_path), str(codex_home_path)]
+    command += _build_bwrap_home_dir_options(agent_home_path)
+    command += ["--bind", str(agent_home_path), str(agent_home_path)]
 
     if python_venv_path is not None:
         command += _build_bwrap_home_dir_options(python_venv_path)
         command += ["--ro-bind", str(python_venv_path), str(python_venv_path)]
 
-    # TODO: Replace this ntt-specific state bind with a generic worker-state story.
-    # For now Ralph workers need installed ntt to see the same tracker cache path
+    # TODO: Replace this ntt-specific state bind with a generic agent-state story.
+    # For now Ralph agents need installed ntt to see the same tracker cache path
     # that ntt uses by default: ~/.notion-task-tracker/notion_tasks_graph.json.
     if NOTION_TASK_TRACKER_HOME_PATH.is_dir():
         command += _build_bwrap_home_dir_options(NOTION_TASK_TRACKER_HOME_PATH)
         command += ["--bind", str(NOTION_TASK_TRACKER_HOME_PATH), str(NOTION_TASK_TRACKER_HOME_PATH)]
 
     command += ["--setenv", "HOME", str(Path.home())]
-    command += ["--setenv", "CODEX_HOME", str(codex_home_path)]
-    command += ["--setenv", "PATH", _build_worker_path_value(python_venv_path)]
+    command += ["--setenv", "PATH", _build_agent_path_value(python_venv_path)]
 
     if python_venv_path is not None:
         command += ["--setenv", "VIRTUAL_ENV", str(python_venv_path)]
@@ -414,7 +413,7 @@ def _build_bwrap_codex_command(
     if "NOTION_API_KEY" in os.environ:
         command += ["--setenv", "NOTION_API_KEY", os.environ["NOTION_API_KEY"]]
 
-    command += [str(codex_binary_path)]
+    command += [str(agent_binary_path)]
     command += ["--ask-for-approval", "never"]
     command += ["exec", "-C", str(repo_path)]
     command += ["--sandbox", "danger-full-access"]
@@ -456,10 +455,10 @@ def _build_bwrap_home_dir_options(path: Path) -> list[str]:
     return options
 
 
-def _resolve_codex_binary_path(codex_command: str) -> Path:
-    resolved_command = shutil.which(codex_command)
+def _resolve_agent_binary_path(agent_command: str) -> Path:
+    resolved_command = shutil.which(agent_command)
     if resolved_command is None:
-        raise RuntimeError(f"Codex command not found: {codex_command}")
+        raise RuntimeError(f"Agent command not found: {agent_command}")
     return Path(resolved_command).resolve()
 
 
@@ -592,14 +591,14 @@ def _remove_plan_like_fields(value: Any) -> Any:
     return value
 
 
-def _parse_worker_promise(output: str) -> str:
+def _parse_agent_promise(output: str) -> str:
     for raw_line in reversed(output.splitlines()):
         match = PROMISE_LINE_PATTERN.match(raw_line.strip())
         if match:
             return match.group(1)
 
     promises = PROMISE_PATTERN.findall(output)
-    raise RuntimeError(f"Expected one final worker promise line, found {len(promises)} promise tag(s).")
+    raise RuntimeError(f"Expected one final agent promise line, found {len(promises)} promise tag(s).")
 
 
 def _create_task_directory(tasks_path: Path, task_id: str) -> Path:
@@ -654,26 +653,26 @@ def _find_last_non_empty_line(text: str) -> str:
     return ""
 
 
-def _read_default_codex_command() -> str:
-    return os.environ.get("RALPH_CODEX_COMMAND", "codex")
+def _read_default_agent_command() -> str:
+    return os.environ.get("RALPH_AGENT_COMMAND", os.environ.get("RALPH_CODEX_COMMAND", "codex"))
 
 
 def _describe_tool_environment(python_venv_path: Path | None) -> str:
     if python_venv_path is None:
-        return "No Python venv was configured for worker tools. Use only tools already available on PATH."
+        return "No Python venv was configured for agent tools. Use only tools already available on PATH."
 
     return "\n".join(
         [
             f"Python venv: {python_venv_path}",
             f"`{python_venv_path / 'bin'}` is already first on PATH.",
             f"`VIRTUAL_ENV` is already set to `{python_venv_path}`.",
-            f"`BASH_ENV` points at `{python_venv_path / 'bin' / 'activate'}` so Codex shell tool calls keep the venv active.",
+            f"`BASH_ENV` points at `{python_venv_path / 'bin' / 'activate'}` so shell tool calls keep the venv active.",
             "Use installed CLIs directly, for example `ntt ...`.",
         ]
     )
 
 
-def _build_worker_path_value(python_venv_path: Path | None) -> str:
+def _build_agent_path_value(python_venv_path: Path | None) -> str:
     path_entries = []
     if python_venv_path is not None:
         path_entries.append(str(python_venv_path / "bin"))

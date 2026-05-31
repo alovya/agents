@@ -10,15 +10,15 @@ import yaml
 from ralph.run_ralph_loop import (
     RalphJob,
     TaskSelection,
-    _build_bwrap_codex_command,
+    _build_bwrap_agent_command,
     _create_task_directory,
     _commit_verified_task,
     _verify_task_result,
     _mark_task_done,
     _parse_arguments,
-    _parse_worker_promise,
+    _parse_agent_promise,
     _read_tasks_from_ledger,
-    _render_worker_prompt,
+    _render_agent_prompt,
     _run_command_and_tee_output,
     _select_next_task_from_plan_and_ledger,
     _write_yaml_file,
@@ -83,8 +83,8 @@ Second task context.
 
 
 def test_parses_exactly_one_promise() -> None:
-    assert _parse_worker_promise("done\n<promise>DONE</promise>") == "DONE"
-    assert _parse_worker_promise(
+    assert _parse_agent_promise("done\n<promise>DONE</promise>") == "DONE"
+    assert _parse_agent_promise(
         "\n".join(
             [
                 "<promise>DONE</promise>",
@@ -96,10 +96,10 @@ def test_parses_exactly_one_promise() -> None:
         )
     ) == "DONE"
     with pytest.raises(RuntimeError, match="Expected one final"):
-        _parse_worker_promise("No promise here.")
+        _parse_agent_promise("No promise here.")
 
 
-def test_parse_args_streams_worker_output_by_default() -> None:
+def test_parse_args_streams_agent_output_by_default() -> None:
     arguments = _parse_arguments([
         "run",
         "--repo-path",
@@ -108,20 +108,20 @@ def test_parse_args_streams_worker_output_by_default() -> None:
         "example",
     ])
 
-    assert arguments.tee_worker_output is True
+    assert arguments.tee_agent_output is True
 
 
-def test_parse_args_can_disable_worker_output_teeing() -> None:
+def test_parse_args_can_disable_agent_output_teeing() -> None:
     arguments = _parse_arguments([
         "run",
         "--repo-path",
         "/tmp/repo",
         "--job-name",
         "example",
-        "--no-tee-worker-output",
+        "--no-tee-agent-output",
     ])
 
-    assert arguments.tee_worker_output is False
+    assert arguments.tee_agent_output is False
 
 
 def test_parse_args_accepts_python_venv() -> None:
@@ -142,7 +142,7 @@ def test_run_command_and_tee_output_writes_to_terminal_and_file(
     tmp_path: Path,
     capsys,
 ) -> None:
-    output_path = tmp_path / "worker-output.txt"
+    output_path = tmp_path / "agent-output.txt"
 
     completed_process = _run_command_and_tee_output(
         command=["bash", "-lc", "printf 'before\\n'; cat; printf 'after\\n'"],
@@ -170,7 +170,7 @@ def test_create_task_directory_sanitizes_task_id(tmp_path: Path) -> None:
     assert task_path.is_dir()
 
 
-def test_render_worker_prompt_excludes_unrelated_task_slice(tmp_path: Path) -> None:
+def test_render_agent_prompt_excludes_unrelated_task_slice(tmp_path: Path) -> None:
     ledger = _build_example_ledger()
     selection = TaskSelection(
         task=ledger["tasks"][0],
@@ -178,7 +178,7 @@ def test_render_worker_prompt_excludes_unrelated_task_slice(tmp_path: Path) -> N
         active_task_plan_context="First task context.",
     )
 
-    prompt = _render_worker_prompt(
+    prompt = _render_agent_prompt(
         repo_path=tmp_path,
         ledger=ledger,
         selection=selection,
@@ -188,9 +188,10 @@ def test_render_worker_prompt_excludes_unrelated_task_slice(tmp_path: Path) -> N
     assert "First task context." in prompt
     assert "Second task context." not in prompt
     assert "/.ralph" not in prompt
+    assert "Codex" not in prompt
 
 
-def test_render_worker_prompt_documents_python_venv(tmp_path: Path) -> None:
+def test_render_agent_prompt_documents_python_venv(tmp_path: Path) -> None:
     ledger = _build_example_ledger()
     selection = TaskSelection(
         task=ledger["tasks"][0],
@@ -199,7 +200,7 @@ def test_render_worker_prompt_documents_python_venv(tmp_path: Path) -> None:
     )
     python_venv_path = tmp_path / "venv"
 
-    prompt = _render_worker_prompt(
+    prompt = _render_agent_prompt(
         repo_path=tmp_path,
         ledger=ledger,
         selection=selection,
@@ -213,22 +214,22 @@ def test_render_worker_prompt_documents_python_venv(tmp_path: Path) -> None:
 def test_build_bwrap_command_mounts_python_venv_from_path(tmp_path: Path, monkeypatch) -> None:
     bin_path = tmp_path / "bin"
     bwrap_path = bin_path / "bwrap"
-    codex_path = bin_path / "codex"
+    agent_path = bin_path / "agent-cli"
     python_venv_path = tmp_path / "venv"
     bin_path.mkdir()
     python_venv_path.mkdir()
     _write_executable_shim(bwrap_path)
-    _write_executable_shim(codex_path)
+    _write_executable_shim(agent_path)
     monkeypatch.setenv("PATH", str(bin_path))
 
-    command = _build_bwrap_codex_command(
+    command = _build_bwrap_agent_command(
         repo_path=tmp_path,
-        codex_command="codex",
+        agent_command="agent-cli",
         python_venv_path=python_venv_path,
     )
 
     assert command[0] == str(bwrap_path)
-    assert str(codex_path) in command
+    assert str(agent_path) in command
     assert _contains_subsequence(command, ["--ro-bind", str(python_venv_path), str(python_venv_path)])
     assert _contains_subsequence(command, ["--setenv", "VIRTUAL_ENV", str(python_venv_path)])
     assert _contains_subsequence(command, ["--setenv", "BASH_ENV", str(python_venv_path / "bin" / "activate")])
