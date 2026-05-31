@@ -155,4 +155,15 @@ Run:
 python ~/agents/ralph/run_ralph_loop.py run --repo-path /path/to/repo --project-name example
 ```
 
+If workers need installed CLIs such as `ntt`, pass a Python venv that already has
+those packages installed:
+
+```bash
+python ~/agents/ralph/run_ralph_loop.py run --repo-path /path/to/repo --project-name example --python-venv /path/to/venv
+```
+
+The runner mounts that venv into the worker, sets `VIRTUAL_ENV`, and prepends
+`/path/to/venv/bin` to `PATH`. The rendered prompt tells the worker that the venv is
+already active; the worker can run installed CLIs directly.
+
 The runner owns task selection, verification, ledger advancement, and commits.

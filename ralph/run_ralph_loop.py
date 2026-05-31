@@ -17,6 +17,8 @@ except ImportError as error:
 
 
 RALPH_HOME_PATH = Path.home() / ".ralph"
+NOTION_TASK_TRACKER_HOME_PATH = Path.home() / ".notion-task-tracker"
+CODEX_HOME_MOUNT_PATH = Path("/worker-codex-home")
 DEFAULT_MAX_ITERATIONS = 10
 PROMISE_PATTERN = re.compile(r"<promise>(DONE|BLOCKED|ABORT)</promise>")
 PROMISE_LINE_PATTERN = re.compile(r"^<promise>(DONE|BLOCKED|ABORT)</promise>$")
@@ -65,6 +67,7 @@ def main(argv: list[str] | None = None) -> None:
         _run_worker_visibility_smoke_test(
             repo_path=Path(arguments.repo_path).expanduser(),
             codex_command=arguments.codex_command,
+            python_venv_path=_resolve_python_venv_path(arguments.python_venv),
         )
         return
     raise SystemExit(f"Unknown command: {arguments.command}")
@@ -72,10 +75,15 @@ def main(argv: list[str] | None = None) -> None:
 
 def _run_ralph_loop(arguments: argparse.Namespace) -> None:
     repo_path = Path(arguments.repo_path).expanduser().resolve()
+    python_venv_path = _resolve_python_venv_path(arguments.python_venv)
     project = _find_ralph_project(arguments.project_name)
     _prepare_project_directories(project)
     _refuse_unsafe_starting_state(repo_path, project)
-    _run_worker_visibility_smoke_test(repo_path=repo_path, codex_command=arguments.codex_command)
+    _run_worker_visibility_smoke_test(
+        repo_path=repo_path,
+        codex_command=arguments.codex_command,
+        python_venv_path=python_venv_path,
+    )
 
     for _ in range(arguments.max_iterations):
         ledger = _read_yaml_file(project.ledger_path)
@@ -91,12 +99,18 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
             status=f"selected {selection.task['id']}: {selection.task['title']}",
         )
         print(f"Ralph run: {run_path}")
-        prompt = _render_worker_prompt(repo_path=repo_path, ledger=ledger, selection=selection)
+        prompt = _render_worker_prompt(
+            repo_path=repo_path,
+            ledger=ledger,
+            selection=selection,
+            python_venv_path=python_venv_path,
+        )
         try:
             worker_result = _run_codex_worker(
                 repo_path=repo_path,
                 prompt=prompt,
                 codex_command=arguments.codex_command,
+                python_venv_path=python_venv_path,
                 output_path=run_path / "worker-output.txt",
                 tee_output=arguments.tee_worker_output,
             )
@@ -145,6 +159,10 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
     run_parser.add_argument("--max-iterations", type=int, default=DEFAULT_MAX_ITERATIONS)
     run_parser.add_argument("--codex-command", default=_default_codex_command())
     run_parser.add_argument(
+        "--python-venv",
+        help="Optional Python venv mounted into workers with its bin directory first on PATH.",
+    )
+    run_parser.add_argument(
         "--no-tee-worker-output",
         action="store_false",
         dest="tee_worker_output",
@@ -155,6 +173,7 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
     smoke_parser = subparsers.add_parser("smoke-test", help="Verify the worker sandbox hides ~/.ralph.")
     smoke_parser.add_argument("--repo-path", required=True)
     smoke_parser.add_argument("--codex-command", default=_default_codex_command())
+    smoke_parser.add_argument("--python-venv")
 
     return parser.parse_args(argv)
 
@@ -220,6 +239,7 @@ def _render_worker_prompt(
     repo_path: Path,
     ledger: dict[str, Any],
     selection: TaskSelection,
+    python_venv_path: Path | None,
 ) -> str:
     prompt_template_path = Path(__file__).resolve().parent / "PROMPT.md"
     prompt_template = prompt_template_path.read_text()
@@ -228,6 +248,7 @@ def _render_worker_prompt(
 
     return prompt_template.format(
         repo_path=repo_path,
+        tool_environment_context=_tool_environment_context(python_venv_path),
         active_task_yaml=_dump_yaml(active_task),
         visible_ledger_yaml=_dump_yaml(visible_ledger),
         shared_plan_context=selection.shared_plan_context.strip(),
@@ -239,11 +260,16 @@ def _run_codex_worker(
     repo_path: Path,
     prompt: str,
     codex_command: str,
+    python_venv_path: Path | None,
     output_path: Path,
     tee_output: bool,
 ) -> WorkerResult:
     _write_text(output_path, "")
-    command = _build_bwrap_codex_command(repo_path=repo_path, codex_command=codex_command)
+    command = _build_bwrap_codex_command(
+        repo_path=repo_path,
+        codex_command=codex_command,
+        python_venv_path=python_venv_path,
+    )
     if tee_output:
         completed_process = _run_command_and_tee_output(
             command=command,
@@ -306,8 +332,16 @@ def _run_command_and_tee_output(
     )
 
 
-def _run_worker_visibility_smoke_test(repo_path: Path, codex_command: str) -> None:
-    command = _build_bwrap_codex_command(repo_path=repo_path, codex_command=codex_command)
+def _run_worker_visibility_smoke_test(
+    repo_path: Path,
+    codex_command: str,
+    python_venv_path: Path | None,
+) -> None:
+    command = _build_bwrap_codex_command(
+        repo_path=repo_path,
+        codex_command=codex_command,
+        python_venv_path=python_venv_path,
+    )
     prompt = (
         "Run exactly this shell command: "
         "test -e /home/alovyachowdhury/.ralph && echo VISIBLE || echo HIDDEN. "
@@ -327,7 +361,11 @@ def _run_worker_visibility_smoke_test(repo_path: Path, codex_command: str) -> No
         raise RuntimeError(f"Ralph worker can see ~/.ralph. Refusing to run:\n{completed_process.stdout}")
 
 
-def _build_bwrap_codex_command(repo_path: Path, codex_command: str) -> list[str]:
+def _build_bwrap_codex_command(
+    repo_path: Path,
+    codex_command: str,
+    python_venv_path: Path | None,
+) -> list[str]:
     bwrap_path = shutil.which("bwrap")
     if bwrap_path is None:
         raise RuntimeError("Ralph requires bubblewrap installed as `bwrap`.")
@@ -335,9 +373,8 @@ def _build_bwrap_codex_command(repo_path: Path, codex_command: str) -> list[str]
     codex_binary_path = _resolve_codex_binary_path(codex_command)
     codex_home_path = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")).expanduser().resolve()
     local_path = Path.home() / ".local"
-    visible_codex_home_path = Path("/tmp/codex-home")
 
-    return [
+    command = [
         bwrap_path,
         "--ro-bind",
         "/",
@@ -348,13 +385,10 @@ def _build_bwrap_codex_command(repo_path: Path, codex_command: str) -> list[str]
         "/tmp",
         "--bind",
         str(codex_home_path),
-        str(visible_codex_home_path),
+        str(CODEX_HOME_MOUNT_PATH),
         "--ro-bind",
         str(local_path),
         str(local_path),
-        "--symlink",
-        str(visible_codex_home_path),
-        str(codex_home_path),
         "--bind",
         str(repo_path),
         str(repo_path),
@@ -365,10 +399,10 @@ def _build_bwrap_codex_command(repo_path: Path, codex_command: str) -> list[str]
         str(Path.home()),
         "--setenv",
         "CODEX_HOME",
-        str(codex_home_path),
+        str(CODEX_HOME_MOUNT_PATH),
         "--setenv",
         "PATH",
-        _worker_path_value(),
+        _worker_path_value(python_venv_path),
         str(codex_binary_path),
         "--ask-for-approval",
         "never",
@@ -381,6 +415,80 @@ def _build_bwrap_codex_command(repo_path: Path, codex_command: str) -> list[str]
         "--ignore-rules",
         "-",
     ]
+    if python_venv_path is not None:
+        _insert_bwrap_mount_before_codex(command, "--ro-bind", python_venv_path, python_venv_path)
+        _insert_bwrap_setenv_before_codex(command, "VIRTUAL_ENV", str(python_venv_path))
+    # TODO: Replace this ntt-specific state bind with a generic worker-state story.
+    # For now Ralph workers need installed ntt to see the same tracker cache path
+    # that ntt uses by default: ~/.notion-task-tracker/notion_tasks_graph.json.
+    if NOTION_TASK_TRACKER_HOME_PATH.is_dir():
+        _insert_bwrap_mount_before_codex(
+            command,
+            "--bind",
+            NOTION_TASK_TRACKER_HOME_PATH,
+            NOTION_TASK_TRACKER_HOME_PATH,
+        )
+    if "NOTION_API_KEY" in os.environ:
+        _insert_bwrap_setenv_before_codex(command, "NOTION_API_KEY", os.environ["NOTION_API_KEY"])
+    return command
+
+
+def _resolve_python_venv_path(python_venv: str | None) -> Path | None:
+    if python_venv is None:
+        return None
+
+    python_venv_path = Path(python_venv).expanduser().resolve()
+    if not python_venv_path.is_dir():
+        raise FileNotFoundError(f"Python venv does not exist: {python_venv_path}")
+    if not (python_venv_path / "bin" / "python").is_file():
+        raise FileNotFoundError(f"Python venv is missing bin/python: {python_venv_path}")
+    if _is_path_inside(child_path=python_venv_path, parent_path=RALPH_HOME_PATH):
+        raise ValueError(
+            f"Python venv must not live under {RALPH_HOME_PATH}; mounting it would expose Ralph controller state."
+        )
+    return python_venv_path
+
+
+def _insert_bwrap_mount_before_codex(
+    command: list[str],
+    option: str,
+    source: Path,
+    destination: Path,
+) -> None:
+    codex_index = _codex_binary_index(command)
+    command[codex_index:codex_index] = (
+        _bwrap_home_dir_options(destination)
+        + [
+            option,
+            str(source),
+            str(destination),
+        ]
+    )
+
+
+def _insert_bwrap_setenv_before_codex(command: list[str], name: str, value: str) -> None:
+    codex_index = _codex_binary_index(command)
+    command[codex_index:codex_index] = ["--setenv", name, value]
+
+
+def _codex_binary_index(command: list[str]) -> int:
+    approval_index = command.index("--ask-for-approval")
+    return approval_index - 1
+
+
+def _bwrap_home_dir_options(path: Path) -> list[str]:
+    home_path = Path.home()
+    try:
+        relative_path = path.relative_to(home_path)
+    except ValueError:
+        return []
+
+    options: list[str] = []
+    current_path = home_path
+    for part in relative_path.parts:
+        current_path = current_path / part
+        options.extend(["--dir", str(current_path)])
+    return options
 
 
 def _resolve_codex_binary_path(codex_command: str) -> Path:
@@ -596,8 +704,25 @@ def _default_codex_command() -> str:
     return os.environ.get("RALPH_CODEX_COMMAND", "codex")
 
 
-def _worker_path_value() -> str:
-    return ":".join(
+def _tool_environment_context(python_venv_path: Path | None) -> str:
+    if python_venv_path is None:
+        return "No Python venv was configured for worker tools. Use only tools already available on PATH."
+
+    return "\n".join(
+        [
+            f"Python venv: {python_venv_path}",
+            f"`{python_venv_path / 'bin'}` is already first on PATH.",
+            f"`VIRTUAL_ENV` is already set to `{python_venv_path}`.",
+            "Use installed CLIs directly, for example `ntt ...`; you do not need to run `source bin/activate`.",
+        ]
+    )
+
+
+def _worker_path_value(python_venv_path: Path | None) -> str:
+    path_entries = []
+    if python_venv_path is not None:
+        path_entries.append(str(python_venv_path / "bin"))
+    path_entries.extend(
         [
             str(Path.home() / ".local" / "bin"),
             "/usr/local/sbin",
@@ -607,6 +732,9 @@ def _worker_path_value() -> str:
             "/sbin",
             "/bin",
         ]
+    )
+    return ":".join(
+        path_entries
     )
 
 

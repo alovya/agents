@@ -115,6 +115,20 @@ def test_parse_args_can_disable_worker_output_teeing() -> None:
     assert arguments.tee_worker_output is False
 
 
+def test_parse_args_accepts_python_venv() -> None:
+    arguments = ralph._parse_arguments([
+        "run",
+        "--repo-path",
+        "/tmp/repo",
+        "--project-name",
+        "example",
+        "--python-venv",
+        "/tmp/tooling-venv",
+    ])
+
+    assert arguments.python_venv == "/tmp/tooling-venv"
+
+
 def test_run_command_and_tee_output_writes_to_terminal_and_file(
     tmp_path: Path,
     capsys,
@@ -166,11 +180,52 @@ def test_rendered_prompt_excludes_unrelated_task_slice(tmp_path: Path) -> None:
         active_task_plan_context="First task context.",
     )
 
-    prompt = ralph._render_worker_prompt(repo_path=tmp_path, ledger=ledger, selection=selection)
+    prompt = ralph._render_worker_prompt(
+        repo_path=tmp_path,
+        ledger=ledger,
+        selection=selection,
+        python_venv_path=None,
+    )
 
     assert "First task context." in prompt
     assert "Second task context." not in prompt
     assert "/.ralph" not in prompt
+
+
+def test_rendered_prompt_documents_python_venv(tmp_path: Path) -> None:
+    ledger = _ledger()
+    selection = ralph.TaskSelection(
+        task=ledger["tasks"][0],
+        shared_plan_context="Shared context.",
+        active_task_plan_context="First task context.",
+    )
+    python_venv_path = tmp_path / "venv"
+
+    prompt = ralph._render_worker_prompt(
+        repo_path=tmp_path,
+        ledger=ledger,
+        selection=selection,
+        python_venv_path=python_venv_path,
+    )
+
+    assert f"Python venv: {python_venv_path}" in prompt
+    assert "already first on PATH" in prompt
+
+
+def test_build_bwrap_command_mounts_python_venv(tmp_path: Path, monkeypatch) -> None:
+    python_venv_path = tmp_path / "venv"
+    python_venv_path.mkdir()
+    monkeypatch.setattr(ralph.shutil, "which", lambda command: f"/usr/bin/{command}")
+
+    command = ralph._build_bwrap_codex_command(
+        repo_path=tmp_path,
+        codex_command="codex",
+        python_venv_path=python_venv_path,
+    )
+
+    assert _contains_subsequence(command, ["--ro-bind", str(python_venv_path), str(python_venv_path)])
+    assert _contains_subsequence(command, ["--setenv", "VIRTUAL_ENV", str(python_venv_path)])
+    assert str(python_venv_path / "bin") in command[command.index("PATH") + 1].split(":")[0]
 
 
 def test_marks_task_done_without_mutating_input() -> None:
@@ -213,3 +268,10 @@ def _ledger() -> dict[str, object]:
             },
         ],
     }
+
+
+def _contains_subsequence(command: list[str], expected: list[str]) -> bool:
+    return any(
+        command[index:index + len(expected)] == expected
+        for index in range(len(command) - len(expected) + 1)
+    )

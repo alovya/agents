@@ -6,6 +6,9 @@ The full Ralph plan is not available to you.
 Repository:
 {repo_path}
 
+Worker tool environment:
+{tool_environment_context}
+
 Active task:
 {active_task_yaml}
 
