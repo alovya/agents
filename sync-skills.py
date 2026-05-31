@@ -66,16 +66,18 @@ def _parse_arguments() -> argparse.Namespace:
 
 
 def _find_skill_directories(agents_repo_path: Path) -> list[SkillDirectory]:
-    skill_source_paths = sorted(
-        skill_file_path.parent
-        for skill_file_path in agents_repo_path.rglob("SKILL.md")
-        if _is_user_skill_file(agents_repo_path, skill_file_path)
-    )
-    _raise_for_duplicate_skill_names(skill_source_paths)
-    return [
-        SkillDirectory(name=skill_source_path.name, source_path=skill_source_path)
-        for skill_source_path in skill_source_paths
-    ]
+    skill_directories = []
+    for skill_file_path in sorted(agents_repo_path.rglob("SKILL.md")):
+        if not _is_user_skill_file(agents_repo_path, skill_file_path):
+            continue
+        skill_source_path = skill_file_path.parent
+        if skill_source_path.name == "skill":
+            skill_name = skill_source_path.parent.name
+        else:
+            skill_name = skill_source_path.name
+        skill_directories.append(SkillDirectory(name=skill_name, source_path=skill_source_path))
+    _raise_for_duplicate_skill_names([sd.source_path for sd in skill_directories])
+    return skill_directories
 
 
 def _is_user_skill_file(agents_repo_path: Path, skill_file_path: Path) -> bool:
