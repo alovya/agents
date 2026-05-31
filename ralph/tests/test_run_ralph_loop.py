@@ -95,7 +95,7 @@ def test_parse_args_streams_worker_output_by_default() -> None:
         "run",
         "--repo-path",
         "/tmp/repo",
-        "--project-name",
+        "--job-name",
         "example",
     ])
 
@@ -107,7 +107,7 @@ def test_parse_args_can_disable_worker_output_teeing() -> None:
         "run",
         "--repo-path",
         "/tmp/repo",
-        "--project-name",
+        "--job-name",
         "example",
         "--no-tee-worker-output",
     ])
@@ -120,7 +120,7 @@ def test_parse_args_accepts_python_venv() -> None:
         "run",
         "--repo-path",
         "/tmp/repo",
-        "--project-name",
+        "--job-name",
         "example",
         "--python-venv",
         "/tmp/tooling-venv",
@@ -158,15 +158,15 @@ def test_write_run_status_appends_status_lines(tmp_path: Path) -> None:
     assert len(status_text.splitlines()) == 2
 
 
-def test_create_run_directory_prefixes_task_id(tmp_path: Path) -> None:
-    run_path = ralph._create_run_directory(tmp_path, "R1")
+def test_create_task_run_directory_prefixes_task_id(tmp_path: Path) -> None:
+    run_path = ralph._create_task_run_directory(tmp_path, "R1")
 
     assert run_path.name.startswith("R1_")
     assert run_path.is_dir()
 
 
-def test_create_run_directory_sanitizes_task_id(tmp_path: Path) -> None:
-    run_path = ralph._create_run_directory(tmp_path, "R 1/cleanup")
+def test_create_task_run_directory_sanitizes_task_id(tmp_path: Path) -> None:
+    run_path = ralph._create_task_run_directory(tmp_path, "R 1/cleanup")
 
     assert run_path.name.startswith("R-1-cleanup_")
     assert run_path.is_dir()
@@ -249,7 +249,7 @@ def test_examples_ledger_is_valid() -> None:
 def _ledger() -> dict[str, object]:
     return {
         "version": 1,
-        "project_name": "example",
+        "job_name": "example",
         "tasks": [
             {
                 "id": "R1",

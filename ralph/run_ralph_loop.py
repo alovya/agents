@@ -36,12 +36,12 @@ SHARED_BLOCK_PATTERN = re.compile(
 
 
 @dataclass(frozen=True)
-class RalphProject:
-    project_name: str
-    project_path: Path
+class RalphJob:
+    job_name: str
+    job_path: Path
     plan_path: Path
     ledger_path: Path
-    runs_path: Path
+    tasks_path: Path
 
 
 @dataclass(frozen=True)
@@ -75,9 +75,9 @@ def main(argv: list[str] | None = None) -> None:
 def _run_ralph_loop(arguments: argparse.Namespace) -> None:
     repo_path = Path(arguments.repo_path).expanduser().resolve()
     python_venv_path = _resolve_python_venv_path(arguments.python_venv)
-    project = _find_ralph_project(arguments.project_name)
-    _prepare_project_directories(project)
-    _refuse_unsafe_starting_state(repo_path, project)
+    job = _find_ralph_job(arguments.job_name)
+    _prepare_job_directories(job)
+    _refuse_unsafe_starting_state(repo_path, job)
     _run_worker_visibility_smoke_test(
         repo_path=repo_path,
         codex_command=arguments.codex_command,
@@ -85,14 +85,14 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
     )
 
     for _ in range(arguments.max_iterations):
-        ledger = _read_yaml_file(project.ledger_path)
-        plan_text = project.plan_path.read_text()
+        ledger = _read_yaml_file(job.ledger_path)
+        plan_text = job.plan_path.read_text()
         selection = _select_next_task_from_plan_and_ledger(ledger, plan_text)
         if selection is None:
             print("No runnable Ralph tasks remain.")
             return
 
-        run_path = _create_run_directory(project.runs_path, selection.task["id"])
+        run_path = _create_task_run_directory(job.tasks_path, selection.task["id"])
         _write_run_status(
             run_path=run_path,
             status=f"selected {selection.task['id']}: {selection.task['title']}",
@@ -138,7 +138,7 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
         _write_text(run_path / "verification-output.txt", verification_output)
 
         ledger = _mark_task_done(ledger, selection.task["id"])
-        _write_yaml_file(project.ledger_path, ledger)
+        _write_yaml_file(job.ledger_path, ledger)
         _write_run_status(run_path=run_path, status="ledger advanced")
         commit_hash = _commit_target_repo_changes(repo_path=repo_path, task=selection.task)
         _write_text(run_path / "commit.txt", commit_hash)
@@ -152,9 +152,9 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Codex Ralph loops with sliced plan context.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    run_parser = subparsers.add_parser("run", help="Run the Ralph loop for one project.")
+    run_parser = subparsers.add_parser("run", help="Run the Ralph loop for one job.")
     run_parser.add_argument("--repo-path", required=True)
-    run_parser.add_argument("--project-name", required=True)
+    run_parser.add_argument("--job-name", required=True)
     run_parser.add_argument("--max-iterations", type=int, default=DEFAULT_MAX_ITERATIONS)
     run_parser.add_argument("--codex-command", default=_default_codex_command())
     run_parser.add_argument(
@@ -177,30 +177,30 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _find_ralph_project(project_name: str) -> RalphProject:
-    project_path = RALPH_HOME_PATH / "projects" / project_name
-    return RalphProject(
-        project_name=project_name,
-        project_path=project_path,
-        plan_path=project_path / "PLAN.md",
-        ledger_path=project_path / "ledger.yaml",
-        runs_path=project_path / "runs",
+def _find_ralph_job(job_name: str) -> RalphJob:
+    job_path = RALPH_HOME_PATH / "jobs" / job_name
+    return RalphJob(
+        job_name=job_name,
+        job_path=job_path,
+        plan_path=job_path / "PLAN.md",
+        ledger_path=job_path / "ledger.yaml",
+        tasks_path=job_path / "tasks",
     )
 
 
-def _prepare_project_directories(project: RalphProject) -> None:
-    project.runs_path.mkdir(parents=True, exist_ok=True)
-    if not project.plan_path.is_file():
-        raise FileNotFoundError(f"Missing Ralph plan: {project.plan_path}")
-    if not project.ledger_path.is_file():
-        raise FileNotFoundError(f"Missing Ralph ledger: {project.ledger_path}")
+def _prepare_job_directories(job: RalphJob) -> None:
+    job.tasks_path.mkdir(parents=True, exist_ok=True)
+    if not job.plan_path.is_file():
+        raise FileNotFoundError(f"Missing Ralph plan: {job.plan_path}")
+    if not job.ledger_path.is_file():
+        raise FileNotFoundError(f"Missing Ralph ledger: {job.ledger_path}")
 
 
-def _refuse_unsafe_starting_state(repo_path: Path, project: RalphProject) -> None:
+def _refuse_unsafe_starting_state(repo_path: Path, job: RalphJob) -> None:
     if not repo_path.is_dir():
         raise FileNotFoundError(f"Target repo does not exist: {repo_path}")
-    if _is_path_inside(child_path=project.project_path, parent_path=repo_path):
-        raise RuntimeError(f"Ralph project path must not be inside target repo: {project.project_path}")
+    if _is_path_inside(child_path=job.job_path, parent_path=repo_path):
+        raise RuntimeError(f"Ralph job path must not be inside target repo: {job.job_path}")
     if _path_exists_under_repo(repo_path, "PLAN.md"):
         raise RuntimeError("Refusing to run because PLAN.md exists under the target repo.")
     if _path_exists_under_repo(repo_path, "ledger.yaml"):
@@ -637,9 +637,9 @@ def _parse_worker_promise(output: str) -> str:
     raise RuntimeError(f"Expected one final worker promise line, found {len(promises)} promise tag(s).")
 
 
-def _create_run_directory(runs_path: Path, task_id: str) -> Path:
+def _create_task_run_directory(tasks_path: Path, task_id: str) -> Path:
     timestamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    run_path = runs_path / f"{_safe_run_directory_component(task_id)}_{timestamp}"
+    run_path = tasks_path / f"{_safe_run_directory_component(task_id)}_{timestamp}"
     run_path.mkdir(parents=True, exist_ok=False)
     return run_path
 

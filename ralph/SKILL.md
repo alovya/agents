@@ -15,20 +15,20 @@ Ralph separates planning from execution:
 
 ## Project Shape
 
-Store Ralph project state under:
+Store Ralph job state under:
 
 ```text
-~/.ralph/projects/<project-name>/
+~/.ralph/jobs/<job-name>/
   PLAN.md
   ledger.yaml
-  runs/
+  tasks/
 ```
 
 Do not place Ralph control files in the target repository.
 
 ## Notion Task Pairing
 
-When creating a Ralph plan, pair the Ralph project with ALOVYA tasks through the
+When creating a Ralph plan, pair the Ralph job with ALOVYA tasks through the
 `notion_task_tracker` skill. Notion is the human-facing project/task record; Ralph's
 `PLAN.md` and `ledger.yaml` are private execution control files.
 
@@ -140,7 +140,7 @@ Keep `ledger.yaml` minimal. It may contain ids, titles, statuses, dependencies, 
 
 ```yaml
 version: 1
-project_name: example
+job_name: example
 notion:
   root_parent_task_id: ALOVYA-89
 tasks:
@@ -168,14 +168,14 @@ Do not copy task prose or full implementation notes into the ledger.
 Run:
 
 ```bash
-python ~/agents/ralph/run_ralph_loop.py run --repo-path /path/to/repo --project-name example
+python ~/agents/ralph/run_ralph_loop.py run --repo-path /path/to/repo --job-name example
 ```
 
 If workers need installed CLIs such as `ntt`, pass a Python venv that already has
 those packages installed:
 
 ```bash
-python ~/agents/ralph/run_ralph_loop.py run --repo-path /path/to/repo --project-name example --python-venv /path/to/venv
+python ~/agents/ralph/run_ralph_loop.py run --repo-path /path/to/repo --job-name example --python-venv /path/to/venv
 ```
 
 The runner mounts that venv into the worker, sets `VIRTUAL_ENV`, and prepends

@@ -1,5 +1,5 @@
 version: 1
-project_name: example
+job_name: example
 tasks:
   - id: R1
     title: Add parser
