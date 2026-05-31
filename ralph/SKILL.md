@@ -41,7 +41,7 @@ If the user mentions `parent:<id>` while asking for a Ralph plan:
 1. Treat `<id>` as the root parent ALOVYA ticket for the initial Ralph task set.
 2. Record that root parent in `ledger.yaml`.
 3. For each planned Ralph task, record its intended Notion relationship in the
-   task's ledger entry, usually as a child of the root parent.
+   task's ledger entry with `relationship` and `related_to`.
 4. Do not create those Notion child tasks during planning. Leave their
    `materialized_task_id` as `null` until the worker starts that Ralph slice.
 5. For later subtasks discovered while planning or executing, decide the relationship
@@ -54,6 +54,17 @@ If the user mentions `parent:<id>` while asking for a Ralph plan:
 6. Do not force every later task directly under the original `parent:<id>`; use that
    parent as the root of the initial task tree, then attach new tasks where they
    semantically belong.
+
+`related_to` may be either an existing ALOVYA task id or another Ralph task id:
+
+- `related_to: ALOVYA-89` means the relationship targets an existing Notion task.
+- `related_to: R1` means the relationship targets the Notion task materialized for
+  Ralph task `R1`.
+
+When `related_to` is another Ralph task id, the worker must resolve that task's
+`materialized_task_id` before creating the new task. If the related Ralph task has
+not materialized yet, the current task is not ready to materialize its Notion task;
+fix the task dependency ordering or report `BLOCKED`.
 
 If the user does not mention `parent:<id>`, create a top-level task with
 `notion_task parent [title]` only when the Ralph work needs a root human-facing
@@ -73,15 +84,20 @@ tasks:
     notion_task:
       planned: true
       relationship: child
-      parent_task_id: ALOVYA-89
+      related_to: ALOVYA-89
       title: Delete redundant Notion client wrapper
       materialized_task_id: null
 ```
 
 When the worker starts a Ralph task, it must materialize the planned Notion task if
 `materialized_task_id` is `null`, using the planned relationship and title from the
-ledger. After creation, update the ledger with the assigned task id. A planned task
-is not considered paired for execution until `materialized_task_id` is set.
+ledger:
+
+- `relationship: child` means call `ntt child <resolved related_to> <title>`.
+- `relationship: sibling` means call `ntt sibling <resolved related_to> <title>`.
+
+After creation, update the ledger with the assigned task id. A planned task is not
+considered paired for execution until `materialized_task_id` is set.
 
 Materializing the Notion task is not enough. Each Ralph worker must keep the paired
 Notion task useful as a human-facing execution log:
@@ -134,7 +150,7 @@ tasks:
     notion_task:
       planned: true
       relationship: child
-      parent_task_id: ALOVYA-89
+      related_to: ALOVYA-89
       title: Add parser
       materialized_task_id: null
     depends_on: []
