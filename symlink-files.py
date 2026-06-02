@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,15 +19,25 @@ class SkillInstallTarget:
     skills_path: Path
 
 
+@dataclass(frozen=True)
+class AgentInstructionsLink:
+    agent_name: str
+    source_path: Path
+    destination_path: Path
+
+
 def main() -> None:
     arguments = _parse_arguments()
     agents_repo_path = Path(__file__).resolve().parent
     skill_directories = _find_skill_directories(agents_repo_path)
     install_targets = _build_skill_install_targets(arguments)
+    instruction_links = _build_agent_instructions_links(
+        arguments=arguments,
+        agents_repo_path=agents_repo_path,
+    )
 
     if not skill_directories:
         print(f"No skills found under {agents_repo_path}")
-        return
 
     for skill_directory in skill_directories:
         for install_target in install_targets:
@@ -34,7 +45,15 @@ def main() -> None:
                 skill_directory=skill_directory,
                 install_target=install_target,
                 dry_run=arguments.dry_run,
+                force=arguments.force,
             )
+
+    for instruction_link in instruction_links:
+        _install_agent_instructions_link(
+            instruction_link=instruction_link,
+            dry_run=arguments.dry_run,
+            force=arguments.force,
+        )
 
 
 def _parse_arguments() -> argparse.Namespace:
@@ -42,6 +61,11 @@ def _parse_arguments() -> argparse.Namespace:
         description="Symlink every ~/agents skill directory into local agent skill locations."
     )
     parser.add_argument("--dry-run", action="store_true", help="Print planned links without changing files.")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Replace existing copied files or directories with symlinks.",
+    )
     parser.add_argument(
         "--codex-home",
         default=os.environ.get("CODEX_HOME", Path.home() / ".codex"),
@@ -123,10 +147,37 @@ def _build_skill_install_targets(arguments: argparse.Namespace) -> list[SkillIns
     return install_targets
 
 
+def _build_agent_instructions_links(
+    arguments: argparse.Namespace,
+    agents_repo_path: Path,
+) -> list[AgentInstructionsLink]:
+    instruction_links: list[AgentInstructionsLink] = []
+
+    if not arguments.claude_only:
+        instruction_links.append(
+            AgentInstructionsLink(
+                agent_name="Codex",
+                source_path=agents_repo_path / "AGENTS.md",
+                destination_path=Path(arguments.codex_home).expanduser() / "AGENTS.md",
+            )
+        )
+    if not arguments.codex_only:
+        instruction_links.append(
+            AgentInstructionsLink(
+                agent_name="Claude",
+                source_path=agents_repo_path / "AGENTS.md",
+                destination_path=Path(arguments.claude_home).expanduser() / "AGENTS.md",
+            )
+        )
+
+    return instruction_links
+
+
 def _install_skill_directory(
     skill_directory: SkillDirectory,
     install_target: SkillInstallTarget,
     dry_run: bool,
+    force: bool,
 ) -> None:
     destination_path = install_target.skills_path / skill_directory.name
     if destination_path.is_symlink() and destination_path.resolve() == skill_directory.source_path.resolve():
@@ -134,6 +185,15 @@ def _install_skill_directory(
         return
 
     if destination_path.exists() or destination_path.is_symlink():
+        if force:
+            _replace_existing_path_with_link(
+                destination_path=destination_path,
+                source_path=skill_directory.source_path,
+                agent_name=install_target.agent_name,
+                dry_run=dry_run,
+                target_is_directory=True,
+            )
+            return
         raise FileExistsError(
             f"{install_target.agent_name}: refusing to replace existing path: {destination_path}"
         )
@@ -145,6 +205,91 @@ def _install_skill_directory(
     install_target.skills_path.mkdir(parents=True, exist_ok=True)
     destination_path.symlink_to(skill_directory.source_path, target_is_directory=True)
     print(f"{install_target.agent_name}: linked {destination_path} -> {skill_directory.source_path}")
+
+
+def _install_agent_instructions_link(
+    instruction_link: AgentInstructionsLink,
+    dry_run: bool,
+    force: bool,
+) -> None:
+    if (
+        instruction_link.destination_path.is_symlink()
+        and instruction_link.destination_path.resolve() == instruction_link.source_path.resolve()
+    ):
+        print(
+            f"{instruction_link.agent_name}: already linked "
+            f"{instruction_link.destination_path} -> {instruction_link.source_path}"
+        )
+        return
+
+    if instruction_link.destination_path.exists() or instruction_link.destination_path.is_symlink():
+        if force:
+            _replace_existing_path_with_link(
+                destination_path=instruction_link.destination_path,
+                source_path=instruction_link.source_path,
+                agent_name=instruction_link.agent_name,
+                dry_run=dry_run,
+                target_is_directory=False,
+            )
+            return
+        if (
+            instruction_link.destination_path.read_text(encoding="utf-8")
+            != instruction_link.source_path.read_text(encoding="utf-8")
+        ):
+            raise FileExistsError(
+                f"{instruction_link.agent_name}: refusing to replace differing file: "
+                f"{instruction_link.destination_path}"
+            )
+        if dry_run:
+            print(
+                f"{instruction_link.agent_name}: would replace identical file with link "
+                f"{instruction_link.destination_path} -> {instruction_link.source_path}"
+            )
+            return
+        instruction_link.destination_path.unlink()
+
+    if dry_run:
+        print(
+            f"{instruction_link.agent_name}: would link "
+            f"{instruction_link.destination_path} -> {instruction_link.source_path}"
+        )
+        return
+
+    instruction_link.destination_path.parent.mkdir(parents=True, exist_ok=True)
+    instruction_link.destination_path.symlink_to(instruction_link.source_path)
+    print(
+        f"{instruction_link.agent_name}: linked "
+        f"{instruction_link.destination_path} -> {instruction_link.source_path}"
+    )
+
+
+def _replace_existing_path_with_link(
+    destination_path: Path,
+    source_path: Path,
+    agent_name: str,
+    dry_run: bool,
+    target_is_directory: bool,
+) -> None:
+    if dry_run:
+        print(f"{agent_name}: would replace {destination_path} with link -> {source_path}")
+        return
+
+    _remove_existing_destination_path(destination_path)
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    destination_path.symlink_to(source_path, target_is_directory=target_is_directory)
+    print(f"{agent_name}: replaced {destination_path} with link -> {source_path}")
+
+
+def _remove_existing_destination_path(destination_path: Path) -> None:
+    if destination_path.is_symlink() or destination_path.is_file():
+        destination_path.unlink()
+        return
+
+    if destination_path.is_dir():
+        shutil.rmtree(destination_path)
+        return
+
+    raise FileNotFoundError(destination_path)
 
 
 if __name__ == "__main__":
