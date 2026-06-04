@@ -68,13 +68,13 @@ def _parse_arguments() -> argparse.Namespace:
     )
     parser.add_argument(
         "--codex-home",
-        default=os.environ.get("CODEX_HOME", Path.home() / ".codex"),
-        help="Codex home directory. Defaults to CODEX_HOME or ~/.codex.",
+        default=os.environ.get("CODEX_HOME"),
+        help="Codex home directory. Defaults to CODEX_HOME and errors if unset.",
     )
     parser.add_argument(
         "--claude-home",
-        default=Path.home() / ".claude",
-        help="Claude home directory. Defaults to ~/.claude.",
+        default=os.environ.get("CLAUDE_CONFIG_DIR"),
+        help="Claude config directory. Defaults to CLAUDE_CONFIG_DIR and errors if unset.",
     )
     parser.add_argument(
         "--codex-only",
@@ -129,6 +129,8 @@ def _build_skill_install_targets(arguments: argparse.Namespace) -> list[SkillIns
     if arguments.codex_only and arguments.claude_only:
         raise RuntimeError("Choose at most one of --codex-only and --claude-only.")
 
+    _require_agent_home_paths(arguments)
+
     install_targets: list[SkillInstallTarget] = []
     if not arguments.claude_only:
         install_targets.append(
@@ -145,6 +147,13 @@ def _build_skill_install_targets(arguments: argparse.Namespace) -> list[SkillIns
             )
         )
     return install_targets
+
+
+def _require_agent_home_paths(arguments: argparse.Namespace) -> None:
+    if not arguments.claude_only and not arguments.codex_home:
+        raise RuntimeError("CODEX_HOME must be set or --codex-home must be provided.")
+    if not arguments.codex_only and not arguments.claude_home:
+        raise RuntimeError("CLAUDE_CONFIG_DIR must be set or --claude-home must be provided.")
 
 
 def _build_agent_instructions_links(

@@ -19,6 +19,7 @@ from ralph.run_ralph_loop import (
     _parse_agent_promise,
     _read_tasks_from_ledger,
     _render_agent_prompt,
+    _require_codex_home_path,
     _run_command_and_tee_output,
     _select_next_task_from_plan_and_ledger,
     _write_yaml_file,
@@ -211,16 +212,22 @@ def test_render_agent_prompt_documents_python_venv(tmp_path: Path) -> None:
     assert "already first on PATH" in prompt
 
 
-def test_build_bwrap_command_mounts_python_venv_from_path(tmp_path: Path, monkeypatch) -> None:
+def test_build_bwrap_command_mounts_python_venv_from_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     bin_path = tmp_path / "bin"
     bwrap_path = bin_path / "bwrap"
     agent_path = bin_path / "agent-cli"
+    codex_home_path = tmp_path / "codex-home"
     python_venv_path = tmp_path / "venv"
     bin_path.mkdir()
+    codex_home_path.mkdir()
     python_venv_path.mkdir()
     _write_executable_shim(bwrap_path)
     _write_executable_shim(agent_path)
     monkeypatch.setenv("PATH", str(bin_path))
+    monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
 
     command = _build_bwrap_agent_command(
         repo_path=tmp_path,
@@ -234,6 +241,15 @@ def test_build_bwrap_command_mounts_python_venv_from_path(tmp_path: Path, monkey
     assert _contains_subsequence(command, ["--setenv", "VIRTUAL_ENV", str(python_venv_path)])
     assert _contains_subsequence(command, ["--setenv", "BASH_ENV", str(python_venv_path / "bin" / "activate")])
     assert str(python_venv_path / "bin") in command[command.index("PATH") + 1].split(":")[0]
+
+
+def test_require_codex_home_path_rejects_missing_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("CODEX_HOME", raising=False)
+
+    with pytest.raises(RuntimeError, match="CODEX_HOME must be set"):
+        _require_codex_home_path()
 
 
 def test_marks_task_done_without_mutating_input() -> None:

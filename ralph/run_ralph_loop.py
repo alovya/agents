@@ -378,7 +378,7 @@ def _build_bwrap_agent_command(
         raise RuntimeError("Ralph requires bubblewrap installed as `bwrap`.")
 
     agent_binary_path = _resolve_agent_binary_path(agent_command)
-    agent_home_path = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")).expanduser().resolve()
+    agent_home_path = _require_codex_home_path()
     local_path = Path.home() / ".local"
 
     command = [bwrap_path]
@@ -421,6 +421,17 @@ def _build_bwrap_agent_command(
     command += ["--ignore-rules"]
     command += ["-"]
     return command
+
+
+def _require_codex_home_path() -> Path:
+    codex_home = os.environ.get("CODEX_HOME")
+    if not codex_home:
+        raise RuntimeError("CODEX_HOME must be set before running Ralph agents.")
+
+    codex_home_path = Path(codex_home).expanduser().resolve()
+    if not codex_home_path.is_dir():
+        raise RuntimeError(f"CODEX_HOME does not exist: {codex_home_path}")
+    return codex_home_path
 
 
 def _resolve_python_venv_path(python_venv: str | None) -> Path | None:
