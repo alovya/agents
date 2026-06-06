@@ -227,7 +227,8 @@ Do not explain docs or docstrings through old behaviour, previous mistakes, migr
 
 - When writing tests, the file format should be test_<source-file>.py for each <source-file>.py located in a `tests` subdirectory.
 - When testing instance methods of a class, use a pattern like `MyClass.method_name -> class TestClassMethodName`.
-- Testing private helpers is allowed when it makes the behaviour easier to specify directly, keeps the test smaller, or avoids over-constructing an awkward public-flow fixture. Prefer public-behaviour tests when they are equally clear.
+- Do not mock or fake functionality inside the behaviour under test if that makes readers reason about private execution order, hidden call sequencing, or helper boundaries. Prefer realistic inputs through real behaviour, extracting a small input-taking worker if needed, so tests explain input, behaviour, and output rather than preserving implementation.
+- Mocking or faking may only be exceptionally allowed for pure thin orchestrators whose obvious call wiring is the behaviour under test. Assert boundary calls directly, name mocks `<original_function_name>_mock`, and use fakes only as small readable domain objects that do not encode how the tested function calls helpers.
 
 ## Bazel And Commands
 
