@@ -212,6 +212,8 @@ def test_render_agent_prompt_documents_python_venv(tmp_path: Path) -> None:
 
     assert f"Python venv: {python_venv_path}" in prompt
     assert "already first on PATH" in prompt
+    assert "ntt" not in prompt
+    assert "Notion" not in prompt
 
 
 def test_build_bwrap_command_mounts_python_venv_from_path(

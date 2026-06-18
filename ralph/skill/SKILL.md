@@ -89,9 +89,9 @@ tasks:
       materialized_task_id: null
 ```
 
-When the worker starts a Ralph task, it must materialize the planned Notion task if
-`materialized_task_id` is `null`, using the planned relationship and title from the
-ledger:
+When the controller starts a Ralph task, it should materialise the planned Notion
+task before launching the worker if `materialized_task_id` is `null`, using the
+planned relationship and title from the ledger:
 
 - `relationship: child` means call `ntt child <resolved related_to> <title>`.
 - `relationship: sibling` means call `ntt sibling <resolved related_to> <title>`.
@@ -99,8 +99,9 @@ ledger:
 After creation, update the ledger with the assigned task id. A planned task is not
 considered paired for execution until `materialized_task_id` is set.
 
-Materializing the Notion task is not enough. Each Ralph worker must keep the paired
-Notion task useful as a human-facing execution log:
+Materialising the Notion task is not enough. The controller should keep the paired
+Notion task useful as a human-facing execution log without exposing Notion
+credentials or tracker state to workers:
 
 1. At slice start, log the Ralph task id, goal, touchable paths, verification
    commands, and any immediate assumptions or constraints.
@@ -112,8 +113,8 @@ Notion task useful as a human-facing execution log:
 4. Use detailed `notion_task_tracker` log content with paragraph and code blocks.
    Do not write vague entries such as "implemented R1" or "ran tests" when the
    useful content is the command, output, diff summary, or error.
-5. If the worker creates discovered follow-up tasks, log the reason and relationship
-   on both the current task and the new child/sibling task when relevant.
+5. If execution discovers follow-up tasks, log the reason and relationship on both
+   the current task and the new child/sibling task when relevant.
 
 Record paired ALOVYA task ids in `ledger.yaml`, but do not copy Notion task prose or
 implementation notes into `ledger.yaml`.
@@ -171,8 +172,7 @@ Run:
 python ~/agents/ralph/run_ralph_loop.py run --repo-path /path/to/repo --job-name example
 ```
 
-If workers need installed CLIs such as `ntt`, pass a Python venv that already has
-those packages installed:
+If workers need helper commands from a Python venv, pass that venv explicitly:
 
 ```bash
 python ~/agents/ralph/run_ralph_loop.py run --repo-path /path/to/repo --job-name example --python-venv /path/to/venv
@@ -180,6 +180,9 @@ python ~/agents/ralph/run_ralph_loop.py run --repo-path /path/to/repo --job-name
 
 The runner mounts that venv into the worker, sets `VIRTUAL_ENV`, and prepends
 `/path/to/venv/bin` to `PATH`. The rendered prompt tells the worker that the venv is
-already active; the worker can run installed CLIs directly.
+already active; the worker can run those helper commands directly.
+
+Do not pass Notion access through the worker venv. The controller owns Notion
+materialisation and logging outside the worker sandbox.
 
 The runner owns task selection, verification, ledger advancement, and commits.

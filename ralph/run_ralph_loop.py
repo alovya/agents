@@ -681,7 +681,7 @@ def _read_default_agent_command() -> str:
 
 def _describe_tool_environment(python_venv_path: Path | None) -> str:
     if python_venv_path is None:
-        return "No Python venv was configured for agent tools. Use only tools already available on PATH."
+        return "No Python venv was configured for helper tools. Use only tools already available on PATH."
 
     return "\n".join(
         [
@@ -689,7 +689,7 @@ def _describe_tool_environment(python_venv_path: Path | None) -> str:
             f"`{python_venv_path / 'bin'}` is already first on PATH.",
             f"`VIRTUAL_ENV` is already set to `{python_venv_path}`.",
             f"`BASH_ENV` points at `{python_venv_path / 'bin' / 'activate'}` so shell tool calls keep the venv active.",
-            "Use installed CLIs directly, for example `ntt ...`.",
+            "Use commands installed in this venv only when the active task requires them.",
         ]
     )
 
