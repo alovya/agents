@@ -9,7 +9,7 @@ Use this skill when creating or maintaining Ralph loop artefacts.
 
 Ralph separates planning from execution:
 
-1. Planning sessions may read and write `~/.ralph`.
+1. Planning sessions may read and write `/workspace/.ralph`.
 2. Execution workers must not see Ralph controller state or credential-bearing
    personal/tool state under `HOME` or `/workspace`.
 3. The Ralph controller slices the private plan and gives each worker only the active task context.
@@ -19,13 +19,16 @@ Ralph separates planning from execution:
 Store Ralph job state under:
 
 ```text
-~/.ralph/jobs/<job-name>/
+/workspace/.ralph/jobs/<job-name>/
   PLAN.md
   ledger.yaml
   tasks/
 ```
 
 Do not place Ralph control files in the target repository.
+Set `RALPH_HOME` only when a host needs a different explicit Ralph control root.
+Use `/workspace/.notion-task-tracker/notion_tasks_tree.json` as the default
+Notion tracker state for controller-owned `ntt` calls.
 
 ## Notion Task Pairing
 
@@ -170,13 +173,13 @@ Do not copy task prose or full implementation notes into the ledger.
 Run:
 
 ```bash
-python ~/agents/ralph/run_ralph_loop.py run --repo-path /path/to/repo --job-name example
+python /workspace/agents/ralph/run_ralph_loop.py run --repo-path /path/to/repo --job-name example
 ```
 
 If workers need helper commands from a Python venv, pass that venv explicitly:
 
 ```bash
-python ~/agents/ralph/run_ralph_loop.py run --repo-path /path/to/repo --job-name example --python-venv /path/to/venv
+python /workspace/agents/ralph/run_ralph_loop.py run --repo-path /path/to/repo --job-name example --python-venv /path/to/venv
 ```
 
 The runner mounts that venv into the worker, sets `VIRTUAL_ENV`, and prepends

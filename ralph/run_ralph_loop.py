@@ -16,7 +16,8 @@ from typing import Any
 import yaml
 
 
-RALPH_HOME_PATH = Path.home() / ".ralph"
+DEFAULT_RALPH_HOME_PATH = Path("/workspace/.ralph")
+DEFAULT_NOTION_TRACKER_STATE_PATH = Path("/workspace/.notion-task-tracker/notion_tasks_tree.json")
 WORKER_HOME_PATH = Path("/tmp/ralph-worker-home")
 WORKER_TEMP_PATH = Path("/tmp/ralph-worker-tmp")
 DEFAULT_MAX_ITERATIONS = 10
@@ -374,8 +375,15 @@ def _resolve_repo_path(repo_path: str) -> Path:
     return Path(repo_path).expanduser().resolve()
 
 
+def _resolve_ralph_home_path() -> Path:
+    configured_path = os.environ.get("RALPH_HOME")
+    if configured_path:
+        return Path(configured_path).expanduser().resolve()
+    return DEFAULT_RALPH_HOME_PATH
+
+
 def _find_ralph_job(job_name: str) -> RalphJob:
-    job_path = RALPH_HOME_PATH / "jobs" / job_name
+    job_path = _resolve_ralph_home_path() / "jobs" / job_name
     return RalphJob(
         job_name=job_name,
         job_path=job_path,
@@ -631,7 +639,8 @@ def _build_explicit_worker_mount_paths(
 
 def _build_sensitive_paths_that_workers_must_not_see() -> list[Path]:
     return [
-        RALPH_HOME_PATH,
+        _resolve_ralph_home_path(),
+        Path.home() / ".ralph",
         Path.home() / ".notion-task-tracker",
         Path.home() / ".ssh",
         Path.home() / ".aws",
@@ -812,6 +821,8 @@ def _append_notion_task_log(
         _ticket_number_from_alovya_task_id(notion_task_id),
         "--content-path",
         str(content_path),
+        "--tracker-state-path",
+        str(DEFAULT_NOTION_TRACKER_STATE_PATH),
         "--output-path",
         str(output_path),
     ]
@@ -836,6 +847,8 @@ def _build_notion_task_creation_command(
             title,
             "--content-path",
             str(content_path),
+            "--tracker-state-path",
+            str(DEFAULT_NOTION_TRACKER_STATE_PATH),
             "--output-path",
             str(output_path),
         ]
@@ -849,6 +862,8 @@ def _build_notion_task_creation_command(
             title,
             "--content-path",
             str(content_path),
+            "--tracker-state-path",
+            str(DEFAULT_NOTION_TRACKER_STATE_PATH),
             "--output-path",
             str(output_path),
         ]

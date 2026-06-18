@@ -9,6 +9,8 @@ import pytest
 import yaml
 
 from ralph.run_ralph_loop import (
+    DEFAULT_NOTION_TRACKER_STATE_PATH,
+    DEFAULT_RALPH_HOME_PATH,
     RalphJob,
     TaskSelection,
     WORKER_HOME_PATH,
@@ -19,6 +21,7 @@ from ralph.run_ralph_loop import (
     _create_task_directory,
     _commit_verified_task,
     _extract_created_notion_task_id,
+    _find_ralph_job,
     _log_completed_worker_to_notion,
     _log_failed_verification_to_notion,
     _log_slice_start_to_notion,
@@ -33,6 +36,7 @@ from ralph.run_ralph_loop import (
     _read_tasks_from_ledger,
     _refuse_unsafe_starting_state,
     _render_agent_prompt,
+    _resolve_ralph_home_path,
     _resolve_python_venv_path,
     _require_codex_home_path,
     _run_agent_visibility_smoke_test,
@@ -153,6 +157,43 @@ def test_parse_args_accepts_python_venv() -> None:
     ])
 
     assert arguments.python_venv == "/tmp/tooling-venv"
+
+
+def test_resolve_ralph_home_path_defaults_to_workspace(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("RALPH_HOME", raising=False)
+
+    assert _resolve_ralph_home_path() == DEFAULT_RALPH_HOME_PATH
+
+
+def test_resolve_ralph_home_path_accepts_explicit_override(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ralph_home_path = tmp_path / "ralph-home"
+    monkeypatch.setenv("RALPH_HOME", str(ralph_home_path))
+
+    assert _resolve_ralph_home_path() == ralph_home_path
+
+
+def test_find_ralph_job_uses_workspace_home_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("RALPH_HOME", raising=False)
+
+    job = _find_ralph_job("example")
+
+    assert job.job_path == Path("/workspace/.ralph/jobs/example")
+    assert job.plan_path == Path("/workspace/.ralph/jobs/example/PLAN.md")
+
+
+def test_find_ralph_job_uses_explicit_ralph_home(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ralph_home_path = tmp_path / "ralph-home"
+    monkeypatch.setenv("RALPH_HOME", str(ralph_home_path))
+
+    job = _find_ralph_job("example")
+
+    assert job.job_path == ralph_home_path / "jobs" / "example"
 
 
 def test_smoke_test_resolves_repo_path_before_running_sandbox_check(
@@ -352,6 +393,7 @@ def test_build_agent_visibility_smoke_test_prompt_checks_sandbox_contract(tmp_pa
     assert f"test ! -e {shlex.quote(str(Path.home() / '.notion-task-tracker'))}" in prompt
     assert f"test ! -e {shlex.quote(str(Path.home() / '.aws'))}" in prompt
     assert f"test ! -e {shlex.quote(str(Path.home() / '.claude'))}" in prompt
+    assert "test ! -e /workspace/.ralph" in prompt
     assert "test ! -e /workspace/.codex" in prompt
     assert "test ! -e /workspace/.aws" in prompt
     assert "test ! -e /workspace/.claude" in prompt
@@ -648,6 +690,8 @@ def test_materialises_planned_notion_task_under_existing_alovya_parent(
         "Add parser",
         "--content-path",
         str(task_path / "notion-create-content.json"),
+        "--tracker-state-path",
+        str(DEFAULT_NOTION_TRACKER_STATE_PATH),
         "--output-path",
         str(task_path / "notion-create-output.json"),
     ]]
@@ -698,6 +742,7 @@ def test_materialises_planned_notion_task_after_related_ralph_task_exists(
     assert updated_ledger["tasks"][1]["notion_task"]["materialized_task_id"] == "ALOVYA-91"
     assert "--parent-ticket-number" in observed_commands[0]
     assert observed_commands[0][observed_commands[0].index("--parent-ticket-number") + 1] == "90"
+    assert observed_commands[0][observed_commands[0].index("--tracker-state-path") + 1] == str(DEFAULT_NOTION_TRACKER_STATE_PATH)
 
 
 def test_materialising_planned_notion_task_blocks_when_related_ralph_task_is_not_materialised(
@@ -769,6 +814,9 @@ def test_controller_logs_slice_start_to_notion(
     assert observed_content["subheading"] == "Ralph R1 started"
     assert "Goal: Add parser" in observed_content["blocks"][0]["text"]
     assert "verification_commands" in observed_content["blocks"][1]["text"]
+    assert observed_content["command"][observed_content["command"].index("--tracker-state-path") + 1] == str(
+        DEFAULT_NOTION_TRACKER_STATE_PATH
+    )
 
 
 def test_controller_logs_blocked_worker_promise_to_notion(
@@ -861,6 +909,8 @@ def test_build_notion_task_creation_command_builds_sibling_command(tmp_path: Pat
         "Add parser",
         "--content-path",
         str(tmp_path / "content.json"),
+        "--tracker-state-path",
+        str(DEFAULT_NOTION_TRACKER_STATE_PATH),
         "--output-path",
         str(tmp_path / "output.json"),
     ]
@@ -960,6 +1010,7 @@ def _capture_notion_log_content(monkeypatch: pytest.MonkeyPatch) -> dict[str, ob
     def run_notion_tracker_command_mock(command: list[str]) -> subprocess.CompletedProcess[str]:
         content_path = Path(command[command.index("--content-path") + 1])
         observed_content.update(json.loads(content_path.read_text(encoding="utf-8")))
+        observed_content["command"] = command
         return subprocess.CompletedProcess(args=command, returncode=0, stdout="{}")
 
     monkeypatch.setattr("ralph.run_ralph_loop._resolve_notion_tracker_command_path", lambda: "ntt")
