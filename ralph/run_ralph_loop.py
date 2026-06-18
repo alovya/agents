@@ -655,7 +655,19 @@ def _require_codex_home_path() -> Path:
     codex_home_path = Path(codex_home).expanduser().resolve()
     if not codex_home_path.is_dir():
         raise RuntimeError(f"CODEX_HOME does not exist: {codex_home_path}")
+    _refuse_agent_home_path_that_exposes_other_sensitive_state(codex_home_path)
     return codex_home_path
+
+
+def _refuse_agent_home_path_that_exposes_other_sensitive_state(agent_home_path: Path) -> None:
+    for sensitive_path in _build_sensitive_paths_that_workers_must_not_see():
+        if sensitive_path == agent_home_path:
+            continue
+        if _paths_overlap(left_path=agent_home_path, right_path=sensitive_path):
+            raise ValueError(
+                "CODEX_HOME must not overlap other worker-hidden sensitive state: "
+                f"{agent_home_path} overlaps {sensitive_path}"
+            )
 
 
 def _resolve_python_venv_path(python_venv: str | None) -> Path | None:

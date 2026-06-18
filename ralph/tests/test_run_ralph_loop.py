@@ -429,6 +429,38 @@ def test_require_codex_home_path_rejects_missing_environment(
         _require_codex_home_path()
 
 
+def test_require_codex_home_path_accepts_exact_codex_home(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home_path = tmp_path / ".codex"
+    codex_home_path.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
+    monkeypatch.setattr(
+        "ralph.run_ralph_loop._build_sensitive_paths_that_workers_must_not_see",
+        lambda: [codex_home_path],
+    )
+
+    assert _require_codex_home_path() == codex_home_path
+
+
+def test_require_codex_home_path_rejects_broad_sensitive_parent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home_path = tmp_path / "workspace"
+    sensitive_state_path = codex_home_path / ".aws"
+    sensitive_state_path.mkdir(parents=True)
+    monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
+    monkeypatch.setattr(
+        "ralph.run_ralph_loop._build_sensitive_paths_that_workers_must_not_see",
+        lambda: [codex_home_path / ".codex", sensitive_state_path],
+    )
+
+    with pytest.raises(ValueError, match="CODEX_HOME must not overlap"):
+        _require_codex_home_path()
+
+
 def test_resolve_python_venv_path_rejects_sensitive_path_overlap(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
