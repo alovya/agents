@@ -354,6 +354,8 @@ def _run_agent_visibility_smoke_test(
     agent_command: str,
     python_venv_path: Path | None,
 ) -> None:
+    if not repo_path.is_dir():
+        raise FileNotFoundError(f"Target repo does not exist: {repo_path}")
     _refuse_explicit_worker_mount_that_overlaps_sensitive_hidden_paths(
         path=repo_path,
         role="Target repo",

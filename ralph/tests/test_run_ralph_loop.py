@@ -383,6 +383,17 @@ def test_build_agent_visibility_smoke_test_prompt_does_not_reject_explicit_mount
     assert f'test "$CODEX_HOME" = {shlex.quote("/workspace/.codex")}' in prompt
 
 
+def test_run_agent_visibility_smoke_test_rejects_missing_repo(tmp_path: Path) -> None:
+    missing_repo_path = tmp_path / "missing-repo"
+
+    with pytest.raises(FileNotFoundError, match="Target repo does not exist"):
+        _run_agent_visibility_smoke_test(
+            repo_path=missing_repo_path,
+            agent_command="agent-cli",
+            python_venv_path=None,
+        )
+
+
 def test_run_agent_visibility_smoke_test_rejects_sensitive_repo_mount(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
