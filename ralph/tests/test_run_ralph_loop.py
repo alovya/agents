@@ -455,6 +455,23 @@ def test_require_codex_home_path_accepts_exact_codex_home(
     assert _require_codex_home_path() == codex_home_path
 
 
+def test_require_codex_home_path_accepts_symlink_to_exact_codex_home(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home_path = tmp_path / ".codex"
+    codex_home_link_path = tmp_path / "codex-link"
+    codex_home_path.mkdir()
+    codex_home_link_path.symlink_to(codex_home_path)
+    monkeypatch.setenv("CODEX_HOME", str(codex_home_link_path))
+    monkeypatch.setattr(
+        "ralph.run_ralph_loop._build_sensitive_paths_that_workers_must_not_see",
+        lambda: [codex_home_path],
+    )
+
+    assert _require_codex_home_path() == codex_home_path
+
+
 def test_require_codex_home_path_rejects_broad_sensitive_parent(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

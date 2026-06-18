@@ -505,10 +505,14 @@ def _paths_overlap(left_path: Path, right_path: Path) -> bool:
     resolved_left_path = left_path.resolve()
     resolved_right_path = right_path.resolve()
     return (
-        resolved_left_path == resolved_right_path
+        _paths_resolve_to_same_location(left_path=resolved_left_path, right_path=resolved_right_path)
         or resolved_left_path.is_relative_to(resolved_right_path)
         or resolved_right_path.is_relative_to(resolved_left_path)
     )
+
+
+def _paths_resolve_to_same_location(left_path: Path, right_path: Path) -> bool:
+    return left_path.resolve() == right_path.resolve()
 
 
 def _build_shell_assertions_that_paths_are_hidden(paths: list[Path]) -> list[str]:
@@ -663,7 +667,7 @@ def _require_codex_home_path() -> Path:
 
 def _refuse_agent_home_path_that_exposes_other_sensitive_state(agent_home_path: Path) -> None:
     for sensitive_path in _build_sensitive_paths_that_workers_must_not_see():
-        if sensitive_path == agent_home_path:
+        if _paths_resolve_to_same_location(left_path=agent_home_path, right_path=sensitive_path):
             continue
         if _paths_overlap(left_path=agent_home_path, right_path=sensitive_path):
             raise ValueError(
