@@ -215,6 +215,10 @@ def _refuse_unsafe_starting_state(repo_path: Path, job: RalphJob) -> None:
         raise FileNotFoundError(f"Target repo does not exist: {repo_path}")
     if _is_path_inside(child_path=job.job_path, parent_path=repo_path):
         raise RuntimeError(f"Ralph job path must not be inside target repo: {job.job_path}")
+    _refuse_explicit_worker_mount_that_overlaps_sensitive_hidden_paths(
+        path=repo_path,
+        role="Target repo",
+    )
     if _contains_path_named_under_repo(repo_path, "PLAN.md"):
         raise RuntimeError("Refusing to run because PLAN.md exists under the target repo.")
     if _contains_path_named_under_repo(repo_path, "ledger.yaml"):

@@ -22,6 +22,7 @@ from ralph.run_ralph_loop import (
     _parse_arguments,
     _parse_agent_promise,
     _read_tasks_from_ledger,
+    _refuse_unsafe_starting_state,
     _render_agent_prompt,
     _resolve_python_venv_path,
     _require_codex_home_path,
@@ -400,6 +401,23 @@ def test_run_agent_visibility_smoke_test_rejects_sensitive_repo_mount(
             agent_command="agent-cli",
             python_venv_path=None,
         )
+
+
+def test_refuse_unsafe_starting_state_rejects_sensitive_repo_mount(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_path = _initialise_git_repo(tmp_path / "target-repo")
+    job = _create_job_with_ledger(tmp_path, _build_example_ledger())
+    sensitive_state_path = repo_path / ".aws"
+    sensitive_state_path.mkdir()
+    monkeypatch.setattr(
+        "ralph.run_ralph_loop._build_sensitive_paths_that_workers_must_not_see",
+        lambda: [sensitive_state_path],
+    )
+
+    with pytest.raises(ValueError, match="Target repo must not overlap"):
+        _refuse_unsafe_starting_state(repo_path, job)
 
 
 def test_require_codex_home_path_rejects_missing_environment(
