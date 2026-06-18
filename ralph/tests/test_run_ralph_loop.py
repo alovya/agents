@@ -10,6 +10,8 @@ import yaml
 from ralph.run_ralph_loop import (
     RalphJob,
     TaskSelection,
+    WORKER_HOME_PATH,
+    WORKER_TEMP_PATH,
     _build_bwrap_codex_command,
     _create_task_directory,
     _commit_verified_task,
@@ -243,6 +245,49 @@ def test_build_bwrap_command_mounts_python_venv_from_path(
     assert str(python_venv_path / "bin") in command[command.index("PATH") + 1].split(":")[0]
 
 
+def test_build_bwrap_command_uses_allowlisted_worker_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bin_path = tmp_path / "bin"
+    bwrap_path = bin_path / "bwrap"
+    agent_path = bin_path / "agent-cli"
+    repo_path = tmp_path / "target-repo"
+    codex_home_path = tmp_path / "codex-home"
+    bin_path.mkdir()
+    repo_path.mkdir()
+    codex_home_path.mkdir()
+    _write_executable_shim(bwrap_path)
+    _write_executable_shim(agent_path)
+    monkeypatch.setenv("PATH", str(bin_path))
+    monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
+    monkeypatch.setenv("NOTION_API_KEY", "secret-notion-token")
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-openai-token")
+    monkeypatch.setenv("SSH_AUTH_SOCK", "/tmp/ssh-agent.sock")
+
+    command = _build_bwrap_codex_command(
+        repo_path=repo_path,
+        agent_command="agent-cli",
+        python_venv_path=None,
+    )
+
+    assert ["--ro-bind", "/", "/"] not in _command_windows(command, 3)
+    assert _contains_subsequence(command, ["--tmpfs", "/"])
+    assert _contains_subsequence(command, ["--bind", str(repo_path), str(repo_path)])
+    assert _contains_subsequence(command, ["--bind", str(codex_home_path), str(codex_home_path)])
+    assert _contains_subsequence(command, ["--ro-bind", str(agent_path), str(agent_path)])
+    assert _contains_subsequence(command, ["--clearenv"])
+    assert _contains_subsequence(command, ["--setenv", "HOME", str(WORKER_HOME_PATH)])
+    assert _contains_subsequence(command, ["--setenv", "TMPDIR", str(WORKER_TEMP_PATH)])
+    assert _contains_subsequence(command, ["--setenv", "CODEX_HOME", str(codex_home_path)])
+    assert _contains_subsequence(command, ["--setenv", "XDG_CONFIG_HOME", str(WORKER_HOME_PATH / ".config")])
+    assert "--unsetenv" not in command
+    assert str(Path.home() / ".notion-task-tracker") not in command
+    assert "secret-notion-token" not in command
+    assert "secret-openai-token" not in command
+    assert str(Path.home() / ".local") not in command[command.index("PATH") + 1]
+
+
 def test_require_codex_home_path_rejects_missing_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -370,6 +415,13 @@ def _contains_subsequence(command: list[str], expected: list[str]) -> bool:
         command[index:index + len(expected)] == expected
         for index in range(len(command) - len(expected) + 1)
     )
+
+
+def _command_windows(command: list[str], size: int) -> list[list[str]]:
+    return [
+        command[index:index + size]
+        for index in range(len(command) - size + 1)
+    ]
 
 
 def _select_first_task(ledger: dict[str, object]) -> TaskSelection:

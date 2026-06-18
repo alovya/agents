@@ -14,7 +14,8 @@ import yaml
 
 
 RALPH_HOME_PATH = Path.home() / ".ralph"
-NOTION_TASK_TRACKER_HOME_PATH = Path.home() / ".notion-task-tracker"
+WORKER_HOME_PATH = Path("/tmp/ralph-worker-home")
+WORKER_TEMP_PATH = Path("/tmp/ralph-worker-tmp")
 DEFAULT_MAX_ITERATIONS = 10
 PROMISE_PATTERN = re.compile(r"<promise>(DONE|BLOCKED|ABORT)</promise>")
 PROMISE_LINE_PATTERN = re.compile(r"^<promise>(DONE|BLOCKED|ABORT)</promise>$")
@@ -379,39 +380,41 @@ def _build_bwrap_codex_command(
 
     agent_binary_path = _resolve_agent_binary_path(agent_command)
     agent_home_path = _require_codex_home_path()
-    local_path = Path.home() / ".local"
 
     command = [bwrap_path]
-    command += ["--ro-bind", "/", "/"]
-    command += ["--tmpfs", str(Path.home())]
+    command += ["--tmpfs", "/"]
     command += ["--tmpfs", "/tmp"]
-    command += ["--ro-bind", str(local_path), str(local_path)]
+    command += _build_bwrap_dir_options_for_bind_mount_target(agent_binary_path, create_target_dir=False)
+    command += ["--ro-bind", str(agent_binary_path), str(agent_binary_path)]
+    command += _build_bwrap_dir_options_for_bind_mount_target(repo_path)
     command += ["--bind", str(repo_path), str(repo_path)]
     command += ["--dev", "/dev"]
 
     command += _build_bwrap_dir_options_for_bind_mount_target(agent_home_path)
     command += ["--bind", str(agent_home_path), str(agent_home_path)]
+    command += _build_bwrap_dir_options_for_bind_mount_target(WORKER_HOME_PATH)
+    command += _build_bwrap_dir_options_for_bind_mount_target(WORKER_TEMP_PATH)
 
     if python_venv_path is not None:
         command += _build_bwrap_dir_options_for_bind_mount_target(python_venv_path)
         command += ["--ro-bind", str(python_venv_path), str(python_venv_path)]
 
-    # TODO: Replace this ntt-specific state bind with a generic agent-state story.
-    # For now Ralph agents need installed ntt to see the same tracker cache path
-    # that ntt uses by default: ~/.notion-task-tracker/notion_tasks_graph.json.
-    if NOTION_TASK_TRACKER_HOME_PATH.is_dir():
-        command += _build_bwrap_dir_options_for_bind_mount_target(NOTION_TASK_TRACKER_HOME_PATH)
-        command += ["--bind", str(NOTION_TASK_TRACKER_HOME_PATH), str(NOTION_TASK_TRACKER_HOME_PATH)]
-
-    command += ["--setenv", "HOME", str(Path.home())]
+    command += ["--clearenv"]
+    command += ["--setenv", "HOME", str(WORKER_HOME_PATH)]
+    command += ["--setenv", "TMPDIR", str(WORKER_TEMP_PATH)]
+    command += ["--setenv", "CODEX_HOME", str(agent_home_path)]
+    command += ["--setenv", "XDG_CONFIG_HOME", str(WORKER_HOME_PATH / ".config")]
+    command += ["--setenv", "XDG_CACHE_HOME", str(WORKER_HOME_PATH / ".cache")]
+    command += ["--setenv", "XDG_DATA_HOME", str(WORKER_HOME_PATH / ".local" / "share")]
+    command += ["--setenv", "AZURE_CONFIG_DIR", str(WORKER_HOME_PATH / ".azure")]
+    command += ["--setenv", "DOCKER_CONFIG", str(WORKER_HOME_PATH / ".docker")]
+    command += ["--setenv", "GNUPGHOME", str(WORKER_HOME_PATH / ".gnupg")]
+    command += ["--setenv", "KUBECONFIG", str(WORKER_HOME_PATH / ".kube" / "config")]
     command += ["--setenv", "PATH", _build_agent_path_value(python_venv_path)]
 
     if python_venv_path is not None:
         command += ["--setenv", "VIRTUAL_ENV", str(python_venv_path)]
         command += ["--setenv", "BASH_ENV", str(python_venv_path / "bin" / "activate")]
-
-    if "NOTION_API_KEY" in os.environ:
-        command += ["--setenv", "NOTION_API_KEY", os.environ["NOTION_API_KEY"]]
 
     command += [str(agent_binary_path)]
     command += ["--ask-for-approval", "never"]
@@ -452,24 +455,23 @@ def _resolve_python_venv_path(python_venv: str | None) -> Path | None:
     return python_venv_path
 
 
-def _build_bwrap_dir_options_for_bind_mount_target(path: Path) -> list[str]:
+def _build_bwrap_dir_options_for_bind_mount_target(path: Path, *, create_target_dir: bool = True) -> list[str]:
     """
     bwrap --dir creates an empty directory inside the sandbox before bind mounting.
 
-    For /home/alovyachowdhury/.codex, this returns:
-    --dir /home/alovyachowdhury --dir /home/alovyachowdhury/.codex
+    For directory target /workspace/repo, this returns:
+    --dir /workspace --dir /workspace/repo
 
-    The caller can then add:
-    --bind /home/alovyachowdhury/.codex /home/alovyachowdhury/.codex
+    For file target /home/alovyachowdhury/.local/bin/codex with create_target_dir false, this returns:
+    --dir /home --dir /home/alovyachowdhury --dir /home/alovyachowdhury/.local --dir /home/alovyachowdhury/.local/bin
     """
-    home_path = Path.home()
-    if not path.is_relative_to(home_path):
-        return []
+    path_parts = path.resolve().parts[1:]
+    if not create_target_dir:
+        path_parts = path_parts[:-1]
 
-    relative_path = path.relative_to(home_path)
     options: list[str] = []
-    current_path = home_path
-    for part in relative_path.parts:
+    current_path = Path("/")
+    for part in path_parts:
         current_path = current_path / part
         options.extend(["--dir", str(current_path)])
     return options
@@ -698,7 +700,6 @@ def _build_agent_path_value(python_venv_path: Path | None) -> str:
         path_entries.append(str(python_venv_path / "bin"))
     path_entries.extend(
         [
-            str(Path.home() / ".local" / "bin"),
             "/usr/local/sbin",
             "/usr/local/bin",
             "/usr/sbin",
