@@ -33,7 +33,7 @@ When creating a Ralph plan, pair the Ralph job with ALOVYA tasks through the
 `PLAN.md` and `ledger.yaml` are private execution control files.
 
 Ralph plans must encode the intended Notion task pairing up front, but must not
-materialize every planned task in Notion up front. The ledger distinguishes the
+materialise every planned task in Notion up front. The ledger distinguishes the
 planned task relationship from the actual Notion task id created later.
 
 If the user mentions `parent:<id>` while asking for a Ralph plan:
@@ -43,7 +43,7 @@ If the user mentions `parent:<id>` while asking for a Ralph plan:
 3. For each planned Ralph task, record its intended Notion relationship in the
    task's ledger entry with `relationship` and `related_to`.
 4. Do not create those Notion child tasks during planning. Leave their
-   `materialized_task_id` as `null` until the worker starts that Ralph slice.
+   `materialized_task_id` as `null` until the controller starts that Ralph slice.
 5. For later subtasks discovered while planning or executing, decide the relationship
    from the work structure:
    - Use `notion_task child <existing-child-id> [title]` when the new work is a
@@ -58,13 +58,13 @@ If the user mentions `parent:<id>` while asking for a Ralph plan:
 `related_to` may be either an existing ALOVYA task id or another Ralph task id:
 
 - `related_to: ALOVYA-89` means the relationship targets an existing Notion task.
-- `related_to: R1` means the relationship targets the Notion task materialized for
+- `related_to: R1` means the relationship targets the Notion task materialised for
   Ralph task `R1`.
 
-When `related_to` is another Ralph task id, the worker must resolve that task's
+When `related_to` is another Ralph task id, the controller must resolve that task's
 `materialized_task_id` before creating the new task. If the related Ralph task has
-not materialized yet, the current task is not ready to materialize its Notion task;
-fix the task dependency ordering or report `BLOCKED`.
+not materialised yet, the current task is not ready to materialise its Notion task;
+fix the task dependency ordering before launching the worker or report `BLOCKED`.
 
 If the user does not mention `parent:<id>`, create a top-level task with
 `notion_task parent [title]` only when the Ralph work needs a root human-facing
