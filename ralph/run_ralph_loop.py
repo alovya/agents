@@ -4,6 +4,7 @@ import argparse
 import datetime as dt
 import os
 import re
+import shlex
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -345,15 +346,16 @@ def _run_agent_visibility_smoke_test(
     agent_command: str,
     python_venv_path: Path | None,
 ) -> None:
+    agent_home_path = _require_codex_home_path()
     command = _build_bwrap_codex_command(
         repo_path=repo_path,
         agent_command=agent_command,
         python_venv_path=python_venv_path,
     )
-    prompt = (
-        "Run exactly this shell command: "
-        "test -e /home/alovyachowdhury/.ralph && echo VISIBLE || echo HIDDEN. "
-        "Then answer only the word it prints."
+    prompt = _build_agent_visibility_smoke_test_prompt(
+        repo_path=repo_path,
+        agent_home_path=agent_home_path,
+        python_venv_path=python_venv_path,
     )
     completed_process = subprocess.run(
         command,
@@ -365,8 +367,166 @@ def _run_agent_visibility_smoke_test(
     )
     if completed_process.returncode != 0:
         raise RuntimeError(f"Ralph agent sandbox smoke test failed:\n{completed_process.stdout}")
-    if _find_last_non_empty_line(completed_process.stdout) != "HIDDEN":
-        raise RuntimeError(f"Ralph agent can see ~/.ralph. Refusing to run:\n{completed_process.stdout}")
+    if _find_last_non_empty_line(completed_process.stdout) != "RALPH_SANDBOX_OK":
+        raise RuntimeError(f"Ralph agent sandbox smoke test did not prove isolation:\n{completed_process.stdout}")
+
+
+def _build_agent_visibility_smoke_test_prompt(
+    repo_path: Path,
+    agent_home_path: Path,
+    python_venv_path: Path | None,
+) -> str:
+    shell_command = _build_agent_visibility_smoke_test_shell_command(
+        repo_path=repo_path,
+        agent_home_path=agent_home_path,
+        python_venv_path=python_venv_path,
+    )
+    return "\n".join(
+        [
+            "Run exactly this shell command:",
+            shell_command,
+            "Then answer only the final line it prints.",
+        ]
+    )
+
+
+def _build_agent_visibility_smoke_test_shell_command(
+    repo_path: Path,
+    agent_home_path: Path,
+    python_venv_path: Path | None,
+) -> str:
+    explicitly_visible_paths = [repo_path, agent_home_path]
+    if python_venv_path is not None:
+        explicitly_visible_paths.append(python_venv_path)
+    hidden_paths = _remove_paths_that_overlap_explicit_mounts(
+        hidden_paths=_build_sensitive_paths_that_workers_must_not_see(),
+        explicitly_visible_paths=explicitly_visible_paths,
+    )
+    command_parts = ["set -eu"]
+    command_parts += _build_shell_assertions_that_paths_are_hidden(hidden_paths)
+    command_parts += _build_shell_assertions_that_environment_variables_are_absent(
+        _build_credential_environment_variables_that_workers_must_not_receive()
+    )
+    command_parts += _build_shell_assertions_that_worker_environment_matches_bwrap_setenv_options(
+        _build_bwrap_worker_environment_variables(
+            agent_home_path=agent_home_path,
+            python_venv_path=python_venv_path,
+        )
+    )
+    command_parts += _build_shell_assertions_that_repo_is_writable(repo_path)
+    if python_venv_path is not None:
+        command_parts += _build_shell_assertions_that_python_venv_is_read_only(python_venv_path)
+    command_parts += ["echo RALPH_SANDBOX_OK"]
+    return " && ".join(command_parts)
+
+
+def _build_sensitive_paths_that_workers_must_not_see() -> list[Path]:
+    return [
+        RALPH_HOME_PATH,
+        Path.home() / ".notion-task-tracker",
+        Path.home() / ".ssh",
+        Path.home() / ".config",
+        Path.home() / ".cache",
+        Path.home() / ".local" / "share",
+        Path.home() / ".local" / "state",
+        Path("/workspace/.notion-task-tracker"),
+        Path("/workspace/.ssh"),
+        Path("/workspace/.config"),
+        Path("/workspace/.cache"),
+        Path("/workspace/.codex"),
+    ]
+
+
+def _build_credential_environment_variables_that_workers_must_not_receive() -> list[str]:
+    return [
+        "NOTION_API_KEY",
+        "OPENAI_API_KEY",
+        "SSH_AUTH_SOCK",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AZURE_TOKEN",
+        "GITHUB_TOKEN",
+    ]
+
+
+def _remove_paths_that_overlap_explicit_mounts(
+    hidden_paths: list[Path],
+    explicitly_visible_paths: list[Path],
+) -> list[Path]:
+    return [
+        hidden_path
+        for hidden_path in hidden_paths
+        if not any(
+            _paths_overlap(left_path=hidden_path, right_path=visible_path)
+            for visible_path in explicitly_visible_paths
+        )
+    ]
+
+
+def _paths_overlap(left_path: Path, right_path: Path) -> bool:
+    resolved_left_path = left_path.resolve()
+    resolved_right_path = right_path.resolve()
+    return (
+        resolved_left_path == resolved_right_path
+        or resolved_left_path.is_relative_to(resolved_right_path)
+        or resolved_right_path.is_relative_to(resolved_left_path)
+    )
+
+
+def _build_shell_assertions_that_paths_are_hidden(paths: list[Path]) -> list[str]:
+    return [
+        f"test ! -e {_quote_shell_path(path)} || {{ echo RALPH_SANDBOX_LEAKED_PATH {_quote_shell_path(path)}; exit 1; }}"
+        for path in paths
+    ]
+
+
+def _build_shell_assertions_that_environment_variables_are_absent(variable_names: list[str]) -> list[str]:
+    return [
+        f"test -z \"${{{variable_name}:-}}\" || {{ echo RALPH_SANDBOX_LEAKED_VARIABLE {variable_name}; exit 1; }}"
+        for variable_name in variable_names
+    ]
+
+
+def _build_shell_assertions_that_worker_environment_matches_bwrap_setenv_options(
+    environment_variables: list[tuple[str, str]],
+) -> list[str]:
+    return [
+        f"test \"${variable_name}\" = {_quote_shell_value(value)}"
+        for variable_name, value in environment_variables
+    ]
+
+
+def _build_shell_assertions_that_repo_is_writable(repo_path: Path) -> list[str]:
+    probe_path = repo_path / ".ralph-sandbox-write-test-dir"
+    return [
+        f"mkdir {_quote_shell_path(probe_path)}",
+        f"rmdir {_quote_shell_path(probe_path)}",
+    ]
+
+
+def _build_shell_assertions_that_python_venv_is_read_only(python_venv_path: Path) -> list[str]:
+    probe_path = python_venv_path / ".ralph-sandbox-write-test"
+    write_probe_command = f"printf blocked > {_quote_shell_path(probe_path)}"
+    return [
+        f"test -d {_quote_shell_path(python_venv_path)}",
+        (
+            f"if sh -c {_quote_shell_value(write_probe_command)}; then "
+            f"rm -f {_quote_shell_path(probe_path)}; "
+            "echo RALPH_SANDBOX_WRITABLE_VENV; "
+            "exit 1; "
+            "fi"
+        ),
+        f"test ! -e {_quote_shell_path(probe_path)}",
+        f"test \"$VIRTUAL_ENV\" = {_quote_shell_value(python_venv_path)}",
+    ]
+
+
+def _quote_shell_path(path: Path) -> str:
+    return shlex.quote(str(path))
+
+
+def _quote_shell_value(value: Path | str) -> str:
+    return shlex.quote(str(value))
 
 
 def _build_bwrap_codex_command(
@@ -400,21 +560,12 @@ def _build_bwrap_codex_command(
         command += ["--ro-bind", str(python_venv_path), str(python_venv_path)]
 
     command += ["--clearenv"]
-    command += ["--setenv", "HOME", str(WORKER_HOME_PATH)]
-    command += ["--setenv", "TMPDIR", str(WORKER_TEMP_PATH)]
-    command += ["--setenv", "CODEX_HOME", str(agent_home_path)]
-    command += ["--setenv", "XDG_CONFIG_HOME", str(WORKER_HOME_PATH / ".config")]
-    command += ["--setenv", "XDG_CACHE_HOME", str(WORKER_HOME_PATH / ".cache")]
-    command += ["--setenv", "XDG_DATA_HOME", str(WORKER_HOME_PATH / ".local" / "share")]
-    command += ["--setenv", "AZURE_CONFIG_DIR", str(WORKER_HOME_PATH / ".azure")]
-    command += ["--setenv", "DOCKER_CONFIG", str(WORKER_HOME_PATH / ".docker")]
-    command += ["--setenv", "GNUPGHOME", str(WORKER_HOME_PATH / ".gnupg")]
-    command += ["--setenv", "KUBECONFIG", str(WORKER_HOME_PATH / ".kube" / "config")]
-    command += ["--setenv", "PATH", _build_agent_path_value(python_venv_path)]
-
-    if python_venv_path is not None:
-        command += ["--setenv", "VIRTUAL_ENV", str(python_venv_path)]
-        command += ["--setenv", "BASH_ENV", str(python_venv_path / "bin" / "activate")]
+    command += _build_bwrap_setenv_options(
+        _build_bwrap_worker_environment_variables(
+            agent_home_path=agent_home_path,
+            python_venv_path=python_venv_path,
+        )
+    )
 
     command += [str(agent_binary_path)]
     command += ["--ask-for-approval", "never"]
@@ -424,6 +575,40 @@ def _build_bwrap_codex_command(
     command += ["--ignore-rules"]
     command += ["-"]
     return command
+
+
+def _build_bwrap_worker_environment_variables(
+    agent_home_path: Path,
+    python_venv_path: Path | None,
+) -> list[tuple[str, str]]:
+    environment_variables = [
+        ("HOME", str(WORKER_HOME_PATH)),
+        ("TMPDIR", str(WORKER_TEMP_PATH)),
+        ("CODEX_HOME", str(agent_home_path)),
+        ("XDG_CONFIG_HOME", str(WORKER_HOME_PATH / ".config")),
+        ("XDG_CACHE_HOME", str(WORKER_HOME_PATH / ".cache")),
+        ("XDG_DATA_HOME", str(WORKER_HOME_PATH / ".local" / "share")),
+        ("AZURE_CONFIG_DIR", str(WORKER_HOME_PATH / ".azure")),
+        ("DOCKER_CONFIG", str(WORKER_HOME_PATH / ".docker")),
+        ("GNUPGHOME", str(WORKER_HOME_PATH / ".gnupg")),
+        ("KUBECONFIG", str(WORKER_HOME_PATH / ".kube" / "config")),
+        ("PATH", _build_agent_path_value(python_venv_path)),
+    ]
+
+    if python_venv_path is not None:
+        environment_variables += [
+            ("VIRTUAL_ENV", str(python_venv_path)),
+            ("BASH_ENV", str(python_venv_path / "bin" / "activate")),
+        ]
+
+    return environment_variables
+
+
+def _build_bwrap_setenv_options(environment_variables: list[tuple[str, str]]) -> list[str]:
+    options: list[str] = []
+    for variable_name, value in environment_variables:
+        options += ["--setenv", variable_name, value]
+    return options
 
 
 def _require_codex_home_path() -> Path:

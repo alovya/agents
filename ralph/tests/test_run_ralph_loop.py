@@ -12,6 +12,7 @@ from ralph.run_ralph_loop import (
     TaskSelection,
     WORKER_HOME_PATH,
     WORKER_TEMP_PATH,
+    _build_agent_visibility_smoke_test_prompt,
     _build_bwrap_codex_command,
     _create_task_directory,
     _commit_verified_task,
@@ -288,6 +289,56 @@ def test_build_bwrap_command_uses_allowlisted_worker_environment(
     assert "secret-notion-token" not in command
     assert "secret-openai-token" not in command
     assert str(Path.home() / ".local") not in command[command.index("PATH") + 1]
+
+
+def test_build_agent_visibility_smoke_test_prompt_checks_sandbox_contract(tmp_path: Path) -> None:
+    repo_path = tmp_path / "target repo"
+    agent_home_path = tmp_path / "codex home"
+    python_venv_path = tmp_path / "tool venv"
+
+    prompt = _build_agent_visibility_smoke_test_prompt(
+        repo_path=repo_path,
+        agent_home_path=agent_home_path,
+        python_venv_path=python_venv_path,
+    )
+
+    assert "RALPH_SANDBOX_OK" in prompt
+    assert f"test ! -e {shlex.quote(str(Path.home() / '.ralph'))}" in prompt
+    assert f"test ! -e {shlex.quote(str(Path.home() / '.notion-task-tracker'))}" in prompt
+    assert "test ! -e /workspace/.codex" in prompt
+    assert 'test -z "${NOTION_API_KEY:-}"' in prompt
+    assert 'test -z "${OPENAI_API_KEY:-}"' in prompt
+    assert f'test "$HOME" = {shlex.quote(str(WORKER_HOME_PATH))}' in prompt
+    assert f'test "$TMPDIR" = {shlex.quote(str(WORKER_TEMP_PATH))}' in prompt
+    assert f'test "$CODEX_HOME" = {shlex.quote(str(agent_home_path))}' in prompt
+    assert f"mkdir {shlex.quote(str(repo_path / '.ralph-sandbox-write-test-dir'))}" in prompt
+    assert f"rmdir {shlex.quote(str(repo_path / '.ralph-sandbox-write-test-dir'))}" in prompt
+    assert f"test -d {shlex.quote(str(python_venv_path))}" in prompt
+    assert "printf blocked >" in prompt
+    assert ".ralph-sandbox-write-test" in prompt
+    assert f'test "$VIRTUAL_ENV" = {shlex.quote(str(python_venv_path))}' in prompt
+
+
+def test_build_agent_visibility_smoke_test_prompt_skips_venv_checks_when_absent(tmp_path: Path) -> None:
+    prompt = _build_agent_visibility_smoke_test_prompt(
+        repo_path=tmp_path / "target-repo",
+        agent_home_path=tmp_path / "codex-home",
+        python_venv_path=None,
+    )
+
+    assert "VIRTUAL_ENV" not in prompt
+    assert "printf blocked" not in prompt
+
+
+def test_build_agent_visibility_smoke_test_prompt_does_not_reject_explicit_mounts(tmp_path: Path) -> None:
+    prompt = _build_agent_visibility_smoke_test_prompt(
+        repo_path=tmp_path / "target-repo",
+        agent_home_path=Path("/workspace/.codex"),
+        python_venv_path=None,
+    )
+
+    assert "test ! -e /workspace/.codex" not in prompt
+    assert f'test "$CODEX_HOME" = {shlex.quote("/workspace/.codex")}' in prompt
 
 
 def test_require_codex_home_path_rejects_missing_environment(
