@@ -399,12 +399,13 @@ def _build_agent_visibility_smoke_test_shell_command(
     agent_home_path: Path,
     python_venv_path: Path | None,
 ) -> str:
-    explicitly_visible_paths = [repo_path, agent_home_path]
-    if python_venv_path is not None:
-        explicitly_visible_paths.append(python_venv_path)
     hidden_paths = _remove_paths_that_overlap_explicit_mounts(
         hidden_paths=_build_sensitive_paths_that_workers_must_not_see(),
-        explicitly_visible_paths=explicitly_visible_paths,
+        explicitly_visible_paths=_build_explicit_worker_mount_paths(
+            repo_path=repo_path,
+            agent_home_path=agent_home_path,
+            python_venv_path=python_venv_path,
+        ),
     )
     command_parts = ["set -eu"]
     command_parts += _build_shell_assertions_that_paths_are_hidden(hidden_paths)
@@ -422,6 +423,17 @@ def _build_agent_visibility_smoke_test_shell_command(
         command_parts += _build_shell_assertions_that_python_venv_is_read_only(python_venv_path)
     command_parts += ["echo RALPH_SANDBOX_OK"]
     return " && ".join(command_parts)
+
+
+def _build_explicit_worker_mount_paths(
+    repo_path: Path,
+    agent_home_path: Path,
+    python_venv_path: Path | None,
+) -> list[Path]:
+    explicitly_visible_paths = [repo_path, agent_home_path]
+    if python_venv_path is not None:
+        explicitly_visible_paths.append(python_venv_path)
+    return explicitly_visible_paths
 
 
 def _build_sensitive_paths_that_workers_must_not_see() -> list[Path]:
