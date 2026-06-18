@@ -339,7 +339,13 @@ def test_build_agent_visibility_smoke_test_prompt_checks_sandbox_contract(tmp_pa
     assert "RALPH_SANDBOX_OK" in prompt
     assert f"test ! -e {shlex.quote(str(Path.home() / '.ralph'))}" in prompt
     assert f"test ! -e {shlex.quote(str(Path.home() / '.notion-task-tracker'))}" in prompt
+    assert f"test ! -e {shlex.quote(str(Path.home() / '.aws'))}" in prompt
+    assert f"test ! -e {shlex.quote(str(Path.home() / '.claude'))}" in prompt
     assert "test ! -e /workspace/.codex" in prompt
+    assert "test ! -e /workspace/.aws" in prompt
+    assert "test ! -e /workspace/.claude" in prompt
+    assert "test ! -e /workspace/.docker" in prompt
+    assert "test ! -e /workspace/.kube" in prompt
     assert 'test -z "${NOTION_API_KEY:-}"' in prompt
     assert 'test -z "${OPENAI_API_KEY:-}"' in prompt
     assert f'test "$HOME" = {shlex.quote(str(WORKER_HOME_PATH))}' in prompt
