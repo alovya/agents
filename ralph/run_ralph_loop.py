@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import datetime as dt
+import json
 import os
 import re
 import shlex
@@ -20,6 +22,7 @@ WORKER_TEMP_PATH = Path("/tmp/ralph-worker-tmp")
 DEFAULT_MAX_ITERATIONS = 10
 PROMISE_PATTERN = re.compile(r"<promise>(DONE|BLOCKED|ABORT)</promise>")
 PROMISE_LINE_PATTERN = re.compile(r"^<promise>(DONE|BLOCKED|ABORT)</promise>$")
+ALOVYA_TASK_ID_PATTERN = re.compile(r"^ALOVYA-(?P<ticket_number>\d+)$")
 TASK_BLOCK_PATTERN = re.compile(
     r"<!--\s*ralph-task:start\s+(?P<task_id>[A-Za-z0-9_.-]+)\s*-->\n"
     r"(?P<body>.*?)"
@@ -93,6 +96,12 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
 
         task_path = _create_task_directory(job.tasks_path, selection.task["id"])
         print(f"Ralph task: {task_path}")
+        ledger, selection = _prepare_notion_task_for_worker_launch(
+            job=job,
+            ledger=ledger,
+            selection=selection,
+            task_path=task_path,
+        )
         prompt = _render_agent_prompt(
             repo_path=repo_path,
             ledger=ledger,
@@ -110,20 +119,37 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
         _write_text(task_path / "promise.txt", agent_result.promise)
 
         if agent_result.promise != "DONE":
+            _log_worker_promise_to_notion(
+                selection=selection,
+                task_path=task_path,
+                promise=agent_result.promise,
+                agent_output=agent_result.output,
+            )
             print(f"Agent stopped with {agent_result.promise}. See {task_path}")
             return
 
-        _verify_task_result(
-            repo_path=repo_path,
-            task=selection.task,
-            task_path=task_path,
-        )
+        changed_files = _read_changed_files(repo_path)
+        try:
+            _verify_task_result(
+                repo_path=repo_path,
+                task=selection.task,
+                task_path=task_path,
+            )
+        except Exception:
+            _log_failed_verification_to_notion(selection=selection, task_path=task_path)
+            raise
         commit_hash = _commit_verified_task(
             repo_path=repo_path,
             job=job,
             ledger=ledger,
             selection=selection,
             task_path=task_path,
+        )
+        _log_completed_worker_to_notion(
+            selection=selection,
+            task_path=task_path,
+            changed_files=changed_files,
+            commit_hash=commit_hash,
         )
         print(f"Completed {selection.task['id']}: {commit_hash}")
 
@@ -156,6 +182,163 @@ def _commit_verified_task(
     advanced_ledger = _mark_task_done(ledger, selection.task["id"])
     _write_yaml_file(job.ledger_path, advanced_ledger)
     return commit_hash
+
+
+def _prepare_notion_task_for_worker_launch(
+    job: RalphJob,
+    ledger: dict[str, Any],
+    selection: TaskSelection,
+    task_path: Path,
+) -> tuple[dict[str, Any], TaskSelection]:
+    if not _task_has_planned_notion_pairing(selection.task):
+        return ledger, selection
+
+    ledger_with_materialised_task = _materialise_planned_notion_task_before_worker_launch(
+        job=job,
+        ledger=ledger,
+        task=selection.task,
+        task_path=task_path,
+    )
+    refreshed_selection = _refresh_task_selection_from_ledger(
+        ledger=ledger_with_materialised_task,
+        selection=selection,
+    )
+    _log_slice_start_to_notion(selection=refreshed_selection, task_path=task_path)
+    return ledger_with_materialised_task, refreshed_selection
+
+
+def _materialise_planned_notion_task_before_worker_launch(
+    job: RalphJob,
+    ledger: dict[str, Any],
+    task: dict[str, Any],
+    task_path: Path,
+) -> dict[str, Any]:
+    notion_task = task["notion_task"]
+    if notion_task.get("materialized_task_id"):
+        return ledger
+
+    related_notion_task_id = _resolve_related_notion_task_id(
+        tasks=_read_tasks_from_ledger(ledger),
+        related_to=notion_task["related_to"],
+    )
+    materialised_task_id = _create_planned_notion_task(
+        relationship=notion_task["relationship"],
+        related_notion_task_id=related_notion_task_id,
+        title=notion_task["title"],
+        task_path=task_path,
+    )
+    updated_ledger = _record_materialised_notion_task_id(
+        ledger=ledger,
+        task_id=task["id"],
+        materialised_task_id=materialised_task_id,
+    )
+    _write_yaml_file(job.ledger_path, updated_ledger)
+    return updated_ledger
+
+
+def _log_slice_start_to_notion(selection: TaskSelection, task_path: Path) -> None:
+    notion_task_id = _materialised_notion_task_id_from_task(selection.task)
+    if notion_task_id is None:
+        return
+
+    _append_notion_task_log(
+        notion_task_id=notion_task_id,
+        task_path=task_path,
+        log_name="slice-start",
+        content={
+            "subheading": f"Ralph {selection.task['id']} started",
+            "blocks": [
+                {"type": "paragraph", "text": f"Goal: {selection.task['title']}"},
+                {"type": "code", "language": "yaml", "text": _dump_yaml({
+                    "ralph_task_id": selection.task["id"],
+                    "touchable_paths": selection.task.get("touchable_paths") or [],
+                    "verification_commands": selection.task.get("verification_commands") or [],
+                    "constraints": _worker_launch_constraints(),
+                })},
+            ],
+        },
+    )
+
+
+def _log_worker_promise_to_notion(
+    selection: TaskSelection,
+    task_path: Path,
+    promise: str,
+    agent_output: str,
+) -> None:
+    notion_task_id = _materialised_notion_task_id_from_task(selection.task)
+    if notion_task_id is None:
+        return
+
+    _append_notion_task_log(
+        notion_task_id=notion_task_id,
+        task_path=task_path,
+        log_name=f"worker-{promise.lower()}",
+        content={
+            "subheading": f"Worker returned {promise}",
+            "blocks": [
+                {"type": "paragraph", "text": f"Ralph task {selection.task['id']} stopped before verification."},
+                {"type": "code", "language": "text", "text": agent_output},
+                {"type": "paragraph", "text": f"Transcript path: {task_path / 'agent-output.txt'}"},
+            ],
+        },
+    )
+
+
+def _log_failed_verification_to_notion(selection: TaskSelection, task_path: Path) -> None:
+    notion_task_id = _materialised_notion_task_id_from_task(selection.task)
+    if notion_task_id is None:
+        return
+
+    _append_notion_task_log(
+        notion_task_id=notion_task_id,
+        task_path=task_path,
+        log_name="verification-failed",
+        content={
+            "subheading": "Verification failed",
+            "blocks": [
+                {"type": "paragraph", "text": f"Ralph task {selection.task['id']} returned DONE, then verification failed."},
+                {
+                    "type": "code",
+                    "language": "text",
+                    "text": _read_text_if_file_exists(task_path / "verification-output.txt"),
+                },
+                {"type": "paragraph", "text": f"Transcript path: {task_path / 'agent-output.txt'}"},
+            ],
+        },
+    )
+
+
+def _log_completed_worker_to_notion(
+    selection: TaskSelection,
+    task_path: Path,
+    changed_files: list[str],
+    commit_hash: str,
+) -> None:
+    notion_task_id = _materialised_notion_task_id_from_task(selection.task)
+    if notion_task_id is None:
+        return
+
+    _append_notion_task_log(
+        notion_task_id=notion_task_id,
+        task_path=task_path,
+        log_name="worker-completed",
+        content={
+            "subheading": f"Ralph {selection.task['id']} completed",
+            "blocks": [
+                {"type": "paragraph", "text": f"Worker promise: {_read_text_if_file_exists(task_path / 'promise.txt').strip()}"},
+                {"type": "code", "language": "text", "text": "\n".join(changed_files) or "No changed files were captured before commit."},
+                {
+                    "type": "code",
+                    "language": "text",
+                    "text": _read_text_if_file_exists(task_path / "verification-output.txt"),
+                },
+                {"type": "paragraph", "text": f"Commit hash: {commit_hash}"},
+                {"type": "paragraph", "text": f"Transcript path: {task_path / 'agent-output.txt'}"},
+                {"type": "paragraph", "text": "Unresolved risks: none recorded by the controller."},
+            ],
+        },
+    )
 
 
 def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
@@ -563,6 +746,242 @@ def _build_shell_assertions_that_python_venv_is_read_only(python_venv_path: Path
     ]
 
 
+def _task_has_planned_notion_pairing(task: dict[str, Any]) -> bool:
+    notion_task = task.get("notion_task")
+    return isinstance(notion_task, dict) and notion_task.get("planned") is True
+
+
+def _resolve_related_notion_task_id(tasks: list[dict[str, Any]], related_to: str) -> str:
+    if _is_alovya_task_id(related_to):
+        return related_to
+
+    related_task = _find_task_by_id(tasks, related_to)
+    related_notion_task_id = _materialised_notion_task_id_from_task(related_task)
+    if related_notion_task_id is None:
+        raise RuntimeError(
+            f"Task {related_to} must materialise its Notion task before another task can relate to it."
+        )
+    return related_notion_task_id
+
+
+def _create_planned_notion_task(
+    relationship: str,
+    related_notion_task_id: str,
+    title: str,
+    task_path: Path,
+) -> str:
+    output_path = task_path / "notion-create-output.json"
+    content_path = _write_notion_content_file(
+        task_path=task_path,
+        log_name="create",
+        content={
+            "subheading": "Ralph task materialised",
+            "blocks": [
+                {"type": "paragraph", "text": f"Created from Ralph plan: {title}"},
+            ],
+        },
+    )
+    command = _build_notion_task_creation_command(
+        relationship=relationship,
+        related_notion_task_id=related_notion_task_id,
+        title=title,
+        content_path=content_path,
+        output_path=output_path,
+    )
+    completed_process = _run_notion_tracker_command(command)
+    _write_text(task_path / "notion-create-stdout.txt", completed_process.stdout)
+    return _extract_created_notion_task_id(
+        output_text=completed_process.stdout,
+        output_path=output_path,
+        excluded_task_id=related_notion_task_id,
+    )
+
+
+def _append_notion_task_log(
+    notion_task_id: str,
+    task_path: Path,
+    log_name: str,
+    content: dict[str, Any],
+) -> None:
+    content_path = _write_notion_content_file(task_path=task_path, log_name=log_name, content=content)
+    output_path = task_path / f"notion-{log_name}-output.json"
+    command = [
+        _resolve_notion_tracker_command_path(),
+        "--log",
+        "--ticket-number",
+        _ticket_number_from_alovya_task_id(notion_task_id),
+        "--content-path",
+        str(content_path),
+        "--output-path",
+        str(output_path),
+    ]
+    completed_process = _run_notion_tracker_command(command)
+    _write_text(task_path / f"notion-{log_name}-stdout.txt", completed_process.stdout)
+
+
+def _build_notion_task_creation_command(
+    relationship: str,
+    related_notion_task_id: str,
+    title: str,
+    content_path: Path,
+    output_path: Path,
+) -> list[str]:
+    if relationship == "child":
+        return [
+            _resolve_notion_tracker_command_path(),
+            "--child",
+            "--parent-ticket-number",
+            _ticket_number_from_alovya_task_id(related_notion_task_id),
+            "--title",
+            title,
+            "--content-path",
+            str(content_path),
+            "--output-path",
+            str(output_path),
+        ]
+    if relationship == "sibling":
+        return [
+            _resolve_notion_tracker_command_path(),
+            "--sibling",
+            "--sibling-ticket-number",
+            _ticket_number_from_alovya_task_id(related_notion_task_id),
+            "--title",
+            title,
+            "--content-path",
+            str(content_path),
+            "--output-path",
+            str(output_path),
+        ]
+    raise ValueError(f"Unsupported Notion relationship: {relationship}")
+
+
+def _record_materialised_notion_task_id(
+    ledger: dict[str, Any],
+    task_id: str,
+    materialised_task_id: str,
+) -> dict[str, Any]:
+    updated_ledger = copy.deepcopy(ledger)
+    for task in _read_tasks_from_ledger(updated_ledger):
+        if task["id"] == task_id:
+            task["notion_task"]["materialized_task_id"] = materialised_task_id
+            return updated_ledger
+    raise ValueError(f"Unknown Ralph task id: {task_id}")
+
+
+def _refresh_task_selection_from_ledger(
+    ledger: dict[str, Any],
+    selection: TaskSelection,
+) -> TaskSelection:
+    return TaskSelection(
+        task=_find_task_by_id(_read_tasks_from_ledger(ledger), selection.task["id"]),
+        shared_plan_context=selection.shared_plan_context,
+        active_task_plan_context=selection.active_task_plan_context,
+    )
+
+
+def _find_task_by_id(tasks: list[dict[str, Any]], task_id: str) -> dict[str, Any]:
+    for task in tasks:
+        if task["id"] == task_id:
+            return task
+    raise ValueError(f"Unknown Ralph task id: {task_id}")
+
+
+def _materialised_notion_task_id_from_task(task: dict[str, Any]) -> str | None:
+    notion_task = task.get("notion_task")
+    if not isinstance(notion_task, dict):
+        return None
+
+    materialised_task_id = notion_task.get("materialized_task_id")
+    if materialised_task_id:
+        return materialised_task_id
+    return None
+
+
+def _write_notion_content_file(task_path: Path, log_name: str, content: dict[str, Any]) -> Path:
+    content_path = task_path / f"notion-{log_name}-content.json"
+    content_path.write_text(json.dumps(content, indent=2, sort_keys=True), encoding="utf-8")
+    return content_path
+
+
+def _run_notion_tracker_command(command: list[str]) -> subprocess.CompletedProcess[str]:
+    completed_process = subprocess.run(
+        command,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    if completed_process.returncode != 0:
+        raise RuntimeError(f"Notion task tracker command failed:\n{completed_process.stdout}")
+    return completed_process
+
+
+def _extract_created_notion_task_id(output_text: str, output_path: Path, excluded_task_id: str) -> str:
+    candidate_task_ids = _alovya_task_ids_from_text(output_text)
+    if output_path.is_file():
+        candidate_task_ids += _alovya_task_ids_from_text(output_path.read_text(encoding="utf-8"))
+
+    created_task_ids = [
+        task_id
+        for task_id in dict.fromkeys(candidate_task_ids)
+        if task_id != excluded_task_id
+    ]
+    if len(created_task_ids) != 1:
+        raise RuntimeError(
+            "Could not determine the single Notion task created by ntt. "
+            f"Candidates: {created_task_ids}"
+        )
+    return created_task_ids[0]
+
+
+def _alovya_task_ids_from_text(text: str) -> list[str]:
+    return re.findall(r"ALOVYA-\d+", text)
+
+
+def _is_alovya_task_id(value: str) -> bool:
+    return ALOVYA_TASK_ID_PATTERN.match(value) is not None
+
+
+def _ticket_number_from_alovya_task_id(task_id: str) -> str:
+    match = ALOVYA_TASK_ID_PATTERN.match(task_id)
+    if match is None:
+        raise ValueError(f"Expected ALOVYA task id, got: {task_id}")
+    return match.group("ticket_number")
+
+
+def _resolve_notion_tracker_command_path() -> str:
+    command_path = shutil.which("ntt")
+    if command_path is not None:
+        return command_path
+
+    workspace_command_path = Path("/workspace/venv/bin/ntt")
+    if workspace_command_path.is_file():
+        return str(workspace_command_path)
+
+    raise RuntimeError("Notion task tracker command not found: ntt")
+
+
+def _read_changed_files(repo_path: Path) -> list[str]:
+    status_output = _read_git_status(repo_path)
+    if not status_output:
+        return []
+    return status_output.splitlines()
+
+
+def _read_text_if_file_exists(path: Path) -> str:
+    if path.is_file():
+        return path.read_text(encoding="utf-8")
+    return ""
+
+
+def _worker_launch_constraints() -> list[str]:
+    return [
+        "Worker cannot read Ralph controller state.",
+        "Worker cannot receive Notion credentials or tracker state.",
+        "Controller owns verification, commits, and Notion logging.",
+    ]
+
+
 def _quote_shell_path(path: Path) -> str:
     return shlex.quote(str(path))
 
@@ -781,6 +1200,7 @@ def _read_tasks_from_ledger(ledger: dict[str, Any]) -> list[dict[str, Any]]:
         raise ValueError("ledger.yaml must contain a tasks list.")
     for task in tasks:
         _validate_task_shape(task)
+    _validate_planned_notion_task_relationships(tasks)
     return tasks
 
 
@@ -794,6 +1214,45 @@ def _validate_task_shape(task: Any) -> None:
         raise ValueError(f"Invalid task status for {task['id']}: {task['status']}")
     if _contains_forbidden_plan_field(task):
         raise ValueError(f"Ledger task {task['id']} contains plan-like prose fields.")
+    _validate_notion_task_shape(task)
+
+
+def _validate_notion_task_shape(task: dict[str, Any]) -> None:
+    notion_task = task.get("notion_task")
+    if notion_task is None:
+        return
+    if not isinstance(notion_task, dict):
+        raise ValueError(f"notion_task for {task['id']} must be a mapping.")
+    if not isinstance(notion_task.get("planned"), bool):
+        raise ValueError(f"notion_task.planned for {task['id']} must be boolean.")
+    if notion_task["planned"] is False:
+        return
+    if notion_task.get("relationship") not in {"child", "sibling"}:
+        raise ValueError(f"notion_task.relationship for {task['id']} must be child or sibling.")
+    for required_key in ["related_to", "title"]:
+        if not isinstance(notion_task.get(required_key), str) or not notion_task[required_key].strip():
+            raise ValueError(f"notion_task.{required_key} for {task['id']} must be a non-empty string.")
+    materialised_task_id = notion_task.get("materialized_task_id")
+    if materialised_task_id is not None and (
+        not isinstance(materialised_task_id, str) or not _is_alovya_task_id(materialised_task_id)
+    ):
+        raise ValueError(f"notion_task.materialized_task_id for {task['id']} must be null or an ALOVYA id.")
+
+
+def _validate_planned_notion_task_relationships(tasks: list[dict[str, Any]]) -> None:
+    task_ids = {task["id"] for task in tasks}
+    for task in tasks:
+        notion_task = task.get("notion_task")
+        if not isinstance(notion_task, dict) or notion_task.get("planned") is not True:
+            continue
+
+        related_to = notion_task["related_to"]
+        if _is_alovya_task_id(related_to):
+            continue
+        if related_to not in task_ids:
+            raise ValueError(f"notion_task.related_to for {task['id']} references unknown Ralph task {related_to}.")
+        if related_to not in (task.get("depends_on") or []):
+            raise ValueError(f"Task {task['id']} must depend on related Ralph task {related_to}.")
 
 
 def _contains_forbidden_plan_field(value: Any) -> bool:
