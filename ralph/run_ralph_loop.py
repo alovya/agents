@@ -350,6 +350,10 @@ def _run_agent_visibility_smoke_test(
     agent_command: str,
     python_venv_path: Path | None,
 ) -> None:
+    _refuse_explicit_worker_mount_that_overlaps_sensitive_hidden_paths(
+        path=repo_path,
+        role="Target repo",
+    )
     agent_home_path = _require_codex_home_path()
     command = _build_bwrap_codex_command(
         repo_path=repo_path,
@@ -661,16 +665,19 @@ def _resolve_python_venv_path(python_venv: str | None) -> Path | None:
         raise FileNotFoundError(f"Python venv does not exist: {python_venv_path}")
     if not (python_venv_path / "bin" / "python").is_file():
         raise FileNotFoundError(f"Python venv is missing bin/python: {python_venv_path}")
-    _refuse_python_venv_that_overlaps_sensitive_worker_hidden_paths(python_venv_path)
+    _refuse_explicit_worker_mount_that_overlaps_sensitive_hidden_paths(
+        path=python_venv_path,
+        role="Python venv",
+    )
     return python_venv_path
 
 
-def _refuse_python_venv_that_overlaps_sensitive_worker_hidden_paths(python_venv_path: Path) -> None:
+def _refuse_explicit_worker_mount_that_overlaps_sensitive_hidden_paths(path: Path, role: str) -> None:
     for sensitive_path in _build_sensitive_paths_that_workers_must_not_see():
-        if _paths_overlap(left_path=python_venv_path, right_path=sensitive_path):
+        if _paths_overlap(left_path=path, right_path=sensitive_path):
             raise ValueError(
-                "Python venv must not overlap worker-hidden sensitive state: "
-                f"{python_venv_path} overlaps {sensitive_path}"
+                f"{role} must not overlap worker-hidden sensitive state: "
+                f"{path} overlaps {sensitive_path}"
             )
 
 

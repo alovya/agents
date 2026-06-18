@@ -25,6 +25,7 @@ from ralph.run_ralph_loop import (
     _render_agent_prompt,
     _resolve_python_venv_path,
     _require_codex_home_path,
+    _run_agent_visibility_smoke_test,
     _run_command_and_tee_output,
     _select_next_task_from_plan_and_ledger,
     _write_yaml_file,
@@ -381,6 +382,26 @@ def test_build_agent_visibility_smoke_test_prompt_does_not_reject_explicit_mount
     assert f'test "$CODEX_HOME" = {shlex.quote("/workspace/.codex")}' in prompt
 
 
+def test_run_agent_visibility_smoke_test_rejects_sensitive_repo_mount(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_path = tmp_path / "workspace"
+    sensitive_state_path = repo_path / ".aws"
+    sensitive_state_path.mkdir(parents=True)
+    monkeypatch.setattr(
+        "ralph.run_ralph_loop._build_sensitive_paths_that_workers_must_not_see",
+        lambda: [sensitive_state_path],
+    )
+
+    with pytest.raises(ValueError, match="Target repo must not overlap"):
+        _run_agent_visibility_smoke_test(
+            repo_path=repo_path,
+            agent_command="agent-cli",
+            python_venv_path=None,
+        )
+
+
 def test_require_codex_home_path_rejects_missing_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -402,7 +423,7 @@ def test_resolve_python_venv_path_rejects_sensitive_path_overlap(
         lambda: [sensitive_state_path],
     )
 
-    with pytest.raises(ValueError, match="worker-hidden sensitive state"):
+    with pytest.raises(ValueError, match="Python venv must not overlap"):
         _resolve_python_venv_path(str(python_venv_path))
 
 
