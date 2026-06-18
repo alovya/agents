@@ -212,7 +212,7 @@ Do not explain docs or docstrings through old behaviour, previous mistakes, migr
 - Never write redundant comments - only comment code that does not explain itself.
 - Never use abbreviations or acronyms except for obvious ones, e.g. i/j for loops, err for errors, ctx for contexts, config for configuration, etc.
 - Never duplicate functionality or helpers if they already exist in the codebase; check the codebase for such functionality first.
-- Never write path variables without a `_path` suffix; varibles names and CLI args like `--onnx` are disgusting.
+- Never write path variables without a `_path` suffix: variable names and CLI args like `--onnx` are disgusting; `_dir` suffixes are an exception.
 - Never name private functions without a leading underscore `_`.
 - Never use comments like these to section code, it is disgusting; solve using language features instead:
 
