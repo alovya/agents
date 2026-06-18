@@ -10,7 +10,7 @@ import yaml
 from ralph.run_ralph_loop import (
     RalphJob,
     TaskSelection,
-    _build_bwrap_agent_command,
+    _build_bwrap_codex_command,
     _create_task_directory,
     _commit_verified_task,
     _verify_task_result,
@@ -229,7 +229,7 @@ def test_build_bwrap_command_mounts_python_venv_from_path(
     monkeypatch.setenv("PATH", str(bin_path))
     monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
 
-    command = _build_bwrap_agent_command(
+    command = _build_bwrap_codex_command(
         repo_path=tmp_path,
         agent_command="agent-cli",
         python_venv_path=python_venv_path,

@@ -272,7 +272,7 @@ def _run_agent(
     tee_output: bool,
 ) -> AgentResult:
     _write_text(output_path, "")
-    command = _build_bwrap_agent_command(
+    command = _build_bwrap_codex_command(
         repo_path=repo_path,
         agent_command=agent_command,
         python_venv_path=python_venv_path,
@@ -344,7 +344,7 @@ def _run_agent_visibility_smoke_test(
     agent_command: str,
     python_venv_path: Path | None,
 ) -> None:
-    command = _build_bwrap_agent_command(
+    command = _build_bwrap_codex_command(
         repo_path=repo_path,
         agent_command=agent_command,
         python_venv_path=python_venv_path,
@@ -368,7 +368,7 @@ def _run_agent_visibility_smoke_test(
         raise RuntimeError(f"Ralph agent can see ~/.ralph. Refusing to run:\n{completed_process.stdout}")
 
 
-def _build_bwrap_agent_command(
+def _build_bwrap_codex_command(
     repo_path: Path,
     agent_command: str,
     python_venv_path: Path | None,
@@ -389,18 +389,18 @@ def _build_bwrap_agent_command(
     command += ["--bind", str(repo_path), str(repo_path)]
     command += ["--dev", "/dev"]
 
-    command += _build_bwrap_home_dir_options(agent_home_path)
+    command += _build_bwrap_dir_options_for_bind_mount_target(agent_home_path)
     command += ["--bind", str(agent_home_path), str(agent_home_path)]
 
     if python_venv_path is not None:
-        command += _build_bwrap_home_dir_options(python_venv_path)
+        command += _build_bwrap_dir_options_for_bind_mount_target(python_venv_path)
         command += ["--ro-bind", str(python_venv_path), str(python_venv_path)]
 
     # TODO: Replace this ntt-specific state bind with a generic agent-state story.
     # For now Ralph agents need installed ntt to see the same tracker cache path
     # that ntt uses by default: ~/.notion-task-tracker/notion_tasks_graph.json.
     if NOTION_TASK_TRACKER_HOME_PATH.is_dir():
-        command += _build_bwrap_home_dir_options(NOTION_TASK_TRACKER_HOME_PATH)
+        command += _build_bwrap_dir_options_for_bind_mount_target(NOTION_TASK_TRACKER_HOME_PATH)
         command += ["--bind", str(NOTION_TASK_TRACKER_HOME_PATH), str(NOTION_TASK_TRACKER_HOME_PATH)]
 
     command += ["--setenv", "HOME", str(Path.home())]
@@ -452,7 +452,16 @@ def _resolve_python_venv_path(python_venv: str | None) -> Path | None:
     return python_venv_path
 
 
-def _build_bwrap_home_dir_options(path: Path) -> list[str]:
+def _build_bwrap_dir_options_for_bind_mount_target(path: Path) -> list[str]:
+    """
+    bwrap --dir creates an empty directory inside the sandbox before bind mounting.
+
+    For /home/alovyachowdhury/.codex, this returns:
+    --dir /home/alovyachowdhury --dir /home/alovyachowdhury/.codex
+
+    The caller can then add:
+    --bind /home/alovyachowdhury/.codex /home/alovyachowdhury/.codex
+    """
     home_path = Path.home()
     if not path.is_relative_to(home_path):
         return []
