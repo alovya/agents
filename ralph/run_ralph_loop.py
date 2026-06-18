@@ -633,11 +633,17 @@ def _resolve_python_venv_path(python_venv: str | None) -> Path | None:
         raise FileNotFoundError(f"Python venv does not exist: {python_venv_path}")
     if not (python_venv_path / "bin" / "python").is_file():
         raise FileNotFoundError(f"Python venv is missing bin/python: {python_venv_path}")
-    if _is_path_inside(child_path=python_venv_path, parent_path=RALPH_HOME_PATH):
-        raise ValueError(
-            f"Python venv must not live under {RALPH_HOME_PATH}; mounting it would expose Ralph controller state."
-        )
+    _refuse_python_venv_that_overlaps_sensitive_worker_hidden_paths(python_venv_path)
     return python_venv_path
+
+
+def _refuse_python_venv_that_overlaps_sensitive_worker_hidden_paths(python_venv_path: Path) -> None:
+    for sensitive_path in _build_sensitive_paths_that_workers_must_not_see():
+        if _paths_overlap(left_path=python_venv_path, right_path=sensitive_path):
+            raise ValueError(
+                "Python venv must not overlap worker-hidden sensitive state: "
+                f"{python_venv_path} overlaps {sensitive_path}"
+            )
 
 
 def _build_bwrap_dir_options_for_bind_mount_target(path: Path, *, create_target_dir: bool = True) -> list[str]:

@@ -22,6 +22,7 @@ from ralph.run_ralph_loop import (
     _parse_agent_promise,
     _read_tasks_from_ledger,
     _render_agent_prompt,
+    _resolve_python_venv_path,
     _require_codex_home_path,
     _run_command_and_tee_output,
     _select_next_task_from_plan_and_ledger,
@@ -350,6 +351,36 @@ def test_require_codex_home_path_rejects_missing_environment(
         _require_codex_home_path()
 
 
+def test_resolve_python_venv_path_rejects_sensitive_path_overlap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sensitive_state_path = tmp_path / "sensitive-state"
+    python_venv_path = sensitive_state_path / "tool-venv"
+    _create_python_venv_shape(python_venv_path)
+    monkeypatch.setattr(
+        "ralph.run_ralph_loop._build_sensitive_paths_that_workers_must_not_see",
+        lambda: [sensitive_state_path],
+    )
+
+    with pytest.raises(ValueError, match="worker-hidden sensitive state"):
+        _resolve_python_venv_path(str(python_venv_path))
+
+
+def test_resolve_python_venv_path_accepts_non_sensitive_helper_venv(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    python_venv_path = tmp_path / "tool-venv"
+    _create_python_venv_shape(python_venv_path)
+    monkeypatch.setattr(
+        "ralph.run_ralph_loop._build_sensitive_paths_that_workers_must_not_see",
+        lambda: [tmp_path / "sensitive-state"],
+    )
+
+    assert _resolve_python_venv_path(str(python_venv_path)) == python_venv_path
+
+
 def test_marks_task_done_without_mutating_input() -> None:
     ledger = _build_example_ledger()
 
@@ -509,6 +540,12 @@ def _initialise_git_repo(repo_path: Path) -> Path:
     _run_git(repo_path, "add", ".")
     _run_git(repo_path, "commit", "-m", "Initial commit")
     return repo_path
+
+
+def _create_python_venv_shape(python_venv_path: Path) -> None:
+    python_path = python_venv_path / "bin" / "python"
+    python_path.parent.mkdir(parents=True)
+    python_path.write_text("")
 
 
 def _install_pre_commit_hook_that_requires_pending_ledger(
