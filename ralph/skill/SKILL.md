@@ -10,7 +10,8 @@ Use this skill when creating or maintaining Ralph loop artefacts.
 Ralph separates planning from execution:
 
 1. Planning sessions may read and write `~/.ralph`.
-2. Execution workers must not see `~/.ralph`.
+2. Execution workers must not see Ralph controller state or credential-bearing
+   personal/tool state under `HOME` or `/workspace`.
 3. The Ralph controller slices the private plan and gives each worker only the active task context.
 
 ## Project Shape
