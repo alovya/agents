@@ -16,6 +16,7 @@ from ralph.run_ralph_loop import (
     _build_bwrap_codex_command,
     _create_task_directory,
     _commit_verified_task,
+    main,
     _verify_task_result,
     _mark_task_done,
     _parse_arguments,
@@ -141,6 +142,38 @@ def test_parse_args_accepts_python_venv() -> None:
     ])
 
     assert arguments.python_venv == "/tmp/tooling-venv"
+
+
+def test_smoke_test_resolves_repo_path_before_running_sandbox_check(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_path = tmp_path / "target-repo"
+    repo_path.mkdir()
+    observed_repo_paths: list[Path] = []
+
+    def run_agent_visibility_smoke_test_mock(
+        repo_path: Path,
+        agent_command: str,
+        python_venv_path: Path | None,
+    ) -> None:
+        observed_repo_paths.append(repo_path)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "ralph.run_ralph_loop._run_agent_visibility_smoke_test",
+        run_agent_visibility_smoke_test_mock,
+    )
+
+    main([
+        "smoke-test",
+        "--repo-path",
+        "target-repo",
+        "--agent-command",
+        "agent-cli",
+    ])
+
+    assert observed_repo_paths == [repo_path]
 
 
 def test_run_command_and_tee_output_writes_to_terminal_and_file(

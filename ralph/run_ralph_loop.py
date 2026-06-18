@@ -63,7 +63,7 @@ def main(argv: list[str] | None = None) -> None:
         return
     if arguments.command == "smoke-test":
         _run_agent_visibility_smoke_test(
-            repo_path=Path(arguments.repo_path).expanduser(),
+            repo_path=_resolve_repo_path(arguments.repo_path),
             agent_command=arguments.agent_command,
             python_venv_path=_resolve_python_venv_path(arguments.python_venv),
         )
@@ -72,7 +72,7 @@ def main(argv: list[str] | None = None) -> None:
 
 
 def _run_ralph_loop(arguments: argparse.Namespace) -> None:
-    repo_path = Path(arguments.repo_path).expanduser().resolve()
+    repo_path = _resolve_repo_path(arguments.repo_path)
     python_venv_path = _resolve_python_venv_path(arguments.python_venv)
     job = _find_ralph_job(arguments.job_name)
     _prepare_job_directories(job)
@@ -179,12 +179,16 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
     )
     run_parser.set_defaults(tee_agent_output=True)
 
-    smoke_parser = subparsers.add_parser("smoke-test", help="Verify the agent sandbox hides ~/.ralph.")
+    smoke_parser = subparsers.add_parser("smoke-test", help="Verify the agent sandbox contract.")
     smoke_parser.add_argument("--repo-path", required=True)
     smoke_parser.add_argument("--agent-command", default=_read_default_agent_command())
     smoke_parser.add_argument("--python-venv")
 
     return parser.parse_args(argv)
+
+
+def _resolve_repo_path(repo_path: str) -> Path:
+    return Path(repo_path).expanduser().resolve()
 
 
 def _find_ralph_job(job_name: str) -> RalphJob:
