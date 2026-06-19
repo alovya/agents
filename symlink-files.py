@@ -100,7 +100,7 @@ def _find_skill_directories(agents_repo_path: Path) -> list[SkillDirectory]:
         else:
             skill_name = skill_source_path.name
         skill_directories.append(SkillDirectory(name=skill_name, source_path=skill_source_path))
-    _raise_for_duplicate_skill_names([sd.source_path for sd in skill_directories])
+    _raise_for_duplicate_skill_names(skill_directories)
     return skill_directories
 
 
@@ -109,10 +109,10 @@ def _is_user_skill_file(agents_repo_path: Path, skill_file_path: Path) -> bool:
     return not any(part.startswith(".") for part in relative_parts)
 
 
-def _raise_for_duplicate_skill_names(skill_source_paths: list[Path]) -> None:
+def _raise_for_duplicate_skill_names(skill_directories: list[SkillDirectory]) -> None:
     skill_paths_by_name: dict[str, list[Path]] = {}
-    for skill_source_path in skill_source_paths:
-        skill_paths_by_name.setdefault(skill_source_path.name, []).append(skill_source_path)
+    for skill_directory in skill_directories:
+        skill_paths_by_name.setdefault(skill_directory.name, []).append(skill_directory.source_path)
 
     duplicate_skill_paths = {
         skill_name: paths for skill_name, paths in skill_paths_by_name.items() if len(paths) > 1
