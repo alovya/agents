@@ -60,6 +60,14 @@ class AgentResult:
     output: str
 
 
+@dataclass(frozen=True)
+class AgentBackendConfig:
+    backend_name: str
+    command_name: str
+    agent_home_path: Path
+    agent_home_environment_variable: str
+
+
 def main(argv: list[str] | None = None) -> None:
     arguments = _parse_arguments(argv)
     if arguments.command == "run":
@@ -68,6 +76,7 @@ def main(argv: list[str] | None = None) -> None:
     if arguments.command == "smoke-test":
         _run_agent_visibility_smoke_test(
             repo_path=_resolve_repo_path(arguments.repo_path),
+            agent_backend=arguments.agent_backend,
             agent_command=arguments.agent_command,
             python_venv_path=_resolve_python_venv_path(arguments.python_venv),
         )
@@ -83,6 +92,7 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
     _refuse_unsafe_starting_state(repo_path, job)
     _run_agent_visibility_smoke_test(
         repo_path=repo_path,
+        agent_backend=arguments.agent_backend,
         agent_command=arguments.agent_command,
         python_venv_path=python_venv_path,
     )
@@ -112,6 +122,7 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
         agent_result = _run_agent(
             repo_path=repo_path,
             prompt=prompt,
+            agent_backend=arguments.agent_backend,
             agent_command=arguments.agent_command,
             python_venv_path=python_venv_path,
             output_path=task_path / "agent-output.txt",
@@ -350,7 +361,8 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
     run_parser.add_argument("--repo-path", required=True)
     run_parser.add_argument("--job-name", required=True)
     run_parser.add_argument("--max-iterations", type=int, default=DEFAULT_MAX_ITERATIONS)
-    run_parser.add_argument("--agent-command", default=_read_default_agent_command())
+    run_parser.add_argument("--agent-backend", choices=["codex", "claude"], default="codex")
+    run_parser.add_argument("--agent-command")
     run_parser.add_argument(
         "--python-venv",
         help="Python venv mounted into agents with its bin directory first on PATH. Defaults to $VIRTUAL_ENV.",
@@ -365,7 +377,8 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
 
     smoke_parser = subparsers.add_parser("smoke-test", help="Verify the agent sandbox contract.")
     smoke_parser.add_argument("--repo-path", required=True)
-    smoke_parser.add_argument("--agent-command", default=_read_default_agent_command())
+    smoke_parser.add_argument("--agent-backend", choices=["codex", "claude"], default="codex")
+    smoke_parser.add_argument("--agent-command")
     smoke_parser.add_argument("--python-venv")
 
     return parser.parse_args(argv)
@@ -467,15 +480,20 @@ def _render_agent_prompt(
 def _run_agent(
     repo_path: Path,
     prompt: str,
-    agent_command: str,
+    agent_backend: str,
+    agent_command: str | None,
     python_venv_path: Path | None,
     output_path: Path,
     tee_output: bool,
 ) -> AgentResult:
     _write_text(output_path, "")
-    command = _build_bwrap_codex_command(
-        repo_path=repo_path,
+    backend_config = _select_agent_backend_config(
+        agent_backend=agent_backend,
         agent_command=agent_command,
+    )
+    command = _build_bwrap_agent_command(
+        repo_path=repo_path,
+        backend_config=backend_config,
         python_venv_path=python_venv_path,
     )
     if tee_output:
@@ -542,7 +560,8 @@ def _run_command_and_tee_output(
 
 def _run_agent_visibility_smoke_test(
     repo_path: Path,
-    agent_command: str,
+    agent_backend: str,
+    agent_command: str | None,
     python_venv_path: Path | None,
 ) -> None:
     if not repo_path.is_dir():
@@ -551,15 +570,18 @@ def _run_agent_visibility_smoke_test(
         path=repo_path,
         role="Target repo",
     )
-    agent_home_path = _require_codex_home_path()
-    command = _build_bwrap_codex_command(
-        repo_path=repo_path,
+    backend_config = _select_agent_backend_config(
+        agent_backend=agent_backend,
         agent_command=agent_command,
+    )
+    command = _build_bwrap_agent_command(
+        repo_path=repo_path,
+        backend_config=backend_config,
         python_venv_path=python_venv_path,
     )
     prompt = _build_agent_visibility_smoke_test_prompt(
         repo_path=repo_path,
-        agent_home_path=agent_home_path,
+        agent_home_path=backend_config.agent_home_path,
         python_venv_path=python_venv_path,
     )
     completed_process = subprocess.run(
@@ -740,6 +762,7 @@ def _build_worker_environment_variables_to_verify_exactly(
     return [
         (variable_name, value)
         for variable_name, value in _build_bwrap_worker_environment_variables(
+            agent_home_environment_variable="CODEX_HOME",
             agent_home_path=agent_home_path,
             python_venv_path=python_venv_path,
         )
@@ -1029,17 +1052,37 @@ def _quote_shell_value(value: Path | str) -> str:
     return shlex.quote(str(value))
 
 
-def _build_bwrap_codex_command(
+def _select_agent_backend_config(
+    agent_backend: str,
+    agent_command: str | None,
+) -> AgentBackendConfig:
+    if agent_backend == "codex":
+        return _build_codex_backend_config(agent_command)
+    if agent_backend == "claude":
+        raise NotImplementedError("Claude agent backend is not implemented in this Ralph slice.")
+    raise ValueError(f"Unsupported agent backend: {agent_backend}")
+
+
+def _build_codex_backend_config(agent_command: str | None) -> AgentBackendConfig:
+    agent_home_path = _require_codex_home_path()
+    return AgentBackendConfig(
+        backend_name="codex",
+        command_name=agent_command or _read_default_codex_agent_command(),
+        agent_home_path=agent_home_path,
+        agent_home_environment_variable="CODEX_HOME",
+    )
+
+
+def _build_bwrap_agent_command(
     repo_path: Path,
-    agent_command: str,
+    backend_config: AgentBackendConfig,
     python_venv_path: Path | None,
 ) -> list[str]:
     bwrap_path = shutil.which("bwrap")
     if bwrap_path is None:
         raise RuntimeError("Ralph requires bubblewrap installed as `bwrap`.")
 
-    agent_binary_path = _resolve_agent_binary_path(agent_command)
-    agent_home_path = _require_codex_home_path()
+    agent_binary_path = _resolve_agent_binary_path(backend_config.command_name)
 
     command = [bwrap_path]
     command += ["--tmpfs", "/"]
@@ -1051,7 +1094,7 @@ def _build_bwrap_codex_command(
     command += ["--bind", str(repo_path), str(repo_path)]
     command += ["--dev", "/dev"]
 
-    command += _build_bwrap_agent_home_mount_options(agent_home_path)
+    command += _build_bwrap_agent_home_mount_options(backend_config.agent_home_path)
     command += _build_bwrap_dir_options_for_bind_mount_target(WORKER_HOME_PATH)
     command += _build_bwrap_dir_options_for_bind_mount_target(WORKER_TEMP_PATH)
 
@@ -1062,29 +1105,50 @@ def _build_bwrap_codex_command(
     command += ["--clearenv"]
     command += _build_bwrap_setenv_options(
         _build_bwrap_worker_environment_variables(
-            agent_home_path=agent_home_path,
+            agent_home_environment_variable=backend_config.agent_home_environment_variable,
+            agent_home_path=backend_config.agent_home_path,
             python_venv_path=python_venv_path,
         )
     )
 
     command += [str(agent_binary_path)]
-    command += ["--ask-for-approval", "never"]
-    command += ["exec", "-C", str(repo_path)]
-    command += ["--sandbox", "danger-full-access"]
-    command += ["--ephemeral"]
-    command += ["--ignore-rules"]
-    command += ["-"]
+    command += _build_agent_command_tail(
+        backend_config=backend_config,
+        repo_path=repo_path,
+    )
     return command
 
 
+def _build_agent_command_tail(backend_config: AgentBackendConfig, repo_path: Path) -> list[str]:
+    if backend_config.backend_name == "codex":
+        return _build_codex_command_tail(repo_path)
+    raise ValueError(f"Unsupported agent backend: {backend_config.backend_name}")
+
+
+def _build_codex_command_tail(repo_path: Path) -> list[str]:
+    return [
+        "--ask-for-approval",
+        "never",
+        "exec",
+        "-C",
+        str(repo_path),
+        "--sandbox",
+        "danger-full-access",
+        "--ephemeral",
+        "--ignore-rules",
+        "-",
+    ]
+
+
 def _build_bwrap_worker_environment_variables(
+    agent_home_environment_variable: str,
     agent_home_path: Path,
     python_venv_path: Path | None,
 ) -> list[tuple[str, str]]:
     environment_variables = [
         ("HOME", str(WORKER_HOME_PATH)),
         ("TMPDIR", str(WORKER_TEMP_PATH)),
-        ("CODEX_HOME", str(agent_home_path)),
+        (agent_home_environment_variable, str(agent_home_path)),
         ("XDG_CONFIG_HOME", str(WORKER_HOME_PATH / ".config")),
         ("XDG_CACHE_HOME", str(WORKER_HOME_PATH / ".cache")),
         ("XDG_DATA_HOME", str(WORKER_HOME_PATH / ".local" / "share")),
@@ -1500,7 +1564,7 @@ def _find_last_non_empty_line(text: str) -> str:
     return ""
 
 
-def _read_default_agent_command() -> str:
+def _read_default_codex_agent_command() -> str:
     return os.environ.get("RALPH_AGENT_COMMAND", os.environ.get("RALPH_CODEX_COMMAND", "codex"))
 
 

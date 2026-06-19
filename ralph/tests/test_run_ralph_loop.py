@@ -17,7 +17,7 @@ from ralph.run_ralph_loop import (
     WORKER_HOME_PATH,
     WORKER_TEMP_PATH,
     _build_agent_visibility_smoke_test_prompt,
-    _build_bwrap_codex_command,
+    _build_bwrap_agent_command,
     _build_notion_task_creation_command,
     _create_task_directory,
     _commit_verified_task,
@@ -43,6 +43,7 @@ from ralph.run_ralph_loop import (
     _run_agent_visibility_smoke_test,
     _run_command_and_tee_output,
     _select_next_task_from_plan_and_ledger,
+    _select_agent_backend_config,
     _write_yaml_file,
 )
 
@@ -160,6 +161,106 @@ def test_parse_args_accepts_python_venv() -> None:
     assert arguments.python_venv == "/tmp/tooling-venv"
 
 
+def test_parse_args_defaults_to_codex_backend_without_eager_command_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RALPH_AGENT_COMMAND", "custom-agent")
+    monkeypatch.setenv("RALPH_CODEX_COMMAND", "custom-codex")
+
+    arguments = _parse_arguments([
+        "run",
+        "--repo-path",
+        "/tmp/repo",
+        "--job-name",
+        "example",
+    ])
+
+    assert arguments.agent_backend == "codex"
+    assert arguments.agent_command is None
+
+
+def test_parse_args_accepts_agent_backend_for_run_and_smoke_test() -> None:
+    run_arguments = _parse_arguments([
+        "run",
+        "--repo-path",
+        "/tmp/repo",
+        "--job-name",
+        "example",
+        "--agent-backend",
+        "claude",
+    ])
+    smoke_arguments = _parse_arguments([
+        "smoke-test",
+        "--repo-path",
+        "/tmp/repo",
+        "--agent-backend",
+        "claude",
+    ])
+
+    assert run_arguments.agent_backend == "claude"
+    assert smoke_arguments.agent_backend == "claude"
+
+
+def test_codex_backend_uses_ralph_agent_command_before_codex_specific_default(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home_path = tmp_path / "codex-home"
+    codex_home_path.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
+    monkeypatch.setenv("RALPH_AGENT_COMMAND", "custom-agent")
+    monkeypatch.setenv("RALPH_CODEX_COMMAND", "custom-codex")
+
+    backend_config = _select_agent_backend_config(agent_backend="codex", agent_command=None)
+
+    assert backend_config.command_name == "custom-agent"
+
+
+def test_codex_backend_uses_codex_specific_default_before_binary_name(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home_path = tmp_path / "codex-home"
+    codex_home_path.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
+    monkeypatch.delenv("RALPH_AGENT_COMMAND", raising=False)
+    monkeypatch.setenv("RALPH_CODEX_COMMAND", "custom-codex")
+
+    backend_config = _select_agent_backend_config(agent_backend="codex", agent_command=None)
+
+    assert backend_config.command_name == "custom-codex"
+
+
+def test_agent_command_override_wins_after_backend_selection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home_path = tmp_path / "codex-home"
+    codex_home_path.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
+    monkeypatch.setenv("RALPH_AGENT_COMMAND", "custom-agent")
+    monkeypatch.setenv("RALPH_CODEX_COMMAND", "custom-codex")
+
+    backend_config = _select_agent_backend_config(agent_backend="codex", agent_command="override-agent")
+
+    assert backend_config.command_name == "override-agent"
+
+
+def test_codex_backend_falls_back_to_codex_binary_name(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home_path = tmp_path / "codex-home"
+    codex_home_path.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
+    monkeypatch.delenv("RALPH_AGENT_COMMAND", raising=False)
+    monkeypatch.delenv("RALPH_CODEX_COMMAND", raising=False)
+
+    backend_config = _select_agent_backend_config(agent_backend="codex", agent_command=None)
+
+    assert backend_config.command_name == "codex"
+
+
 def test_resolve_ralph_home_path_defaults_to_workspace(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("RALPH_HOME", raising=False)
 
@@ -207,7 +308,8 @@ def test_smoke_test_resolves_repo_path_before_running_sandbox_check(
 
     def run_agent_visibility_smoke_test_mock(
         repo_path: Path,
-        agent_command: str,
+        agent_backend: str,
+        agent_command: str | None,
         python_venv_path: Path | None,
     ) -> None:
         observed_repo_paths.append(repo_path)
@@ -322,9 +424,10 @@ def test_build_bwrap_command_mounts_python_venv_from_path(
     monkeypatch.setenv("PATH", str(bin_path))
     monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
 
-    command = _build_bwrap_codex_command(
+    backend_config = _select_agent_backend_config(agent_backend="codex", agent_command="agent-cli")
+    command = _build_bwrap_agent_command(
         repo_path=tmp_path,
-        agent_command="agent-cli",
+        backend_config=backend_config,
         python_venv_path=python_venv_path,
     )
 
@@ -376,9 +479,10 @@ def test_build_bwrap_command_uses_allowlisted_worker_environment(
     monkeypatch.setenv("OPENAI_API_KEY", "secret-openai-token")
     monkeypatch.setenv("SSH_AUTH_SOCK", "/tmp/ssh-agent.sock")
 
-    command = _build_bwrap_codex_command(
+    backend_config = _select_agent_backend_config(agent_backend="codex", agent_command="agent-cli")
+    command = _build_bwrap_agent_command(
         repo_path=repo_path,
-        agent_command="agent-cli",
+        backend_config=backend_config,
         python_venv_path=None,
     )
 
@@ -398,6 +502,46 @@ def test_build_bwrap_command_uses_allowlisted_worker_environment(
     assert "secret-openai-token" not in command
     assert str(Path.home() / ".local") not in command[command.index("PATH") + 1]
     assert "--ignore-user-config" not in command
+
+
+def test_build_bwrap_agent_command_keeps_codex_command_tail(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bin_path = tmp_path / "bin"
+    bwrap_path = bin_path / "bwrap"
+    codex_path = bin_path / "codex"
+    repo_path = tmp_path / "target-repo"
+    codex_home_path = tmp_path / "codex-home"
+    bin_path.mkdir()
+    repo_path.mkdir()
+    codex_home_path.mkdir()
+    _write_executable_shim(bwrap_path)
+    _write_executable_shim(codex_path)
+    monkeypatch.setenv("PATH", str(bin_path))
+    monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
+
+    backend_config = _select_agent_backend_config(agent_backend="codex", agent_command=None)
+    command = _build_bwrap_agent_command(
+        repo_path=repo_path,
+        backend_config=backend_config,
+        python_venv_path=None,
+    )
+
+    codex_index = len(command) - 1 - list(reversed(command)).index(str(codex_path))
+    assert command[codex_index:] == [
+        str(codex_path),
+        "--ask-for-approval",
+        "never",
+        "exec",
+        "-C",
+        str(repo_path),
+        "--sandbox",
+        "danger-full-access",
+        "--ephemeral",
+        "--ignore-rules",
+        "-",
+    ]
 
 
 def test_build_agent_visibility_smoke_test_prompt_checks_sandbox_contract(tmp_path: Path) -> None:
@@ -464,6 +608,7 @@ def test_run_agent_visibility_smoke_test_rejects_missing_repo(tmp_path: Path) ->
     with pytest.raises(FileNotFoundError, match="Target repo does not exist"):
         _run_agent_visibility_smoke_test(
             repo_path=missing_repo_path,
+            agent_backend="codex",
             agent_command="agent-cli",
             python_venv_path=None,
         )
@@ -484,6 +629,7 @@ def test_run_agent_visibility_smoke_test_rejects_sensitive_repo_mount(
     with pytest.raises(ValueError, match="Target repo must not overlap"):
         _run_agent_visibility_smoke_test(
             repo_path=repo_path,
+            agent_backend="codex",
             agent_command="agent-cli",
             python_venv_path=None,
         )
