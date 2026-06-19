@@ -410,11 +410,11 @@ def _refuse_unsafe_starting_state(repo_path: Path, job: RalphJob) -> None:
         path=repo_path,
         role="Target repo",
     )
-    if _contains_path_named_under_repo(repo_path, "PLAN.md"):
+    if _contains_private_control_path_named_under_repo(repo_path, "PLAN.md"):
         raise RuntimeError("Refusing to run because PLAN.md exists under the target repo.")
-    if _contains_path_named_under_repo(repo_path, "ledger.yaml"):
+    if _contains_private_control_path_named_under_repo(repo_path, "ledger.yaml"):
         raise RuntimeError("Refusing to run because ledger.yaml exists under the target repo.")
-    if _contains_path_named_under_repo(repo_path, ".ralph"):
+    if _contains_private_control_path_named_under_repo(repo_path, ".ralph"):
         raise RuntimeError("Refusing to run because .ralph exists under the target repo.")
     if _read_git_status(repo_path):
         raise RuntimeError("Refusing to run because the target repo is dirty.")
@@ -1359,8 +1359,16 @@ def _build_safe_dirname(value: str) -> str:
     return safe_value
 
 
-def _contains_path_named_under_repo(repo_path: Path, name: str) -> bool:
-    return any(path.name == name for path in repo_path.rglob(name))
+def _contains_private_control_path_named_under_repo(repo_path: Path, name: str) -> bool:
+    return any(
+        path.name == name and not _is_public_ralph_example_path(repo_path=repo_path, path=path)
+        for path in repo_path.rglob(name)
+    )
+
+
+def _is_public_ralph_example_path(repo_path: Path, path: Path) -> bool:
+    public_examples_path = repo_path / "ralph" / "examples"
+    return path.resolve().is_relative_to(public_examples_path.resolve())
 
 
 def _is_path_inside(child_path: Path, parent_path: Path) -> bool:

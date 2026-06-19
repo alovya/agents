@@ -482,6 +482,18 @@ def test_refuse_unsafe_starting_state_rejects_sensitive_repo_mount(
         _refuse_unsafe_starting_state(repo_path, job)
 
 
+def test_refuse_unsafe_starting_state_accepts_public_ralph_examples(tmp_path: Path) -> None:
+    repo_path = _initialise_git_repo(tmp_path / "target-repo")
+    job = _create_job_with_ledger(tmp_path, _build_example_ledger())
+    example_plan_path = repo_path / "ralph" / "examples" / "PLAN.md"
+    example_plan_path.parent.mkdir(parents=True)
+    example_plan_path.write_text("Example Ralph plan.")
+    _run_git(repo_path, "add", ".")
+    _run_git(repo_path, "commit", "-m", "Add example Ralph plan")
+
+    _refuse_unsafe_starting_state(repo_path, job)
+
+
 def test_require_codex_home_path_rejects_missing_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
