@@ -20,6 +20,7 @@ DEFAULT_RALPH_HOME_PATH = Path("/workspace/.ralph")
 DEFAULT_NOTION_TRACKER_STATE_PATH = Path("/workspace/.notion-task-tracker/notion_tasks_tree.json")
 WORKER_HOME_PATH = Path("/tmp/ralph-worker-home")
 WORKER_TEMP_PATH = Path("/tmp/ralph-worker-tmp")
+WORKER_AGENT_BINARY_PATH = Path("/tmp/ralph-agent-bin/agent")
 DEFAULT_MAX_ITERATIONS = 10
 PROMISE_PATTERN = re.compile(r"<promise>(DONE|BLOCKED|ABORT)</promise>")
 PROMISE_LINE_PATTERN = re.compile(r"^<promise>(DONE|BLOCKED|ABORT)</promise>$")
@@ -581,7 +582,7 @@ def _run_agent_visibility_smoke_test(
     )
     prompt = _build_agent_visibility_smoke_test_prompt(
         repo_path=repo_path,
-        agent_home_path=backend_config.agent_home_path,
+        backend_config=backend_config,
         python_venv_path=python_venv_path,
     )
     completed_process = subprocess.run(
@@ -600,12 +601,12 @@ def _run_agent_visibility_smoke_test(
 
 def _build_agent_visibility_smoke_test_prompt(
     repo_path: Path,
-    agent_home_path: Path,
+    backend_config: AgentBackendConfig,
     python_venv_path: Path | None,
 ) -> str:
     shell_command = _build_agent_visibility_smoke_test_shell_command(
         repo_path=repo_path,
-        agent_home_path=agent_home_path,
+        backend_config=backend_config,
         python_venv_path=python_venv_path,
     )
     return "\n".join(
@@ -619,14 +620,14 @@ def _build_agent_visibility_smoke_test_prompt(
 
 def _build_agent_visibility_smoke_test_shell_command(
     repo_path: Path,
-    agent_home_path: Path,
+    backend_config: AgentBackendConfig,
     python_venv_path: Path | None,
 ) -> str:
     hidden_paths = _remove_paths_that_overlap_explicit_mounts(
         hidden_paths=_build_sensitive_paths_that_workers_must_not_see(),
         explicitly_visible_paths=_build_explicit_worker_mount_paths(
             repo_path=repo_path,
-            agent_home_path=agent_home_path,
+            agent_home_path=backend_config.agent_home_path,
             python_venv_path=python_venv_path,
         ),
     )
@@ -635,9 +636,13 @@ def _build_agent_visibility_smoke_test_shell_command(
     command_parts += _build_shell_assertions_that_environment_variables_are_absent(
         _build_credential_environment_variables_that_workers_must_not_receive()
     )
+    command_parts += _build_shell_assertions_that_unselected_backend_environment_variables_are_absent(
+        selected_agent_home_environment_variable=backend_config.agent_home_environment_variable,
+    )
     command_parts += _build_shell_assertions_that_worker_environment_matches_bwrap_setenv_options(
-        _build_worker_environment_variables_to_verify_exactly(
-            agent_home_path=agent_home_path,
+        _build_backend_state_environment_variables_to_verify_exactly(
+            agent_home_environment_variable=backend_config.agent_home_environment_variable,
+            agent_home_path=backend_config.agent_home_path,
             python_venv_path=python_venv_path,
         )
     )
@@ -701,6 +706,22 @@ def _build_credential_environment_variables_that_workers_must_not_receive() -> l
     ]
 
 
+def _build_agent_home_environment_variables() -> list[str]:
+    return ["CODEX_HOME", "CLAUDE_CONFIG_DIR"]
+
+
+def _build_shell_assertions_that_unselected_backend_environment_variables_are_absent(
+    selected_agent_home_environment_variable: str,
+) -> list[str]:
+    return _build_shell_assertions_that_environment_variables_are_absent(
+        [
+            variable_name
+            for variable_name in _build_agent_home_environment_variables()
+            if variable_name != selected_agent_home_environment_variable
+        ]
+    )
+
+
 def _remove_paths_that_overlap_explicit_mounts(
     hidden_paths: list[Path],
     explicitly_visible_paths: list[Path],
@@ -755,19 +776,15 @@ def _build_shell_assertions_that_worker_environment_matches_bwrap_setenv_options
     ]
 
 
-def _build_worker_environment_variables_to_verify_exactly(
+def _build_backend_state_environment_variables_to_verify_exactly(
+    agent_home_environment_variable: str,
     agent_home_path: Path,
     python_venv_path: Path | None,
 ) -> list[tuple[str, str]]:
-    return [
-        (variable_name, value)
-        for variable_name, value in _build_bwrap_worker_environment_variables(
-            agent_home_environment_variable="CODEX_HOME",
-            agent_home_path=agent_home_path,
-            python_venv_path=python_venv_path,
-        )
-        if variable_name != "PATH"
-    ]
+    environment_variables = [(agent_home_environment_variable, str(agent_home_path))]
+    if python_venv_path is not None:
+        environment_variables.append(("VIRTUAL_ENV", str(python_venv_path)))
+    return environment_variables
 
 
 def _build_shell_assertions_that_repo_is_writable(repo_path: Path) -> list[str]:
@@ -1059,17 +1076,27 @@ def _select_agent_backend_config(
     if agent_backend == "codex":
         return _build_codex_backend_config(agent_command)
     if agent_backend == "claude":
-        raise NotImplementedError("Claude agent backend is not implemented in this Ralph slice.")
+        return _build_claude_backend_config(agent_command)
     raise ValueError(f"Unsupported agent backend: {agent_backend}")
 
 
 def _build_codex_backend_config(agent_command: str | None) -> AgentBackendConfig:
-    agent_home_path = _require_codex_home_path()
+    agent_home_path = _require_agent_home_path_from_environment_variable("CODEX_HOME")
     return AgentBackendConfig(
         backend_name="codex",
         command_name=agent_command or _read_default_codex_agent_command(),
         agent_home_path=agent_home_path,
         agent_home_environment_variable="CODEX_HOME",
+    )
+
+
+def _build_claude_backend_config(agent_command: str | None) -> AgentBackendConfig:
+    agent_home_path = _require_agent_home_path_from_environment_variable("CLAUDE_CONFIG_DIR")
+    return AgentBackendConfig(
+        backend_name="claude",
+        command_name=agent_command or _read_default_claude_agent_command(),
+        agent_home_path=agent_home_path,
+        agent_home_environment_variable="CLAUDE_CONFIG_DIR",
     )
 
 
@@ -1082,14 +1109,14 @@ def _build_bwrap_agent_command(
     if bwrap_path is None:
         raise RuntimeError("Ralph requires bubblewrap installed as `bwrap`.")
 
-    agent_binary_path = _resolve_agent_binary_path(backend_config.command_name)
+    host_agent_binary_path = _resolve_agent_binary_path(backend_config.command_name)
 
     command = [bwrap_path]
     command += ["--tmpfs", "/"]
     command += ["--tmpfs", "/tmp"]
     command += _build_bwrap_runtime_mount_options()
-    command += _build_bwrap_dir_options_for_bind_mount_target(agent_binary_path, create_target_dir=False)
-    command += ["--ro-bind", str(agent_binary_path), str(agent_binary_path)]
+    command += _build_bwrap_dir_options_for_bind_mount_target(WORKER_AGENT_BINARY_PATH, create_target_dir=False)
+    command += ["--ro-bind", str(host_agent_binary_path), str(WORKER_AGENT_BINARY_PATH)]
     command += _build_bwrap_dir_options_for_bind_mount_target(repo_path)
     command += ["--bind", str(repo_path), str(repo_path)]
     command += ["--dev", "/dev"]
@@ -1111,7 +1138,7 @@ def _build_bwrap_agent_command(
         )
     )
 
-    command += [str(agent_binary_path)]
+    command += [str(WORKER_AGENT_BINARY_PATH)]
     command += _build_agent_command_tail(
         backend_config=backend_config,
         repo_path=repo_path,
@@ -1122,6 +1149,8 @@ def _build_bwrap_agent_command(
 def _build_agent_command_tail(backend_config: AgentBackendConfig, repo_path: Path) -> list[str]:
     if backend_config.backend_name == "codex":
         return _build_codex_command_tail(repo_path)
+    if backend_config.backend_name == "claude":
+        return _build_claude_command_tail()
     raise ValueError(f"Unsupported agent backend: {backend_config.backend_name}")
 
 
@@ -1137,6 +1166,20 @@ def _build_codex_command_tail(repo_path: Path) -> list[str]:
         "--ephemeral",
         "--ignore-rules",
         "-",
+    ]
+
+
+def _build_claude_command_tail() -> list[str]:
+    return [
+        "--print",
+        "--input-format",
+        "text",
+        "--output-format",
+        "text",
+        "--permission-mode",
+        "bypassPermissions",
+        "--dangerously-skip-permissions",
+        "--no-session-persistence",
     ]
 
 
@@ -1247,24 +1290,31 @@ def _build_bwrap_read_only_dir_mount_options(host_path: Path, sandbox_path: Path
 
 
 def _require_codex_home_path() -> Path:
-    codex_home = os.environ.get("CODEX_HOME")
-    if not codex_home:
-        raise RuntimeError("CODEX_HOME must be set before running Ralph agents.")
-
-    codex_home_path = Path(codex_home).expanduser().resolve()
-    if not codex_home_path.is_dir():
-        raise RuntimeError(f"CODEX_HOME does not exist: {codex_home_path}")
-    _refuse_agent_home_path_that_exposes_other_sensitive_state(codex_home_path)
-    return codex_home_path
+    return _require_agent_home_path_from_environment_variable("CODEX_HOME")
 
 
-def _refuse_agent_home_path_that_exposes_other_sensitive_state(agent_home_path: Path) -> None:
+def _require_agent_home_path_from_environment_variable(variable_name: str) -> Path:
+    configured_path = os.environ.get(variable_name)
+    if not configured_path:
+        raise RuntimeError(f"{variable_name} must be set before running Ralph agents.")
+
+    agent_home_path = Path(configured_path).expanduser().resolve()
+    if not agent_home_path.is_dir():
+        raise RuntimeError(f"{variable_name} does not exist: {agent_home_path}")
+    _refuse_agent_home_path_that_exposes_other_sensitive_state(
+        agent_home_path=agent_home_path,
+        variable_name=variable_name,
+    )
+    return agent_home_path
+
+
+def _refuse_agent_home_path_that_exposes_other_sensitive_state(agent_home_path: Path, variable_name: str) -> None:
     for sensitive_path in _build_sensitive_paths_that_workers_must_not_see():
         if _paths_resolve_to_same_location(left_path=agent_home_path, right_path=sensitive_path):
             continue
         if _paths_overlap(left_path=agent_home_path, right_path=sensitive_path):
             raise ValueError(
-                "CODEX_HOME must not overlap other worker-hidden sensitive state: "
+                f"{variable_name} must not overlap other worker-hidden sensitive state: "
                 f"{agent_home_path} overlaps {sensitive_path}"
             )
 
@@ -1566,6 +1616,10 @@ def _find_last_non_empty_line(text: str) -> str:
 
 def _read_default_codex_agent_command() -> str:
     return os.environ.get("RALPH_AGENT_COMMAND", os.environ.get("RALPH_CODEX_COMMAND", "codex"))
+
+
+def _read_default_claude_agent_command() -> str:
+    return os.environ.get("RALPH_AGENT_COMMAND", os.environ.get("RALPH_CLAUDE_COMMAND", "claude"))
 
 
 def _describe_tool_environment(python_venv_path: Path | None) -> str:

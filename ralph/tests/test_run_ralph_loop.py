@@ -10,10 +10,12 @@ import pytest
 import yaml
 
 from ralph.run_ralph_loop import (
+    AgentBackendConfig,
     DEFAULT_NOTION_TRACKER_STATE_PATH,
     DEFAULT_RALPH_HOME_PATH,
     RalphJob,
     TaskSelection,
+    WORKER_AGENT_BINARY_PATH,
     WORKER_HOME_PATH,
     WORKER_TEMP_PATH,
     _build_agent_visibility_smoke_test_prompt,
@@ -261,6 +263,51 @@ def test_codex_backend_falls_back_to_codex_binary_name(
     assert backend_config.command_name == "codex"
 
 
+def test_claude_backend_uses_ralph_agent_command_before_claude_specific_default(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    claude_config_dir_path = tmp_path / "claude-config"
+    claude_config_dir_path.mkdir()
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_config_dir_path))
+    monkeypatch.setenv("RALPH_AGENT_COMMAND", "custom-agent")
+    monkeypatch.setenv("RALPH_CLAUDE_COMMAND", "custom-claude")
+
+    backend_config = _select_agent_backend_config(agent_backend="claude", agent_command=None)
+
+    assert backend_config.command_name == "custom-agent"
+
+
+def test_claude_backend_uses_claude_specific_default_before_binary_name(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    claude_config_dir_path = tmp_path / "claude-config"
+    claude_config_dir_path.mkdir()
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_config_dir_path))
+    monkeypatch.delenv("RALPH_AGENT_COMMAND", raising=False)
+    monkeypatch.setenv("RALPH_CLAUDE_COMMAND", "custom-claude")
+
+    backend_config = _select_agent_backend_config(agent_backend="claude", agent_command=None)
+
+    assert backend_config.command_name == "custom-claude"
+
+
+def test_claude_backend_falls_back_to_claude_binary_name(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    claude_config_dir_path = tmp_path / "claude-config"
+    claude_config_dir_path.mkdir()
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_config_dir_path))
+    monkeypatch.delenv("RALPH_AGENT_COMMAND", raising=False)
+    monkeypatch.delenv("RALPH_CLAUDE_COMMAND", raising=False)
+
+    backend_config = _select_agent_backend_config(agent_backend="claude", agent_command=None)
+
+    assert backend_config.command_name == "claude"
+
+
 def test_resolve_ralph_home_path_defaults_to_workspace(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("RALPH_HOME", raising=False)
 
@@ -432,7 +479,8 @@ def test_build_bwrap_command_mounts_python_venv_from_path(
     )
 
     assert command[0] == str(bwrap_path)
-    assert str(agent_path) in command
+    assert _contains_subsequence(command, ["--ro-bind", str(agent_path), str(WORKER_AGENT_BINARY_PATH)])
+    assert str(WORKER_AGENT_BINARY_PATH) in command
     assert _contains_subsequence(command, ["--proc", "/proc"])
     assert _contains_subsequence(command, ["--ro-bind", "/usr", "/usr"])
     for compatibility_path in [Path("/bin"), Path("/lib"), Path("/lib64"), Path("/sbin")]:
@@ -490,7 +538,7 @@ def test_build_bwrap_command_uses_allowlisted_worker_environment(
     assert _contains_subsequence(command, ["--tmpfs", "/"])
     assert _contains_subsequence(command, ["--bind", str(repo_path), str(repo_path)])
     assert _contains_subsequence(command, ["--bind", str(codex_home_path), str(codex_home_path)])
-    assert _contains_subsequence(command, ["--ro-bind", str(agent_path), str(agent_path)])
+    assert _contains_subsequence(command, ["--ro-bind", str(agent_path), str(WORKER_AGENT_BINARY_PATH)])
     assert _contains_subsequence(command, ["--clearenv"])
     assert _contains_subsequence(command, ["--setenv", "HOME", str(WORKER_HOME_PATH)])
     assert _contains_subsequence(command, ["--setenv", "TMPDIR", str(WORKER_TEMP_PATH)])
@@ -502,6 +550,39 @@ def test_build_bwrap_command_uses_allowlisted_worker_environment(
     assert "secret-openai-token" not in command
     assert str(Path.home() / ".local") not in command[command.index("PATH") + 1]
     assert "--ignore-user-config" not in command
+
+
+def test_build_bwrap_command_uses_claude_worker_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bin_path = tmp_path / "bin"
+    bwrap_path = bin_path / "bwrap"
+    claude_path = bin_path / "claude"
+    repo_path = tmp_path / "target-repo"
+    codex_home_path = tmp_path / "codex-home"
+    claude_config_dir_path = tmp_path / "claude-config"
+    bin_path.mkdir()
+    repo_path.mkdir()
+    codex_home_path.mkdir()
+    claude_config_dir_path.mkdir()
+    _write_executable_shim(bwrap_path)
+    _write_executable_shim(claude_path)
+    monkeypatch.setenv("PATH", str(bin_path))
+    monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_config_dir_path))
+
+    backend_config = _select_agent_backend_config(agent_backend="claude", agent_command=None)
+    command = _build_bwrap_agent_command(
+        repo_path=repo_path,
+        backend_config=backend_config,
+        python_venv_path=None,
+    )
+
+    assert _contains_subsequence(command, ["--bind", str(claude_config_dir_path), str(claude_config_dir_path)])
+    assert _contains_subsequence(command, ["--setenv", "CLAUDE_CONFIG_DIR", str(claude_config_dir_path)])
+    assert not _contains_subsequence(command, ["--bind", str(codex_home_path), str(codex_home_path)])
+    assert "CODEX_HOME" not in command
 
 
 def test_build_bwrap_agent_command_keeps_codex_command_tail(
@@ -528,9 +609,10 @@ def test_build_bwrap_agent_command_keeps_codex_command_tail(
         python_venv_path=None,
     )
 
-    codex_index = len(command) - 1 - list(reversed(command)).index(str(codex_path))
+    assert _contains_subsequence(command, ["--ro-bind", str(codex_path), str(WORKER_AGENT_BINARY_PATH)])
+    codex_index = len(command) - 1 - list(reversed(command)).index(str(WORKER_AGENT_BINARY_PATH))
     assert command[codex_index:] == [
-        str(codex_path),
+        str(WORKER_AGENT_BINARY_PATH),
         "--ask-for-approval",
         "never",
         "exec",
@@ -544,6 +626,46 @@ def test_build_bwrap_agent_command_keeps_codex_command_tail(
     ]
 
 
+def test_build_bwrap_agent_command_uses_claude_command_tail(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bin_path = tmp_path / "bin"
+    bwrap_path = bin_path / "bwrap"
+    claude_path = bin_path / "claude"
+    repo_path = tmp_path / "target-repo"
+    claude_config_dir_path = tmp_path / "claude-config"
+    bin_path.mkdir()
+    repo_path.mkdir()
+    claude_config_dir_path.mkdir()
+    _write_executable_shim(bwrap_path)
+    _write_executable_shim(claude_path)
+    monkeypatch.setenv("PATH", str(bin_path))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_config_dir_path))
+
+    backend_config = _select_agent_backend_config(agent_backend="claude", agent_command=None)
+    command = _build_bwrap_agent_command(
+        repo_path=repo_path,
+        backend_config=backend_config,
+        python_venv_path=None,
+    )
+
+    assert _contains_subsequence(command, ["--ro-bind", str(claude_path), str(WORKER_AGENT_BINARY_PATH)])
+    claude_index = len(command) - 1 - list(reversed(command)).index(str(WORKER_AGENT_BINARY_PATH))
+    assert command[claude_index:] == [
+        str(WORKER_AGENT_BINARY_PATH),
+        "--print",
+        "--input-format",
+        "text",
+        "--output-format",
+        "text",
+        "--permission-mode",
+        "bypassPermissions",
+        "--dangerously-skip-permissions",
+        "--no-session-persistence",
+    ]
+
+
 def test_build_agent_visibility_smoke_test_prompt_checks_sandbox_contract(tmp_path: Path) -> None:
     repo_path = tmp_path / "target repo"
     agent_home_path = tmp_path / "codex home"
@@ -551,7 +673,11 @@ def test_build_agent_visibility_smoke_test_prompt_checks_sandbox_contract(tmp_pa
 
     prompt = _build_agent_visibility_smoke_test_prompt(
         repo_path=repo_path,
-        agent_home_path=agent_home_path,
+        backend_config=_build_test_backend_config(
+            backend_name="codex",
+            agent_home_path=agent_home_path,
+            agent_home_environment_variable="CODEX_HOME",
+        ),
         python_venv_path=python_venv_path,
     )
 
@@ -568,9 +694,8 @@ def test_build_agent_visibility_smoke_test_prompt_checks_sandbox_contract(tmp_pa
     assert "test ! -e /workspace/.kube" in prompt
     assert 'test -z "${NOTION_API_KEY:-}"' in prompt
     assert 'test -z "${OPENAI_API_KEY:-}"' in prompt
-    assert f'test "${{HOME-}}" = {shlex.quote(str(WORKER_HOME_PATH))}' in prompt
-    assert f'test "${{TMPDIR-}}" = {shlex.quote(str(WORKER_TEMP_PATH))}' in prompt
     assert f'test "${{CODEX_HOME-}}" = {shlex.quote(str(agent_home_path))}' in prompt
+    assert 'test -z "${CLAUDE_CONFIG_DIR:-}"' in prompt
     assert f"mkdir {shlex.quote(str(repo_path / '.ralph-sandbox-write-test-dir'))}" in prompt
     assert f"rmdir {shlex.quote(str(repo_path / '.ralph-sandbox-write-test-dir'))}" in prompt
     assert f"test -d {shlex.quote(str(python_venv_path))}" in prompt
@@ -583,7 +708,11 @@ def test_build_agent_visibility_smoke_test_prompt_checks_sandbox_contract(tmp_pa
 def test_build_agent_visibility_smoke_test_prompt_skips_venv_checks_when_absent(tmp_path: Path) -> None:
     prompt = _build_agent_visibility_smoke_test_prompt(
         repo_path=tmp_path / "target-repo",
-        agent_home_path=tmp_path / "codex-home",
+        backend_config=_build_test_backend_config(
+            backend_name="codex",
+            agent_home_path=tmp_path / "codex-home",
+            agent_home_environment_variable="CODEX_HOME",
+        ),
         python_venv_path=None,
     )
 
@@ -594,12 +723,33 @@ def test_build_agent_visibility_smoke_test_prompt_skips_venv_checks_when_absent(
 def test_build_agent_visibility_smoke_test_prompt_does_not_reject_explicit_mounts(tmp_path: Path) -> None:
     prompt = _build_agent_visibility_smoke_test_prompt(
         repo_path=tmp_path / "target-repo",
-        agent_home_path=Path("/workspace/.codex"),
+        backend_config=_build_test_backend_config(
+            backend_name="codex",
+            agent_home_path=Path("/workspace/.codex"),
+            agent_home_environment_variable="CODEX_HOME",
+        ),
         python_venv_path=None,
     )
 
     assert "test ! -e /workspace/.codex" not in prompt
     assert f'test "${{CODEX_HOME-}}" = {shlex.quote("/workspace/.codex")}' in prompt
+
+
+def test_build_agent_visibility_smoke_test_prompt_hides_unselected_backend_state(tmp_path: Path) -> None:
+    prompt = _build_agent_visibility_smoke_test_prompt(
+        repo_path=tmp_path / "target-repo",
+        backend_config=_build_test_backend_config(
+            backend_name="claude",
+            agent_home_path=Path("/workspace/.claude"),
+            agent_home_environment_variable="CLAUDE_CONFIG_DIR",
+        ),
+        python_venv_path=None,
+    )
+
+    assert "test ! -e /workspace/.claude" not in prompt
+    assert "test ! -e /workspace/.codex" in prompt
+    assert f'test "${{CLAUDE_CONFIG_DIR-}}" = {shlex.quote("/workspace/.claude")}' in prompt
+    assert 'test -z "${CODEX_HOME:-}"' in prompt
 
 
 def test_run_agent_visibility_smoke_test_rejects_missing_repo(tmp_path: Path) -> None:
@@ -1204,6 +1354,19 @@ def _contains_subsequence(command: list[str], expected: list[str]) -> bool:
     return any(
         command[index:index + len(expected)] == expected
         for index in range(len(command) - len(expected) + 1)
+    )
+
+
+def _build_test_backend_config(
+    backend_name: str,
+    agent_home_path: Path,
+    agent_home_environment_variable: str,
+) -> AgentBackendConfig:
+    return AgentBackendConfig(
+        backend_name=backend_name,
+        command_name=f"{backend_name}-cli",
+        agent_home_path=agent_home_path,
+        agent_home_environment_variable=agent_home_environment_variable,
     )
 
 
