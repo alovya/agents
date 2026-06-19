@@ -1020,6 +1020,7 @@ def _build_bwrap_codex_command(
     command = [bwrap_path]
     command += ["--tmpfs", "/"]
     command += ["--tmpfs", "/tmp"]
+    command += _build_bwrap_runtime_mount_options()
     command += _build_bwrap_dir_options_for_bind_mount_target(agent_binary_path, create_target_dir=False)
     command += ["--ro-bind", str(agent_binary_path), str(agent_binary_path)]
     command += _build_bwrap_dir_options_for_bind_mount_target(repo_path)
@@ -1085,6 +1086,10 @@ def _build_bwrap_setenv_options(environment_variables: list[tuple[str, str]]) ->
     for variable_name, value in environment_variables:
         options += ["--setenv", variable_name, value]
     return options
+
+
+def _build_bwrap_runtime_mount_options() -> list[str]:
+    return ["--proc", "/proc"]
 
 
 def _require_codex_home_path() -> Path:

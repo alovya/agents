@@ -328,6 +328,7 @@ def test_build_bwrap_command_mounts_python_venv_from_path(
 
     assert command[0] == str(bwrap_path)
     assert str(agent_path) in command
+    assert _contains_subsequence(command, ["--proc", "/proc"])
     assert _contains_subsequence(command, ["--ro-bind", str(python_venv_path), str(python_venv_path)])
     assert _contains_subsequence(command, ["--setenv", "VIRTUAL_ENV", str(python_venv_path)])
     assert _contains_subsequence(command, ["--setenv", "BASH_ENV", str(python_venv_path / "bin" / "activate")])
