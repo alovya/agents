@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shlex
 import subprocess
 from pathlib import Path
@@ -314,6 +315,7 @@ def test_build_bwrap_command_mounts_python_venv_from_path(
     python_venv_path = tmp_path / "venv"
     bin_path.mkdir()
     codex_home_path.mkdir()
+    codex_home_path.joinpath(".tmp").mkdir()
     python_venv_path.mkdir()
     _write_executable_shim(bwrap_path)
     _write_executable_shim(agent_path)
@@ -329,9 +331,28 @@ def test_build_bwrap_command_mounts_python_venv_from_path(
     assert command[0] == str(bwrap_path)
     assert str(agent_path) in command
     assert _contains_subsequence(command, ["--proc", "/proc"])
+    assert _contains_subsequence(command, ["--ro-bind", "/usr", "/usr"])
+    for compatibility_path in [Path("/bin"), Path("/lib"), Path("/lib64"), Path("/sbin")]:
+        if compatibility_path.is_symlink():
+            assert _contains_subsequence(command, ["--symlink", os.readlink(compatibility_path), str(compatibility_path)])
+        else:
+            assert _contains_subsequence(command, ["--ro-bind", str(compatibility_path), str(compatibility_path)])
+    assert _contains_subsequence(command, ["--ro-bind", "/etc/hosts", "/etc/hosts"])
+    assert _contains_subsequence(
+        command,
+        ["--ro-bind", str(Path("/etc/resolv.conf").resolve()), "/etc/resolv.conf"],
+    )
+    assert _contains_subsequence(command, ["--ro-bind", "/etc/nsswitch.conf", "/etc/nsswitch.conf"])
+    assert _contains_subsequence(command, ["--ro-bind", "/etc/ld.so.cache", "/etc/ld.so.cache"])
+    assert _contains_subsequence(
+        command,
+        ["--ro-bind", "/etc/ssl/certs/ca-certificates.crt", "/etc/ssl/certs/ca-certificates.crt"],
+    )
+    assert _contains_subsequence(command, ["--bind", str(codex_home_path), str(codex_home_path)])
+    assert _contains_subsequence(command, ["--tmpfs", str(codex_home_path / ".tmp")])
     assert _contains_subsequence(command, ["--ro-bind", str(python_venv_path), str(python_venv_path)])
     assert _contains_subsequence(command, ["--setenv", "VIRTUAL_ENV", str(python_venv_path)])
-    assert _contains_subsequence(command, ["--setenv", "BASH_ENV", str(python_venv_path / "bin" / "activate")])
+    assert _contains_subsequence(command, ["--setenv", "SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt"])
     assert str(python_venv_path / "bin") in command[command.index("PATH") + 1].split(":")[0]
 
 
@@ -376,6 +397,7 @@ def test_build_bwrap_command_uses_allowlisted_worker_environment(
     assert "secret-notion-token" not in command
     assert "secret-openai-token" not in command
     assert str(Path.home() / ".local") not in command[command.index("PATH") + 1]
+    assert "--ignore-user-config" not in command
 
 
 def test_build_agent_visibility_smoke_test_prompt_checks_sandbox_contract(tmp_path: Path) -> None:
@@ -402,15 +424,16 @@ def test_build_agent_visibility_smoke_test_prompt_checks_sandbox_contract(tmp_pa
     assert "test ! -e /workspace/.kube" in prompt
     assert 'test -z "${NOTION_API_KEY:-}"' in prompt
     assert 'test -z "${OPENAI_API_KEY:-}"' in prompt
-    assert f'test "$HOME" = {shlex.quote(str(WORKER_HOME_PATH))}' in prompt
-    assert f'test "$TMPDIR" = {shlex.quote(str(WORKER_TEMP_PATH))}' in prompt
-    assert f'test "$CODEX_HOME" = {shlex.quote(str(agent_home_path))}' in prompt
+    assert f'test "${{HOME-}}" = {shlex.quote(str(WORKER_HOME_PATH))}' in prompt
+    assert f'test "${{TMPDIR-}}" = {shlex.quote(str(WORKER_TEMP_PATH))}' in prompt
+    assert f'test "${{CODEX_HOME-}}" = {shlex.quote(str(agent_home_path))}' in prompt
     assert f"mkdir {shlex.quote(str(repo_path / '.ralph-sandbox-write-test-dir'))}" in prompt
     assert f"rmdir {shlex.quote(str(repo_path / '.ralph-sandbox-write-test-dir'))}" in prompt
     assert f"test -d {shlex.quote(str(python_venv_path))}" in prompt
-    assert "printf blocked >" in prompt
-    assert ".ralph-sandbox-write-test" in prompt
+    assert "/proc/self/mountinfo" in prompt
+    assert "ralph_found_read_only_mount" in prompt
     assert f'test "$VIRTUAL_ENV" = {shlex.quote(str(python_venv_path))}' in prompt
+    assert "BASH_ENV" not in prompt
 
 
 def test_build_agent_visibility_smoke_test_prompt_skips_venv_checks_when_absent(tmp_path: Path) -> None:
@@ -432,7 +455,7 @@ def test_build_agent_visibility_smoke_test_prompt_does_not_reject_explicit_mount
     )
 
     assert "test ! -e /workspace/.codex" not in prompt
-    assert f'test "$CODEX_HOME" = {shlex.quote("/workspace/.codex")}' in prompt
+    assert f'test "${{CODEX_HOME-}}" = {shlex.quote("/workspace/.codex")}' in prompt
 
 
 def test_run_agent_visibility_smoke_test_rejects_missing_repo(tmp_path: Path) -> None:

@@ -614,7 +614,7 @@ def _build_agent_visibility_smoke_test_shell_command(
         _build_credential_environment_variables_that_workers_must_not_receive()
     )
     command_parts += _build_shell_assertions_that_worker_environment_matches_bwrap_setenv_options(
-        _build_bwrap_worker_environment_variables(
+        _build_worker_environment_variables_to_verify_exactly(
             agent_home_path=agent_home_path,
             python_venv_path=python_venv_path,
         )
@@ -725,8 +725,25 @@ def _build_shell_assertions_that_worker_environment_matches_bwrap_setenv_options
     environment_variables: list[tuple[str, str]],
 ) -> list[str]:
     return [
-        f"test \"${variable_name}\" = {_quote_shell_value(value)}"
+        (
+            f"test \"${{{variable_name}-}}\" = {_quote_shell_value(value)} || "
+            f"{{ echo RALPH_SANDBOX_ENV_MISMATCH {variable_name}; exit 1; }}"
+        )
         for variable_name, value in environment_variables
+    ]
+
+
+def _build_worker_environment_variables_to_verify_exactly(
+    agent_home_path: Path,
+    python_venv_path: Path | None,
+) -> list[tuple[str, str]]:
+    return [
+        (variable_name, value)
+        for variable_name, value in _build_bwrap_worker_environment_variables(
+            agent_home_path=agent_home_path,
+            python_venv_path=python_venv_path,
+        )
+        if variable_name != "PATH"
     ]
 
 
@@ -739,20 +756,27 @@ def _build_shell_assertions_that_repo_is_writable(repo_path: Path) -> list[str]:
 
 
 def _build_shell_assertions_that_python_venv_is_read_only(python_venv_path: Path) -> list[str]:
-    probe_path = python_venv_path / ".ralph-sandbox-write-test"
-    write_probe_command = f"printf blocked > {_quote_shell_path(probe_path)}"
     return [
         f"test -d {_quote_shell_path(python_venv_path)}",
-        (
-            f"if sh -c {_quote_shell_value(write_probe_command)}; then "
-            f"rm -f {_quote_shell_path(probe_path)}; "
-            "echo RALPH_SANDBOX_WRITABLE_VENV; "
-            "exit 1; "
-            "fi"
-        ),
-        f"test ! -e {_quote_shell_path(probe_path)}",
+        _build_shell_assertion_that_mount_point_is_read_only(python_venv_path),
         f"test \"$VIRTUAL_ENV\" = {_quote_shell_value(python_venv_path)}",
     ]
+
+
+def _build_shell_assertion_that_mount_point_is_read_only(mount_path: Path) -> str:
+    quoted_mount_path = _quote_shell_value(mount_path)
+    return (
+        "ralph_found_read_only_mount=0; "
+        "while read -r _ _ _ _ ralph_mount_path ralph_mount_options _; do "
+        f"if test \"$ralph_mount_path\" = {quoted_mount_path}; then "
+        "case \",$ralph_mount_options,\" in "
+        "*,ro,*) ralph_found_read_only_mount=1 ;; "
+        "*) echo RALPH_SANDBOX_WRITABLE_VENV; exit 1 ;; "
+        "esac; "
+        "fi; "
+        "done < /proc/self/mountinfo; "
+        "test \"$ralph_found_read_only_mount\" = 1"
+    )
 
 
 def _task_has_planned_notion_pairing(task: dict[str, Any]) -> bool:
@@ -1027,8 +1051,7 @@ def _build_bwrap_codex_command(
     command += ["--bind", str(repo_path), str(repo_path)]
     command += ["--dev", "/dev"]
 
-    command += _build_bwrap_dir_options_for_bind_mount_target(agent_home_path)
-    command += ["--bind", str(agent_home_path), str(agent_home_path)]
+    command += _build_bwrap_agent_home_mount_options(agent_home_path)
     command += _build_bwrap_dir_options_for_bind_mount_target(WORKER_HOME_PATH)
     command += _build_bwrap_dir_options_for_bind_mount_target(WORKER_TEMP_PATH)
 
@@ -1069,13 +1092,13 @@ def _build_bwrap_worker_environment_variables(
         ("DOCKER_CONFIG", str(WORKER_HOME_PATH / ".docker")),
         ("GNUPGHOME", str(WORKER_HOME_PATH / ".gnupg")),
         ("KUBECONFIG", str(WORKER_HOME_PATH / ".kube" / "config")),
+        ("SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt"),
         ("PATH", _build_agent_path_value(python_venv_path)),
     ]
 
     if python_venv_path is not None:
         environment_variables += [
             ("VIRTUAL_ENV", str(python_venv_path)),
-            ("BASH_ENV", str(python_venv_path / "bin" / "activate")),
         ]
 
     return environment_variables
@@ -1089,7 +1112,74 @@ def _build_bwrap_setenv_options(environment_variables: list[tuple[str, str]]) ->
 
 
 def _build_bwrap_runtime_mount_options() -> list[str]:
-    return ["--proc", "/proc"]
+    options = ["--proc", "/proc"]
+    options += _build_bwrap_host_os_runtime_mount_options()
+    options += _build_bwrap_read_only_file_mount_options(
+        host_path=Path("/etc/hosts"),
+        sandbox_path=Path("/etc/hosts"),
+    )
+    options += _build_bwrap_read_only_file_mount_options(
+        host_path=Path("/etc/resolv.conf").resolve(),
+        sandbox_path=Path("/etc/resolv.conf"),
+    )
+    options += _build_bwrap_read_only_file_mount_options(
+        host_path=Path("/etc/nsswitch.conf"),
+        sandbox_path=Path("/etc/nsswitch.conf"),
+    )
+    options += _build_bwrap_read_only_file_mount_options(
+        host_path=Path("/etc/ld.so.cache"),
+        sandbox_path=Path("/etc/ld.so.cache"),
+    )
+    options += _build_bwrap_read_only_file_mount_options(
+        host_path=Path("/etc/ssl/certs/ca-certificates.crt"),
+        sandbox_path=Path("/etc/ssl/certs/ca-certificates.crt"),
+    )
+    return options
+
+
+def _build_bwrap_host_os_runtime_mount_options() -> list[str]:
+    options = _build_bwrap_read_only_dir_mount_options(
+        host_path=Path("/usr"),
+        sandbox_path=Path("/usr"),
+    )
+    for compatibility_path in [Path("/bin"), Path("/lib"), Path("/lib64"), Path("/sbin")]:
+        options += _build_bwrap_host_os_compatibility_mount_options(compatibility_path)
+    return options
+
+
+def _build_bwrap_host_os_compatibility_mount_options(compatibility_path: Path) -> list[str]:
+    if compatibility_path.is_symlink():
+        return ["--symlink", os.readlink(compatibility_path), str(compatibility_path)]
+    return _build_bwrap_read_only_dir_mount_options(
+        host_path=compatibility_path,
+        sandbox_path=compatibility_path,
+    )
+
+
+def _build_bwrap_agent_home_mount_options(agent_home_path: Path) -> list[str]:
+    options = _build_bwrap_dir_options_for_bind_mount_target(agent_home_path)
+    options += ["--bind", str(agent_home_path), str(agent_home_path)]
+    if (agent_home_path / ".tmp").is_dir():
+        options += ["--tmpfs", str(agent_home_path / ".tmp")]
+    return options
+
+
+def _build_bwrap_read_only_file_mount_options(host_path: Path, sandbox_path: Path) -> list[str]:
+    if not host_path.is_file():
+        return []
+
+    options = _build_bwrap_dir_options_for_bind_mount_target(sandbox_path, create_target_dir=False)
+    options += ["--ro-bind", str(host_path), str(sandbox_path)]
+    return options
+
+
+def _build_bwrap_read_only_dir_mount_options(host_path: Path, sandbox_path: Path) -> list[str]:
+    if not host_path.is_dir():
+        return []
+
+    options = _build_bwrap_dir_options_for_bind_mount_target(sandbox_path)
+    options += ["--ro-bind", str(host_path), str(sandbox_path)]
+    return options
 
 
 def _require_codex_home_path() -> Path:
