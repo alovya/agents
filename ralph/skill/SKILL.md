@@ -173,13 +173,28 @@ Do not copy task prose or full implementation notes into the ledger.
 Run:
 
 ```bash
-python /workspace/agents/ralph/run_ralph_loop.py run --repo-path /path/to/repo --job-name example
+CODEX_HOME=/workspace/.codex python /workspace/agents/ralph/run_ralph_loop.py run --repo-path /path/to/repo --job-name example --agent-backend codex
 ```
+
+Codex workers require `CODEX_HOME` to point at the Codex state directory that the
+worker may use. Ralph mounts only that selected Codex state path, not the whole
+host home directory.
+
+Run Claude Code workers by selecting the Claude backend and passing the Claude
+state directory:
+
+```bash
+CLAUDE_CONFIG_DIR=/workspace/.claude python /workspace/agents/ralph/run_ralph_loop.py run --repo-path /path/to/repo --job-name example --agent-backend claude
+```
+
+Claude workers require `CLAUDE_CONFIG_DIR` to point at the Claude Code state
+directory that the worker may use. Ralph mounts only that selected Claude state
+path, and does not pass `CODEX_HOME` to Claude workers.
 
 If workers need helper commands from a Python venv, pass that venv explicitly:
 
 ```bash
-python /workspace/agents/ralph/run_ralph_loop.py run --repo-path /path/to/repo --job-name example --python-venv /path/to/venv
+CODEX_HOME=/workspace/.codex python /workspace/agents/ralph/run_ralph_loop.py run --repo-path /path/to/repo --job-name example --agent-backend codex --python-venv /path/to/venv
 ```
 
 The runner mounts that venv into the worker, sets `VIRTUAL_ENV`, and prepends
