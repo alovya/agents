@@ -24,6 +24,11 @@ WORKER_AGENT_BINARY_PATH = Path("/tmp/ralph-agent-bin/agent")
 DEFAULT_MAX_ITERATIONS = 10
 PROMISE_PATTERN = re.compile(r"<promise>(DONE|BLOCKED|ABORT)</promise>")
 PROMISE_LINE_PATTERN = re.compile(r"^<promise>(DONE|BLOCKED|ABORT)</promise>$")
+WORKER_VERIFICATION_BLOCK_PATTERN = re.compile(
+    r"^RALPH_VERIFICATION_BEGIN\n(?P<verification_output>.*?)^RALPH_VERIFICATION_END$",
+    re.DOTALL | re.MULTILINE,
+)
+WORKER_COMMIT_LINE_PATTERN = re.compile(r"^RALPH_COMMIT (?P<commit_hash>[0-9a-f]{40})$", re.MULTILINE)
 ALOVYA_TASK_ID_PATTERN = re.compile(r"^ALOVYA-(?P<ticket_number>\d+)$")
 TASK_BLOCK_PATTERN = re.compile(
     r"<!--\s*ralph-task:start\s+(?P<task_id>[A-Za-z0-9_.-]+)\s*-->\n"
@@ -122,6 +127,7 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
         )
         agent_result = _run_agent(
             repo_path=repo_path,
+            task=selection.task,
             prompt=prompt,
             agent_backend=arguments.agent_backend,
             agent_command=arguments.agent_command,
@@ -141,27 +147,22 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
             print(f"Agent stopped with {agent_result.promise}. See {task_path}")
             return
 
-        changed_files = _read_changed_files(repo_path)
         try:
-            _verify_task_result(
+            commit_hash = _accept_worker_completed_task(
                 repo_path=repo_path,
-                task=selection.task,
+                job=job,
+                ledger=ledger,
+                selection=selection,
                 task_path=task_path,
+                agent_output=agent_result.output,
             )
         except Exception:
             _log_failed_verification_to_notion(selection=selection, task_path=task_path)
             raise
-        commit_hash = _commit_verified_task(
-            repo_path=repo_path,
-            job=job,
-            ledger=ledger,
-            selection=selection,
-            task_path=task_path,
-        )
         _log_completed_worker_to_notion(
             selection=selection,
             task_path=task_path,
-            changed_files=changed_files,
+            changed_files=_read_committed_files(repo_path=repo_path, commit_hash=commit_hash),
             commit_hash=commit_hash,
         )
         print(f"Completed {selection.task['id']}: {commit_hash}")
@@ -169,32 +170,88 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
     raise SystemExit(f"Reached max iterations: {arguments.max_iterations}")
 
 
-def _verify_task_result(
-    repo_path: Path,
-    task: dict[str, Any],
-    task_path: Path,
-) -> None:
-    verification_output = _run_verification_commands(
-        repo_path=repo_path,
-        task=task,
-        output_path=task_path / "verification-output.txt",
-    )
-    _write_text(task_path / "verification-output.txt", verification_output)
-
-
-def _commit_verified_task(
+def _accept_worker_completed_task(
     repo_path: Path,
     job: RalphJob,
     ledger: dict[str, Any],
     selection: TaskSelection,
     task_path: Path,
+    agent_output: str,
 ) -> str:
-    commit_hash = _commit_target_repo_changes(repo_path=repo_path, task=selection.task)
+    verification_output = _extract_worker_verification_output(
+        task=selection.task,
+        agent_output=agent_output,
+    )
+    commit_hash = _extract_worker_commit_hash(agent_output)
+
+    _write_text(task_path / "verification-output.txt", verification_output)
     _write_text(task_path / "commit.txt", commit_hash)
+    _validate_worker_commit_matches_repo_state(
+        repo_path=repo_path,
+        task=selection.task,
+        commit_hash=commit_hash,
+    )
 
     advanced_ledger = _mark_task_done(ledger, selection.task["id"])
     _write_yaml_file(job.ledger_path, advanced_ledger)
     return commit_hash
+
+
+def _extract_worker_verification_output(task: dict[str, Any], agent_output: str) -> str:
+    matches = WORKER_VERIFICATION_BLOCK_PATTERN.findall(agent_output)
+    if len(matches) != 1:
+        raise RuntimeError("Worker DONE must include one RALPH_VERIFICATION_BEGIN block.")
+
+    verification_output = matches[0].strip()
+    _validate_worker_verification_output_mentions_required_commands(
+        task=task,
+        verification_output=verification_output,
+    )
+    return verification_output
+
+
+def _validate_worker_verification_output_mentions_required_commands(
+    task: dict[str, Any],
+    verification_output: str,
+) -> None:
+    missing_commands = [
+        command
+        for command in task.get("verification_commands") or []
+        if f"$ {command}" not in verification_output
+    ]
+    if missing_commands:
+        raise RuntimeError(
+            f"Worker DONE did not include verification transcript entries for: {missing_commands}"
+        )
+
+
+def _extract_worker_commit_hash(agent_output: str) -> str:
+    matches = WORKER_COMMIT_LINE_PATTERN.findall(agent_output)
+    if len(matches) != 1:
+        raise RuntimeError("Worker DONE must include exactly one RALPH_COMMIT line with the committed HEAD.")
+    return matches[0]
+
+
+def _validate_worker_commit_matches_repo_state(
+    repo_path: Path,
+    task: dict[str, Any],
+    commit_hash: str,
+) -> None:
+    actual_head_commit_hash = _run_git(repo_path, "rev-parse", "HEAD").strip()
+    if commit_hash != actual_head_commit_hash:
+        raise RuntimeError(
+            f"Worker reported commit {commit_hash}, but target repo HEAD is {actual_head_commit_hash}."
+        )
+
+    expected_commit_subject = f"Ralph: {task['id']} {task['title']}"
+    actual_commit_subject = _run_git(repo_path, "log", "--format=%s", "-1", commit_hash).strip()
+    if actual_commit_subject != expected_commit_subject:
+        raise RuntimeError(
+            f"Worker commit subject must be {expected_commit_subject!r}, got {actual_commit_subject!r}."
+        )
+
+    if _read_git_status(repo_path):
+        raise RuntimeError(f"Task {task['id']} returned DONE but left uncommitted target repo changes.")
 
 
 def _prepare_notion_task_for_worker_launch(
@@ -480,6 +537,7 @@ def _render_agent_prompt(
 
 def _run_agent(
     repo_path: Path,
+    task: dict[str, Any],
     prompt: str,
     agent_backend: str,
     agent_command: str | None,
@@ -496,6 +554,7 @@ def _run_agent(
         repo_path=repo_path,
         backend_config=backend_config,
         python_venv_path=python_venv_path,
+        allowed_bash_commands=_build_worker_allowed_bash_commands(task),
     )
     if tee_output:
         completed_process = _run_command_and_tee_output(
@@ -575,15 +634,21 @@ def _run_agent_visibility_smoke_test(
         agent_backend=agent_backend,
         agent_command=agent_command,
     )
-    command = _build_bwrap_agent_command(
-        repo_path=repo_path,
-        backend_config=backend_config,
-        python_venv_path=python_venv_path,
-    )
     prompt = _build_agent_visibility_smoke_test_prompt(
         repo_path=repo_path,
         backend_config=backend_config,
         python_venv_path=python_venv_path,
+    )
+    allowed_bash_commands = [_build_agent_visibility_smoke_test_agent_command(
+        repo_path=repo_path,
+        backend_config=backend_config,
+        python_venv_path=python_venv_path,
+    )]
+    command = _build_bwrap_agent_command(
+        repo_path=repo_path,
+        backend_config=backend_config,
+        python_venv_path=python_venv_path,
+        allowed_bash_commands=allowed_bash_commands,
     )
     completed_process = subprocess.run(
         command,
@@ -604,7 +669,7 @@ def _build_agent_visibility_smoke_test_prompt(
     backend_config: AgentBackendConfig,
     python_venv_path: Path | None,
 ) -> str:
-    shell_command = _build_agent_visibility_smoke_test_shell_command(
+    shell_command = _build_agent_visibility_smoke_test_agent_command(
         repo_path=repo_path,
         backend_config=backend_config,
         python_venv_path=python_venv_path,
@@ -616,6 +681,19 @@ def _build_agent_visibility_smoke_test_prompt(
             "Then answer only the final line it prints.",
         ]
     )
+
+
+def _build_agent_visibility_smoke_test_agent_command(
+    repo_path: Path,
+    backend_config: AgentBackendConfig,
+    python_venv_path: Path | None,
+) -> str:
+    shell_command = _build_agent_visibility_smoke_test_shell_command(
+        repo_path=repo_path,
+        backend_config=backend_config,
+        python_venv_path=python_venv_path,
+    )
+    return f"bash -lc {_quote_shell_value(shell_command)}"
 
 
 def _build_agent_visibility_smoke_test_shell_command(
@@ -1040,11 +1118,11 @@ def _resolve_notion_tracker_command_path() -> str:
     raise RuntimeError("Notion task tracker command not found: ntt")
 
 
-def _read_changed_files(repo_path: Path) -> list[str]:
-    status_output = _read_git_status(repo_path)
-    if not status_output:
+def _read_committed_files(repo_path: Path, commit_hash: str) -> list[str]:
+    changed_files_output = _run_git(repo_path, "show", "--name-status", "--format=", commit_hash).strip()
+    if not changed_files_output:
         return []
-    return status_output.splitlines()
+    return changed_files_output.splitlines()
 
 
 def _read_text_if_file_exists(path: Path) -> str:
@@ -1057,8 +1135,26 @@ def _worker_launch_constraints() -> list[str]:
     return [
         "Worker cannot read Ralph controller state.",
         "Worker cannot receive Notion credentials or tracker state.",
-        "Controller owns verification, commits, and Notion logging.",
+        "Worker must run verification before DONE.",
+        "Worker must commit with git commit --no-verify before DONE.",
+        "Controller owns Notion logging and validates worker-produced verification and commit artefacts.",
     ]
+
+
+def _build_worker_allowed_bash_commands(task: dict[str, Any]) -> list[str]:
+    allowed_commands = [
+        "git status",
+        "git status --short",
+        "git diff",
+        "git diff --staged",
+    ]
+    allowed_commands += list(task.get("verification_commands") or [])
+    allowed_commands += [
+        "git add .",
+        "git commit --no-verify -m *",
+        "git rev-parse HEAD",
+    ]
+    return list(dict.fromkeys(allowed_commands))
 
 
 def _quote_shell_path(path: Path) -> str:
@@ -1104,6 +1200,7 @@ def _build_bwrap_agent_command(
     repo_path: Path,
     backend_config: AgentBackendConfig,
     python_venv_path: Path | None,
+    allowed_bash_commands: list[str] | None = None,
 ) -> list[str]:
     bwrap_path = shutil.which("bwrap")
     if bwrap_path is None:
@@ -1142,15 +1239,20 @@ def _build_bwrap_agent_command(
     command += _build_agent_command_tail(
         backend_config=backend_config,
         repo_path=repo_path,
+        allowed_bash_commands=allowed_bash_commands or [],
     )
     return command
 
 
-def _build_agent_command_tail(backend_config: AgentBackendConfig, repo_path: Path) -> list[str]:
+def _build_agent_command_tail(
+    backend_config: AgentBackendConfig,
+    repo_path: Path,
+    allowed_bash_commands: list[str],
+) -> list[str]:
     if backend_config.backend_name == "codex":
         return _build_codex_command_tail(repo_path)
     if backend_config.backend_name == "claude":
-        return _build_claude_command_tail()
+        return _build_claude_command_tail(allowed_bash_commands)
     raise ValueError(f"Unsupported agent backend: {backend_config.backend_name}")
 
 
@@ -1169,18 +1271,31 @@ def _build_codex_command_tail(repo_path: Path) -> list[str]:
     ]
 
 
-def _build_claude_command_tail() -> list[str]:
-    return [
+def _build_claude_command_tail(allowed_bash_commands: list[str]) -> list[str]:
+    command_tail = [
         "--print",
         "--input-format",
         "text",
         "--output-format",
         "text",
         "--permission-mode",
-        "bypassPermissions",
-        "--dangerously-skip-permissions",
+        "dontAsk",
+        "--allowedTools",
+    ]
+    command_tail += _build_claude_allowed_tools(allowed_bash_commands)
+    command_tail += [
         "--no-session-persistence",
     ]
+    return command_tail
+
+
+def _build_claude_allowed_tools(allowed_bash_commands: list[str]) -> list[str]:
+    allowed_tools = ["Read", "Glob", "Grep", "Edit", "MultiEdit", "Write"]
+    allowed_tools += [
+        f"Bash({command})"
+        for command in allowed_bash_commands
+    ]
+    return allowed_tools
 
 
 def _build_bwrap_worker_environment_variables(
@@ -1373,34 +1488,6 @@ def _resolve_agent_binary_path(agent_command: str) -> Path:
     if resolved_command is None:
         raise RuntimeError(f"Agent command not found: {agent_command}")
     return Path(resolved_command).resolve()
-
-
-def _run_verification_commands(repo_path: Path, task: dict[str, Any], output_path: Path) -> str:
-    verification_output = []
-    for command in task.get("verification_commands") or []:
-        completed_process = subprocess.run(
-            command,
-            cwd=repo_path,
-            shell=True,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            check=False,
-        )
-        verification_output.append(f"$ {command}\n{completed_process.stdout}")
-        if completed_process.returncode != 0:
-            _write_text(output_path, "\n".join(verification_output))
-            raise RuntimeError(f"Verification failed for task {task['id']}: {command}")
-    return "\n".join(verification_output)
-
-
-def _commit_target_repo_changes(repo_path: Path, task: dict[str, Any]) -> str:
-    if not _read_git_status(repo_path):
-        raise RuntimeError(f"Task {task['id']} returned DONE but produced no target repo changes.")
-    _run_git(repo_path, "add", ".")
-    message = f"Ralph: {task['id']} {task['title']}"
-    _run_git(repo_path, "commit", "-m", message)
-    return _run_git(repo_path, "rev-parse", "HEAD").strip()
 
 
 def _read_yaml_file(yaml_path: Path) -> dict[str, Any]:

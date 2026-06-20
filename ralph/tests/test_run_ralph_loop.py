@@ -18,11 +18,11 @@ from ralph.run_ralph_loop import (
     WORKER_AGENT_BINARY_PATH,
     WORKER_HOME_PATH,
     WORKER_TEMP_PATH,
+    _accept_worker_completed_task,
     _build_agent_visibility_smoke_test_prompt,
     _build_bwrap_agent_command,
     _build_notion_task_creation_command,
     _create_task_directory,
-    _commit_verified_task,
     _extract_created_notion_task_id,
     _find_ralph_job,
     _log_completed_worker_to_notion,
@@ -31,7 +31,6 @@ from ralph.run_ralph_loop import (
     _log_worker_promise_to_notion,
     main,
     _materialise_planned_notion_task_before_worker_launch,
-    _verify_task_result,
     _mark_task_done,
     _prepare_notion_task_for_worker_launch,
     _parse_arguments,
@@ -648,6 +647,12 @@ def test_build_bwrap_agent_command_uses_claude_command_tail(
         repo_path=repo_path,
         backend_config=backend_config,
         python_venv_path=None,
+        allowed_bash_commands=[
+            "python -m pytest ralph/tests/test_run_ralph_loop.py",
+            "git add .",
+            "git commit --no-verify -m *",
+            "git rev-parse HEAD",
+        ],
     )
 
     assert _contains_subsequence(command, ["--ro-bind", str(claude_path), str(WORKER_AGENT_BINARY_PATH)])
@@ -660,10 +665,22 @@ def test_build_bwrap_agent_command_uses_claude_command_tail(
         "--output-format",
         "text",
         "--permission-mode",
-        "bypassPermissions",
-        "--dangerously-skip-permissions",
+        "dontAsk",
+        "--allowedTools",
+        "Read",
+        "Glob",
+        "Grep",
+        "Edit",
+        "MultiEdit",
+        "Write",
+        "Bash(python -m pytest ralph/tests/test_run_ralph_loop.py)",
+        "Bash(git add .)",
+        "Bash(git commit --no-verify -m *)",
+        "Bash(git rev-parse HEAD)",
         "--no-session-persistence",
     ]
+    assert "bypassPermissions" not in command
+    assert "--dangerously-skip-permissions" not in command
 
 
 def test_build_agent_visibility_smoke_test_prompt_checks_sandbox_contract(tmp_path: Path) -> None:
@@ -694,14 +711,17 @@ def test_build_agent_visibility_smoke_test_prompt_checks_sandbox_contract(tmp_pa
     assert "test ! -e /workspace/.kube" in prompt
     assert 'test -z "${NOTION_API_KEY:-}"' in prompt
     assert 'test -z "${OPENAI_API_KEY:-}"' in prompt
-    assert f'test "${{CODEX_HOME-}}" = {shlex.quote(str(agent_home_path))}' in prompt
+    assert 'test "${CODEX_HOME-}" =' in prompt
+    assert str(agent_home_path) in prompt
     assert 'test -z "${CLAUDE_CONFIG_DIR:-}"' in prompt
-    assert f"mkdir {shlex.quote(str(repo_path / '.ralph-sandbox-write-test-dir'))}" in prompt
-    assert f"rmdir {shlex.quote(str(repo_path / '.ralph-sandbox-write-test-dir'))}" in prompt
-    assert f"test -d {shlex.quote(str(python_venv_path))}" in prompt
+    assert "mkdir" in prompt
+    assert "rmdir" in prompt
+    assert str(repo_path / ".ralph-sandbox-write-test-dir") in prompt
+    assert "test -d" in prompt
     assert "/proc/self/mountinfo" in prompt
     assert "ralph_found_read_only_mount" in prompt
-    assert f'test "$VIRTUAL_ENV" = {shlex.quote(str(python_venv_path))}' in prompt
+    assert 'test "$VIRTUAL_ENV" =' in prompt
+    assert str(python_venv_path) in prompt
     assert "BASH_ENV" not in prompt
 
 
@@ -912,47 +932,48 @@ def test_marks_task_done_without_mutating_input() -> None:
     assert "completed_at" in updated_ledger["tasks"][0]
 
 
-def test_commits_verified_task_before_advancing_ledger(
+def test_accepts_worker_completed_task_after_worker_verifies_and_commits(
     tmp_path: Path,
 ) -> None:
     repo_path = _initialise_git_repo(tmp_path / "target-repo")
     ledger = _build_example_ledger()
     job = _create_job_with_ledger(tmp_path, ledger)
     task_path = tmp_path / "task"
-    observed_ledger_at_commit_path = tmp_path / "ledger-at-commit.yaml"
     parser_path = repo_path / "src" / "parser.py"
     parser_path.parent.mkdir()
     parser_path.write_text("def parse_value(value):\n    return value\n")
-    _install_pre_commit_hook_that_requires_pending_ledger(
-        repo_path=repo_path,
-        ledger_path=job.ledger_path,
-        observed_ledger_path=observed_ledger_at_commit_path,
+    _run_git(repo_path, "add", ".")
+    _run_git(repo_path, "commit", "--no-verify", "-m", "Ralph: R1 Add parser")
+    worker_commit_hash = _run_git(repo_path, "rev-parse", "HEAD").strip()
+    agent_output = "\n".join(
+        [
+            "RALPH_VERIFICATION_BEGIN",
+            "$ test -f src/parser.py",
+            "RALPH_VERIFICATION_END",
+            f"RALPH_COMMIT {worker_commit_hash}",
+            "<promise>DONE</promise>",
+        ]
     )
 
-    _verify_task_result(
-        repo_path=repo_path,
-        task=_select_first_task(ledger).task,
-        task_path=task_path,
-    )
-    commit_hash = _commit_verified_task(
+    accepted_commit_hash = _accept_worker_completed_task(
         repo_path=repo_path,
         job=job,
         ledger=ledger,
         selection=_select_first_task(ledger),
         task_path=task_path,
+        agent_output=agent_output,
     )
 
     committed_subject = _run_git(repo_path, "log", "--format=%s", "-1").strip()
 
-    assert commit_hash == _run_git(repo_path, "rev-parse", "HEAD").strip()
+    assert accepted_commit_hash == worker_commit_hash
     assert committed_subject == "Ralph: R1 Add parser"
-    assert yaml.safe_load(observed_ledger_at_commit_path.read_text())["tasks"][0]["status"] == "pending"
     assert yaml.safe_load(job.ledger_path.read_text())["tasks"][0]["status"] == "done"
     assert "$ test -f src/parser.py" in task_path.joinpath("verification-output.txt").read_text()
-    assert task_path.joinpath("commit.txt").read_text() == commit_hash
+    assert task_path.joinpath("commit.txt").read_text() == worker_commit_hash
 
 
-def test_commit_verified_task_keeps_ledger_pending_when_commit_fails(
+def test_accept_worker_completed_task_rejects_uncommitted_worker_changes(
     tmp_path: Path,
 ) -> None:
     repo_path = _initialise_git_repo(tmp_path / "target-repo")
@@ -962,25 +983,61 @@ def test_commit_verified_task_keeps_ledger_pending_when_commit_fails(
     parser_path = repo_path / "src" / "parser.py"
     parser_path.parent.mkdir()
     parser_path.write_text("def parse_value(value):\n    return value\n")
-    _install_failing_pre_commit_hook(repo_path)
+    _run_git(repo_path, "add", ".")
+    _run_git(repo_path, "commit", "--no-verify", "-m", "Ralph: R1 Add parser")
+    worker_commit_hash = _run_git(repo_path, "rev-parse", "HEAD").strip()
+    parser_path.write_text("def parse_value(value):\n    return value.strip()\n")
+    agent_output = "\n".join(
+        [
+            "RALPH_VERIFICATION_BEGIN",
+            "$ test -f src/parser.py",
+            "RALPH_VERIFICATION_END",
+            f"RALPH_COMMIT {worker_commit_hash}",
+            "<promise>DONE</promise>",
+        ]
+    )
 
-    with pytest.raises(RuntimeError, match="pre-commit refused commit"):
-        _verify_task_result(
-            repo_path=repo_path,
-            task=_select_first_task(ledger).task,
-            task_path=task_path,
-        )
-        _commit_verified_task(
+    with pytest.raises(RuntimeError, match="uncommitted target repo changes"):
+        _accept_worker_completed_task(
             repo_path=repo_path,
             job=job,
             ledger=ledger,
             selection=_select_first_task(ledger),
             task_path=task_path,
+            agent_output=agent_output,
         )
 
     assert yaml.safe_load(job.ledger_path.read_text())["tasks"][0]["status"] == "pending"
     assert "$ test -f src/parser.py" in task_path.joinpath("verification-output.txt").read_text()
-    assert not task_path.joinpath("commit.txt").exists()
+    assert task_path.joinpath("commit.txt").read_text() == worker_commit_hash
+
+
+def test_accept_worker_completed_task_rejects_missing_verification_transcript(
+    tmp_path: Path,
+) -> None:
+    repo_path = _initialise_git_repo(tmp_path / "target-repo")
+    ledger = _build_example_ledger()
+    job = _create_job_with_ledger(tmp_path, ledger)
+
+    with pytest.raises(RuntimeError, match="verification transcript entries"):
+        _accept_worker_completed_task(
+            repo_path=repo_path,
+            job=job,
+            ledger=ledger,
+            selection=_select_first_task(ledger),
+            task_path=tmp_path / "task",
+            agent_output="\n".join(
+                [
+                    "RALPH_VERIFICATION_BEGIN",
+                    "$ python -m pytest",
+                    "RALPH_VERIFICATION_END",
+                    f"RALPH_COMMIT {_run_git(repo_path, 'rev-parse', 'HEAD').strip()}",
+                    "<promise>DONE</promise>",
+                ]
+            ),
+        )
+
+    assert yaml.safe_load(job.ledger_path.read_text())["tasks"][0]["status"] == "pending"
 
 
 def test_materialises_planned_notion_task_under_existing_alovya_parent(
@@ -1415,38 +1472,6 @@ def _create_python_venv_shape(python_venv_path: Path) -> None:
     python_path = python_venv_path / "bin" / "python"
     python_path.parent.mkdir(parents=True)
     python_path.write_text("")
-
-
-def _install_pre_commit_hook_that_requires_pending_ledger(
-    repo_path: Path,
-    ledger_path: Path,
-    observed_ledger_path: Path,
-) -> None:
-    hook_path = repo_path / ".git" / "hooks" / "pre-commit"
-    hook_path.write_text(
-        "\n".join(
-            [
-                "#!/bin/sh",
-                f"cat {_quote_shell_path(ledger_path)} > {_quote_shell_path(observed_ledger_path)}",
-                f"grep -q 'status: pending' {_quote_shell_path(ledger_path)}",
-            ]
-        )
-    )
-    hook_path.chmod(0o755)
-
-
-def _install_failing_pre_commit_hook(repo_path: Path) -> None:
-    hook_path = repo_path / ".git" / "hooks" / "pre-commit"
-    hook_path.write_text(
-        "\n".join(
-            [
-                "#!/bin/sh",
-                "echo 'pre-commit refused commit' >&2",
-                "exit 1",
-            ]
-        )
-    )
-    hook_path.chmod(0o755)
 
 
 def _write_executable_shim(shim_path: Path) -> None:

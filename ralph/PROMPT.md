@@ -26,7 +26,19 @@ Rules:
 - Touch only paths listed in the active task unless you must make a directly required adjacent change.
 - Do not try to find or read Ralph controller state.
 - Do not edit task ledgers, plan files, or Ralph task logs.
-- Run relevant local checks when useful, but the controller will run the authoritative verification after you exit.
+- Run every verification command listed in the active task before returning DONE.
+- Commit the finished repo changes before returning DONE with `git commit --no-verify -m "Ralph: <task id> <task title>"`.
+- Do not use `git commit` without `--no-verify`.
+- After verification passes and the commit exists, include exactly one verification transcript block:
+
+RALPH_VERIFICATION_BEGIN
+$ <verification command>
+<command output>
+RALPH_VERIFICATION_END
+
+- After that block, include exactly one commit line:
+
+RALPH_COMMIT <40-character git commit hash>
 
 End your final answer with exactly one promise line:
 
