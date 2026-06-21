@@ -45,6 +45,9 @@ def describe_python_venv_for_worker_prompt(python_venv_path: Path | None) -> str
     )
 
 
+WORKER_NOTION_WORKLOG_FILENAME = ".ralph-worklog.md"
+
+
 def _build_notion_log_instructions(task: dict[str, Any]) -> str:
     notion_task = task.get("notion_task")
     if not isinstance(notion_task, dict):
@@ -57,16 +60,22 @@ def _build_notion_log_instructions(task: dict[str, Any]) -> str:
     from ralph.notion import build_worker_notion_log_command
     command = build_worker_notion_log_command(materialised_task_id)
     return "\n".join([
-        "Notion logging:",
-        f"- After writing your worklog JSON to a repo-local file (e.g., `.ralph-worklog.json`), run:",
-        f"  {command}",
-        "- Include the command you ran and its result (success or failure with output) in the JSON worklog.",
-        "- If the Notion command fails, still proceed with DONE if the code task itself is complete.",
+        "Notion worklog (required before verification):",
+        f"- Write a Markdown worklog file to `{WORKER_NOTION_WORKLOG_FILENAME}` containing:",
+        "  - Commands run (with key outputs or errors)",
+        "  - Files changed and why",
+        "  - Decisions made",
+        "  - Unresolved risks (if any)",
+        f"- Run the Notion log command: `{command}`",
+        "- If the log command fails or the content file is malformed, rewrite the file and rerun before returning.",
+        "- For BLOCKED or ABORT, log the blocker or abort reason to Notion before returning.",
+        "- If the Notion command fails but the code task is complete, proceed with DONE.",
+        f"- Delete `{WORKER_NOTION_WORKLOG_FILENAME}` after successfully logging to Notion.",
     ])
 
 
 def _build_notion_log_instructions_not_applicable() -> str:
-    return "Notion logging is not applicable for this task. Set notion_log_command and notion_log_result to null in the worklog JSON."
+    return "Notion logging is not applicable for this task."
 
 
 def _remove_duplicated_task_prose_before_rendering_prompt(value: Any) -> Any:

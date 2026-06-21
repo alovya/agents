@@ -30,25 +30,8 @@ Rules:
 - Run every verification command listed in the active task before returning DONE.
 - Commit the finished repo changes before returning DONE with `git commit --no-verify -m "Ralph: <task id> <task title>"`.
 - Do not use `git commit` without `--no-verify`.
-- Before the verification block, include exactly one structured JSON worklog block:
-
-RALPH_WORKLOG_JSON_BEGIN
-{{
-  "commands_run": ["command1", "command2"],
-  "relevant_outputs_or_errors": "Summary of key outputs, test results, or error messages",
-  "files_changed": {{"path/to/file.py": "reason for change"}},
-  "decisions_made": ["decision 1", "decision 2"],
-  "unresolved_risks": ["risk 1 if any"],
-  "notion_log_command": "the ntt command you ran, or null if not applicable",
-  "notion_log_result": "success/failure message, or null if not applicable"
-}}
-RALPH_WORKLOG_JSON_END
-
-The JSON must be valid and parseable. Required fields: commands_run, relevant_outputs_or_errors, files_changed, decisions_made, unresolved_risks, notion_log_command, notion_log_result.
 
 {notion_log_instructions}
-
-This worklog is required for DONE, BLOCKED, and ABORT. The controller will reject DONE if the JSON is malformed.
 
 - After the worklog block, include exactly one verification transcript block:
 
