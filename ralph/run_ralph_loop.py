@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import copy
 import datetime as dt
 import json
@@ -11,7 +12,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import yaml
 
@@ -53,7 +54,7 @@ ALWAYS_ALLOWED_WORKER_BASH_COMMANDS = [
     "git commit --no-verify -m *",
     "git rev-parse HEAD",
 ]
-CODEX_RULES_BACKUP_MARKER_FILENAME = "codex-rules-backup.marker"
+CODEX_RULES_BACKUP_FILENAME = "codex-rules-backup.marker"
 
 
 @dataclass(frozen=True)
@@ -111,7 +112,7 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
     job = _find_ralph_job(arguments.job_name)
     _prepare_job_directories(job)
     _refuse_unsafe_starting_state(repo_path, job)
-    _recover_stale_codex_rules_backup_marker(job)
+    _recover_interrupted_codex_rules(job)
     _run_agent_visibility_smoke_test(
         repo_path=repo_path,
         agent_backend=arguments.agent_backend,
@@ -579,24 +580,18 @@ def _run_agent(
         allowed_bash_commands=allowed_bash_commands,
     )
 
-    if backend_config.backend_name == "codex" and task_path is not None:
-        return _run_codex_agent_with_rules_management(
+    with _backend_permission_setup(
+        backend_config=backend_config,
+        allowed_bash_commands=allowed_bash_commands,
+        task_path=task_path,
+    ):
+        return _run_agent_command(
             command=command,
             prompt=prompt,
             output_path=output_path,
             tee_output=tee_output,
             backend_config=backend_config,
-            allowed_bash_commands=allowed_bash_commands,
-            task_path=task_path,
         )
-
-    return _run_agent_command(
-        command=command,
-        prompt=prompt,
-        output_path=output_path,
-        tee_output=tee_output,
-        backend_config=backend_config,
-    )
 
 
 def _run_agent_command(
@@ -633,36 +628,49 @@ def _run_agent_command(
     return AgentResult(promise=promise, output=output)
 
 
-def _run_codex_agent_with_rules_management(
-    command: list[str],
-    prompt: str,
-    output_path: Path,
-    tee_output: bool,
+@contextlib.contextmanager
+def _backend_permission_setup(
+    backend_config: AgentBackend,
+    allowed_bash_commands: list[str],
+    task_path: Path | None,
+) -> Iterator[None]:
+    if backend_config.backend_name == "codex" and task_path is not None:
+        with _codex_permission_setup(
+            backend_config=backend_config,
+            allowed_bash_commands=allowed_bash_commands,
+            task_path=task_path,
+        ):
+            yield
+    else:
+        with _claude_permission_setup():
+            yield
+
+
+@contextlib.contextmanager
+def _codex_permission_setup(
     backend_config: AgentBackend,
     allowed_bash_commands: list[str],
     task_path: Path,
-) -> AgentResult:
+) -> Iterator[None]:
     codex_home_path = backend_config.agent_state_dir
     rules_path = _codex_rules_path(codex_home_path)
-    backup_marker_path = task_path / CODEX_RULES_BACKUP_MARKER_FILENAME
+    backup_path = task_path / CODEX_RULES_BACKUP_FILENAME
 
     original_rules_snapshot = _snapshot_codex_rules(rules_path)
-    _write_codex_rules_backup_marker(backup_marker_path, original_rules_snapshot)
+    _write_codex_rules_backup(backup_path, original_rules_snapshot)
 
     try:
         generated_rules = _generate_codex_execpolicy_rules(allowed_bash_commands)
         _write_codex_rules_atomically(rules_path, generated_rules)
-
-        return _run_agent_command(
-            command=command,
-            prompt=prompt,
-            output_path=output_path,
-            tee_output=tee_output,
-            backend_config=backend_config,
-        )
+        yield
     finally:
         _restore_codex_rules(rules_path, original_rules_snapshot)
-        backup_marker_path.unlink(missing_ok=True)
+        backup_path.unlink(missing_ok=True)
+
+
+@contextlib.contextmanager
+def _claude_permission_setup() -> Iterator[None]:
+    yield
 
 
 def _run_command_and_tee_output(
@@ -1963,35 +1971,35 @@ def _build_agent_path_value(python_venv_path: Path | None) -> str:
     )
 
 
-def _recover_stale_codex_rules_backup_marker(job: RalphJob) -> None:
-    stale_marker_path = _find_stale_codex_rules_backup_marker(job)
-    if stale_marker_path is None:
+def _recover_interrupted_codex_rules(job: RalphJob) -> None:
+    backup_path = _find_interrupted_codex_rules_backup(job)
+    if backup_path is None:
         return
 
-    backup_marker = _read_codex_rules_backup_marker(stale_marker_path)
+    backup_snapshot = _read_codex_rules_backup(backup_path)
     codex_home_path = _read_codex_home_path_from_environment()
     if codex_home_path is None:
-        stale_marker_path.unlink()
+        backup_path.unlink()
         return
 
     rules_path = _codex_rules_path(codex_home_path)
-    _restore_codex_rules(rules_path, backup_marker)
-    stale_marker_path.unlink()
+    _restore_codex_rules(rules_path, backup_snapshot)
+    backup_path.unlink()
     raise RuntimeError(
-        f"Recovered stale Codex rules from backup marker at {stale_marker_path}. "
+        f"Recovered Codex rules left by interrupted worker from {backup_path}. "
         "Please restart Ralph to continue."
     )
 
 
-def _find_stale_codex_rules_backup_marker(job: RalphJob) -> Path | None:
+def _find_interrupted_codex_rules_backup(job: RalphJob) -> Path | None:
     if not job.tasks_path.is_dir():
         return None
     for task_dir in job.tasks_path.iterdir():
         if not task_dir.is_dir():
             continue
-        marker_path = task_dir / CODEX_RULES_BACKUP_MARKER_FILENAME
-        if marker_path.is_file():
-            return marker_path
+        backup_path = task_dir / CODEX_RULES_BACKUP_FILENAME
+        if backup_path.is_file():
+            return backup_path
     return None
 
 
@@ -2021,20 +2029,20 @@ def _snapshot_codex_rules(rules_path: Path) -> CodexRulesSnapshot:
     return CodexRulesSnapshot(existed=True, content=rules_path.read_text(encoding="utf-8"))
 
 
-def _write_codex_rules_backup_marker(marker_path: Path, snapshot: CodexRulesSnapshot) -> None:
-    marker_content = {
+def _write_codex_rules_backup(backup_path: Path, snapshot: CodexRulesSnapshot) -> None:
+    backup_content = {
         "existed": snapshot.existed,
         "content": snapshot.content,
     }
-    marker_path.parent.mkdir(parents=True, exist_ok=True)
-    marker_path.write_text(json.dumps(marker_content, indent=2), encoding="utf-8")
+    backup_path.parent.mkdir(parents=True, exist_ok=True)
+    backup_path.write_text(json.dumps(backup_content, indent=2), encoding="utf-8")
 
 
-def _read_codex_rules_backup_marker(marker_path: Path) -> CodexRulesSnapshot:
-    marker_content = json.loads(marker_path.read_text(encoding="utf-8"))
+def _read_codex_rules_backup(backup_path: Path) -> CodexRulesSnapshot:
+    backup_content = json.loads(backup_path.read_text(encoding="utf-8"))
     return CodexRulesSnapshot(
-        existed=marker_content["existed"],
-        content=marker_content["content"],
+        existed=backup_content["existed"],
+        content=backup_content["content"],
     )
 
 
