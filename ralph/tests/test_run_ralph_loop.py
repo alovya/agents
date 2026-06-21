@@ -25,6 +25,7 @@ from ralph.run_ralph_loop import (
     _build_worker_allowed_bash_commands,
     _create_task_directory,
     _extract_created_notion_task_id,
+    _extract_claude_stream_result_text,
     _find_ralph_job,
     _log_completed_worker_to_notion,
     _log_failed_verification_to_notion,
@@ -700,10 +701,13 @@ def test_build_bwrap_agent_command_uses_claude_command_tail(
     assert command[claude_index:] == [
         str(WORKER_AGENT_BINARY_PATH),
         "--print",
+        "--verbose",
         "--input-format",
         "text",
         "--output-format",
-        "text",
+        "stream-json",
+        "--include-partial-messages",
+        "--include-hook-events",
         "--permission-mode",
         "dontAsk",
         "--allowedTools",
@@ -721,6 +725,48 @@ def test_build_bwrap_agent_command_uses_claude_command_tail(
     ]
     assert "bypassPermissions" not in command
     assert "--dangerously-skip-permissions" not in command
+
+
+def test_extract_claude_stream_result_text_prefers_result_event() -> None:
+    raw_output = "\n".join([
+        json.dumps({
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {"type": "text", "text": "partial answer"},
+                ],
+            },
+        }),
+        json.dumps({
+            "type": "result",
+            "result": "final answer\n<promise>BLOCKED</promise>",
+        }),
+    ])
+
+    assert _extract_claude_stream_result_text(raw_output) == "final answer\n<promise>BLOCKED</promise>"
+
+
+def test_extract_claude_stream_result_text_falls_back_to_final_assistant_event() -> None:
+    raw_output = "\n".join([
+        json.dumps({
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {"type": "text", "text": "first answer"},
+                ],
+            },
+        }),
+        json.dumps({
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {"type": "text", "text": "final answer"},
+                ],
+            },
+        }),
+    ])
+
+    assert _extract_claude_stream_result_text(raw_output) == "final answer"
 
 
 def test_build_worker_allowed_bash_commands_combines_controller_and_plan_commands() -> None:

@@ -590,7 +590,10 @@ def _run_agent(
         )
         _write_text(output_path, completed_process.stdout)
 
-    output = completed_process.stdout or ""
+    output = _extract_agent_result_text(
+        backend_config=backend_config,
+        raw_output=completed_process.stdout or "",
+    )
     if completed_process.returncode != 0:
         raise RuntimeError(f"Agent failed with exit code {completed_process.returncode}. See {output_path}")
     promise = _parse_agent_promise(output)
@@ -677,7 +680,11 @@ def _run_agent_visibility_smoke_test(
     )
     if completed_process.returncode != 0:
         raise RuntimeError(f"Ralph agent sandbox smoke test failed:\n{completed_process.stdout}")
-    if _find_last_non_empty_line(completed_process.stdout) != "RALPH_SANDBOX_OK":
+    output = _extract_agent_result_text(
+        backend_config=backend_config,
+        raw_output=completed_process.stdout or "",
+    )
+    if _find_last_non_empty_line(output) != "RALPH_SANDBOX_OK":
         raise RuntimeError(f"Ralph agent sandbox smoke test did not prove isolation:\n{completed_process.stdout}")
 
 
@@ -1289,10 +1296,13 @@ def _build_codex_command_tail(repo_path: Path) -> list[str]:
 def _build_claude_command_tail(allowed_bash_commands: list[str]) -> list[str]:
     command_tail = [
         "--print",
+        "--verbose",
         "--input-format",
         "text",
         "--output-format",
-        "text",
+        "stream-json",
+        "--include-partial-messages",
+        "--include-hook-events",
         "--permission-mode",
         "dontAsk",
         "--allowedTools",
@@ -1311,6 +1321,57 @@ def _build_claude_allowed_tools(allowed_bash_commands: list[str]) -> list[str]:
         for command in allowed_bash_commands
     ]
     return allowed_tools
+
+
+def _extract_agent_result_text(backend_config: AgentBackendConfig, raw_output: str) -> str:
+    if backend_config.backend_name != "claude":
+        return raw_output
+    return _extract_claude_stream_result_text(raw_output)
+
+
+def _extract_claude_stream_result_text(raw_output: str) -> str:
+    result_text: str | None = None
+    final_assistant_text: str | None = None
+    malformed_lines: list[str] = []
+    for line in raw_output.splitlines():
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            malformed_lines.append(line)
+            continue
+
+        if event.get("type") == "result" and isinstance(event.get("result"), str):
+            result_text = event["result"]
+        if event.get("type") == "assistant":
+            assistant_text = _extract_text_from_claude_assistant_event(event)
+            if assistant_text:
+                final_assistant_text = assistant_text
+
+    if result_text is not None:
+        return result_text
+    if final_assistant_text is not None:
+        return final_assistant_text
+    if malformed_lines:
+        raise RuntimeError("Claude stream-json output contained malformed JSON lines.")
+    raise RuntimeError("Claude stream-json output did not include a result or assistant text event.")
+
+
+def _extract_text_from_claude_assistant_event(event: dict[str, Any]) -> str:
+    message = event.get("message")
+    if not isinstance(message, dict):
+        return ""
+    content_blocks = message.get("content")
+    if not isinstance(content_blocks, list):
+        return ""
+    return "".join(
+        content_block["text"]
+        for content_block in content_blocks
+        if isinstance(content_block, dict)
+        and content_block.get("type") == "text"
+        and isinstance(content_block.get("text"), str)
+    )
 
 
 def _build_bwrap_worker_environment_variables(
