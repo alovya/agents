@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
 from ralph.agent_backends import (
+    AgentBackend,
     build_worker_allowed_bash_commands,
+    run_command_and_save_agent_transcripts,
     run_command_and_tee_output,
     select_agent_backend_config,
 )
@@ -155,3 +158,97 @@ def test_run_command_and_tee_output_writes_to_terminal_and_file(
     assert completed_process.stdout == "before\nmiddle\nafter\n"
     assert output_path.read_text(encoding="utf-8") == "before\nmiddle\nafter\n"
     assert capsys.readouterr().out == "before\nmiddle\nafter\n"
+
+
+def test_run_command_and_save_agent_transcripts_keeps_codex_transcript_plain(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    output_path = tmp_path / "agent-output.txt"
+    backend_config = AgentBackend(
+        backend_name="codex",
+        command_name="bash",
+        agent_state_dir=tmp_path / "codex-home",
+        agent_home_environment_variable="CODEX_HOME",
+    )
+
+    completed_process = run_command_and_save_agent_transcripts(
+        command=["bash", "-lc", "printf 'before\\n'; cat; printf 'after\\n'"],
+        input_text="middle\n",
+        output_path=output_path,
+        backend_config=backend_config,
+        tee_output=True,
+    )
+
+    assert completed_process.returncode == 0
+    assert completed_process.stdout == "before\nmiddle\nafter\n"
+    assert output_path.read_text(encoding="utf-8") == "before\nmiddle\nafter\n"
+    assert not (tmp_path / "agent-output.raw.jsonl").exists()
+    assert capsys.readouterr().out == "before\nmiddle\nafter\n"
+
+
+def test_run_command_and_save_agent_transcripts_keeps_claude_raw_stream_and_readable_transcript(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    output_path = tmp_path / "agent-output.txt"
+    raw_output_path = tmp_path / "agent-output.raw.jsonl"
+    backend_config = AgentBackend(
+        backend_name="claude",
+        command_name="/workspace/venv/bin/python",
+        agent_state_dir=tmp_path / "claude-config",
+        agent_home_environment_variable="CLAUDE_CONFIG_DIR",
+    )
+    raw_stream = "\n".join([
+        _serialise_claude_stream_event({
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {"type": "text", "text": "I found the failing test."},
+                ],
+            },
+        }),
+        _serialise_claude_stream_event({
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Bash",
+                        "input": {"command": "pytest ralph/tests/test_agent_backends.py"},
+                    },
+                ],
+            },
+        }),
+        _serialise_claude_stream_event({
+            "type": "result",
+            "result": "Finished investigating.\n<promise>BLOCKED</promise>",
+        }),
+    ]) + "\n"
+    python_code = f"import sys; sys.stdin.read(); sys.stdout.write({raw_stream!r})"
+
+    completed_process = run_command_and_save_agent_transcripts(
+        command=["/workspace/venv/bin/python", "-c", python_code],
+        input_text="prompt ignored by this fake agent\n",
+        output_path=output_path,
+        backend_config=backend_config,
+        tee_output=True,
+    )
+
+    readable_transcript = "\n".join([
+        "I found the failing test.",
+        "Tool use: Bash (command: pytest ralph/tests/test_agent_backends.py)",
+        "Finished investigating.",
+        "<promise>BLOCKED</promise>",
+        "",
+    ])
+
+    assert completed_process.returncode == 0
+    assert completed_process.stdout == raw_stream
+    assert raw_output_path.read_text(encoding="utf-8") == raw_stream
+    assert output_path.read_text(encoding="utf-8") == readable_transcript
+    assert capsys.readouterr().out == readable_transcript
+
+
+def _serialise_claude_stream_event(event: dict[str, object]) -> str:
+    return json.dumps(event)

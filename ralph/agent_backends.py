@@ -10,6 +10,7 @@ from ralph.claude_backend import (
     build_claude_backend_config,
     build_claude_command_tail,
     extract_claude_stream_result_text,
+    format_claude_stream_event_for_human,
 )
 from ralph.codex_backend import (
     build_codex_backend_config,
@@ -29,6 +30,13 @@ class AgentBackend:
     command_name: str
     agent_state_dir: Path
     agent_home_environment_variable: str
+
+
+@dataclass(frozen=True)
+class AgentTranscriptStrategy:
+    backend_name: str
+    raw_output_path: Path
+    human_output_path: Path
 
 
 ALWAYS_ALLOWED_WORKER_BASH_COMMANDS = [
@@ -92,8 +100,87 @@ def run_command_and_tee_output(
     input_text: str,
     output_path: Path,
 ) -> subprocess.CompletedProcess[str]:
+    return run_command_and_save_agent_transcripts(
+        command=command,
+        input_text=input_text,
+        output_path=output_path,
+        backend_config=AgentBackend(
+            backend_name="codex",
+            command_name=command[0],
+            agent_state_dir=Path(),
+            agent_home_environment_variable="",
+        ),
+        tee_output=True,
+    )
+
+
+def run_command_and_save_agent_transcripts(
+    command: list[str],
+    input_text: str,
+    output_path: Path,
+    backend_config: AgentBackend,
+    tee_output: bool,
+) -> subprocess.CompletedProcess[str]:
+    transcript_strategy = _choose_agent_transcript_strategy(
+        backend_name=backend_config.backend_name,
+        output_path=output_path,
+    )
+
+    return _run_command_and_stream_transcripts(
+        command=command,
+        input_text=input_text,
+        transcript_strategy=transcript_strategy,
+        tee_output=tee_output,
+    )
+
+
+def _choose_agent_transcript_strategy(
+    backend_name: str,
+    output_path: Path,
+) -> AgentTranscriptStrategy:
+    if backend_name == "claude":
+        return AgentTranscriptStrategy(
+            backend_name=backend_name,
+            raw_output_path=output_path.with_suffix(".raw.jsonl"),
+            human_output_path=output_path,
+        )
+    return AgentTranscriptStrategy(
+        backend_name=backend_name,
+        raw_output_path=output_path,
+        human_output_path=output_path,
+    )
+
+
+def _run_command_and_stream_transcripts(
+    command: list[str],
+    input_text: str,
+    transcript_strategy: AgentTranscriptStrategy,
+    tee_output: bool,
+) -> subprocess.CompletedProcess[str]:
+    if transcript_strategy.raw_output_path == transcript_strategy.human_output_path:
+        return _run_command_and_stream_plain_text_transcript(
+            command=command,
+            input_text=input_text,
+            output_path=transcript_strategy.human_output_path,
+            tee_output=tee_output,
+        )
+
+    return _run_command_and_stream_raw_and_human_transcripts(
+        command=command,
+        input_text=input_text,
+        transcript_strategy=transcript_strategy,
+        tee_output=tee_output,
+    )
+
+
+def _run_command_and_stream_plain_text_transcript(
+    command: list[str],
+    input_text: str,
+    output_path: Path,
+    tee_output: bool,
+) -> subprocess.CompletedProcess[str]:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_chunks: list[str] = []
+    raw_output_chunks: list[str] = []
     with output_path.open("w", encoding="utf-8") as output_file:
         process = subprocess.Popen(
             command,
@@ -111,15 +198,87 @@ def run_command_and_tee_output(
         process.stdin.close()
 
         for line in process.stdout:
-            print(line, end="", flush=True)
+            if tee_output:
+                print(line, end="", flush=True)
             output_file.write(line)
             output_file.flush()
-            output_chunks.append(line)
+            raw_output_chunks.append(line)
 
     return_code = process.wait()
-    output = "".join(output_chunks)
+    raw_output = "".join(raw_output_chunks)
     return subprocess.CompletedProcess(
         args=command,
         returncode=return_code,
-        stdout=output,
+        stdout=raw_output,
     )
+
+
+def _run_command_and_stream_raw_and_human_transcripts(
+    command: list[str],
+    input_text: str,
+    transcript_strategy: AgentTranscriptStrategy,
+    tee_output: bool,
+) -> subprocess.CompletedProcess[str]:
+    transcript_strategy.raw_output_path.parent.mkdir(parents=True, exist_ok=True)
+    transcript_strategy.human_output_path.parent.mkdir(parents=True, exist_ok=True)
+    raw_output_chunks: list[str] = []
+    emitted_claude_texts: set[str] = set()
+
+    with (
+        transcript_strategy.raw_output_path.open("w", encoding="utf-8") as raw_output_file,
+        transcript_strategy.human_output_path.open("w", encoding="utf-8") as human_output_file,
+    ):
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+
+        if process.stdin is None or process.stdout is None:
+            raise RuntimeError("Could not open agent stdin/stdout pipes.")
+
+        process.stdin.write(input_text)
+        process.stdin.close()
+
+        for raw_line in process.stdout:
+            raw_output_file.write(raw_line)
+            raw_output_file.flush()
+            raw_output_chunks.append(raw_line)
+
+            human_text = _format_agent_stream_line_for_human(
+                backend_name=transcript_strategy.backend_name,
+                raw_line=raw_line,
+                emitted_claude_texts=emitted_claude_texts,
+            )
+            if not human_text:
+                continue
+
+            if tee_output:
+                print(human_text, end="", flush=True)
+            human_output_file.write(human_text)
+            human_output_file.flush()
+
+    return_code = process.wait()
+    raw_output = "".join(raw_output_chunks)
+    return subprocess.CompletedProcess(
+        args=command,
+        returncode=return_code,
+        stdout=raw_output,
+    )
+
+
+def _format_agent_stream_line_for_human(
+    backend_name: str,
+    raw_line: str,
+    emitted_claude_texts: set[str],
+) -> str:
+    if backend_name != "claude":
+        return raw_line
+
+    human_lines = format_claude_stream_event_for_human(raw_line, emitted_claude_texts)
+    if human_lines:
+        emitted_claude_texts.add("\n".join(human_lines))
+    return "".join(f"{human_line}\n" for human_line in human_lines)

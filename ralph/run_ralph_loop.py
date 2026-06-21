@@ -22,7 +22,7 @@ from ralph.agent_backends import (
     AgentResult,
     build_worker_allowed_bash_commands,
     extract_agent_result_text,
-    run_command_and_tee_output,
+    run_command_and_save_agent_transcripts,
     select_agent_backend_config,
 )
 from ralph.codex_backend import recover_interrupted_codex_rules
@@ -399,22 +399,13 @@ def _run_agent_command(
     tee_output: bool,
     backend_config: AgentBackend,
 ) -> AgentResult:
-    if tee_output:
-        completed_process = run_command_and_tee_output(
-            command=command,
-            input_text=prompt,
-            output_path=output_path,
-        )
-    else:
-        completed_process = subprocess.run(
-            command,
-            input=prompt,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            check=False,
-        )
-        _write_text(output_path, completed_process.stdout)
+    completed_process = run_command_and_save_agent_transcripts(
+        command=command,
+        input_text=prompt,
+        output_path=output_path,
+        backend_config=backend_config,
+        tee_output=tee_output,
+    )
 
     output = extract_agent_result_text(
         backend_config=backend_config,
