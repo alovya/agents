@@ -17,7 +17,6 @@ if __name__ == "__main__":
 import yaml
 
 from ralph.agent_backends import (
-    ALWAYS_ALLOWED_WORKER_BASH_COMMANDS,
     AgentBackend,
     AgentResult,
     build_worker_allowed_bash_commands,
@@ -25,33 +24,11 @@ from ralph.agent_backends import (
     run_command_and_tee_output,
     select_agent_backend_config,
 )
-from ralph.claude_backend import extract_claude_stream_result_text
-from ralph.codex_backend import (
-    CODEX_RULES_BACKUP_FILENAME,
-    CodexRulesSnapshot,
-    codex_permission_setup,
-    codex_rules_path,
-    find_interrupted_codex_rules_backup,
-    generate_codex_execpolicy_rules,
-    parse_command_to_execpolicy_pattern,
-    read_codex_rules_backup,
-    recover_interrupted_codex_rules,
-    require_codex_home_path,
-    restore_codex_rules,
-    snapshot_codex_rules,
-    write_codex_rules_atomically,
-    write_codex_rules_backup,
-)
+from ralph.codex_backend import recover_interrupted_codex_rules
 from ralph.notion import (
-    DEFAULT_NOTION_TRACKER_STATE_PATH,
-    build_notion_task_creation_command,
-    extract_created_notion_task_id,
     log_completed_worker_to_notion,
     log_failed_verification_to_notion,
-    log_slice_start_to_notion,
     log_worker_promise_to_notion,
-    materialise_planned_notion_task_before_worker_launch,
-    materialised_notion_task_id_from_task,
     prepare_notion_task_before_worker_runs_task,
 )
 from ralph.plan_selection import (
@@ -59,17 +36,9 @@ from ralph.plan_selection import (
     read_tasks_from_ledger,
     select_next_task_from_plan_and_ledger,
 )
-from ralph.prompt import (
-    describe_python_venv_for_worker_prompt,
-    render_agent_prompt,
-)
+from ralph.prompt import render_agent_prompt
 from ralph.sandbox import (
-    DEFAULT_RALPH_HOME_PATH,
-    WORKER_AGENT_BINARY_PATH,
-    WORKER_HOME_PATH,
-    WORKER_TEMP_PATH,
     backend_permission_setup,
-    build_agent_visibility_smoke_test_prompt,
     build_bwrap_agent_command,
     reject_worker_visible_path_that_overlaps_hidden_state,
     resolve_python_venv_path,
@@ -97,51 +66,6 @@ class RalphJob:
     plan_path: Path
     ledger_path: Path
     tasks_path: Path
-
-
-# Re-export for backwards compatibility
-_select_next_task_from_plan_and_ledger = select_next_task_from_plan_and_ledger
-_read_tasks_from_ledger = read_tasks_from_ledger
-_render_agent_prompt = render_agent_prompt
-_describe_python_venv_for_worker_prompt = describe_python_venv_for_worker_prompt
-_prepare_notion_task_before_worker_runs_task = prepare_notion_task_before_worker_runs_task
-_materialise_planned_notion_task_before_worker_launch = materialise_planned_notion_task_before_worker_launch
-_log_slice_start_to_notion = log_slice_start_to_notion
-_log_worker_promise_to_notion = log_worker_promise_to_notion
-_log_failed_verification_to_notion = log_failed_verification_to_notion
-_log_completed_worker_to_notion = log_completed_worker_to_notion
-_materialised_notion_task_id_from_task = materialised_notion_task_id_from_task
-_build_notion_task_creation_command = build_notion_task_creation_command
-_extract_created_notion_task_id = extract_created_notion_task_id
-
-# Re-export sandbox functions for test compatibility
-_run_agent_visibility_smoke_test = run_agent_visibility_smoke_test
-_build_agent_visibility_smoke_test_prompt = build_agent_visibility_smoke_test_prompt
-_build_bwrap_agent_command = build_bwrap_agent_command
-_reject_worker_visible_path_that_overlaps_hidden_state = reject_worker_visible_path_that_overlaps_hidden_state
-_resolve_python_venv_path = resolve_python_venv_path
-_resolve_ralph_home_path = resolve_ralph_home_path
-
-# Re-export agent backend functions for test compatibility
-_select_agent_backend_config = select_agent_backend_config
-_build_worker_allowed_bash_commands = build_worker_allowed_bash_commands
-_run_command_and_tee_output = run_command_and_tee_output
-_extract_claude_stream_result_text = extract_claude_stream_result_text
-
-# Re-export codex backend functions for test compatibility
-_require_codex_home_path = require_codex_home_path
-_codex_permission_setup = codex_permission_setup
-_codex_rules_path = codex_rules_path
-_snapshot_codex_rules = snapshot_codex_rules
-_write_codex_rules_backup = write_codex_rules_backup
-_read_codex_rules_backup = read_codex_rules_backup
-_restore_codex_rules = restore_codex_rules
-_generate_codex_execpolicy_rules = generate_codex_execpolicy_rules
-_parse_command_to_execpolicy_pattern = parse_command_to_execpolicy_pattern
-_write_codex_rules_atomically = write_codex_rules_atomically
-_find_interrupted_codex_rules_backup = find_interrupted_codex_rules_backup
-_recover_interrupted_codex_rules = recover_interrupted_codex_rules
-_backend_permission_setup = backend_permission_setup
 
 
 def main(argv: list[str] | None = None) -> None:
