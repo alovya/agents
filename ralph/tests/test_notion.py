@@ -8,6 +8,7 @@ import yaml
 
 from ralph.notion import (
     DEFAULT_NOTION_TRACKER_STATE_PATH,
+    DEFAULT_WORKLOG_FALLBACK,
     build_notion_task_creation_command,
     extract_created_notion_task_id,
     log_completed_worker_to_notion,
@@ -213,7 +214,30 @@ def test_controller_logs_blocked_worker_promise_to_notion(
     )
 
     assert observed_content["subheading"] == "Worker returned BLOCKED"
-    assert observed_content["blocks"][1]["text"] == "Missing dependency"
+    assert "Worker worklog:" in observed_content["blocks"][1]["text"]
+    assert DEFAULT_WORKLOG_FALLBACK in observed_content["blocks"][1]["text"]
+    assert observed_content["blocks"][2]["text"] == "Missing dependency"
+
+
+def test_controller_logs_blocked_worker_with_worklog_to_notion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selection = select_first_task(build_ledger_with_materialised_notion_task())
+    observed_content = capture_notion_log_content(monkeypatch)
+
+    log_worker_promise_to_notion(
+        selection=selection,
+        task_path=tmp_path,
+        promise="BLOCKED",
+        agent_output="Missing dependency",
+        worklog="Tried to install dependency but failed.",
+    )
+
+    assert observed_content["subheading"] == "Worker returned BLOCKED"
+    assert "Worker worklog:" in observed_content["blocks"][1]["text"]
+    assert "Tried to install dependency but failed." in observed_content["blocks"][1]["text"]
+    assert observed_content["blocks"][2]["text"] == "Missing dependency"
 
 
 def test_controller_logs_failed_verification_to_notion(
@@ -228,7 +252,26 @@ def test_controller_logs_failed_verification_to_notion(
     log_failed_verification_to_notion(selection=selection, task_path=tmp_path)
 
     assert observed_content["subheading"] == "Verification failed"
-    assert observed_content["blocks"][1]["text"] == "$ pytest\nfailed\n"
+    assert "Worker worklog:" in observed_content["blocks"][1]["text"]
+    assert DEFAULT_WORKLOG_FALLBACK in observed_content["blocks"][1]["text"]
+    assert observed_content["blocks"][2]["text"] == "$ pytest\nfailed\n"
+
+
+def test_controller_logs_failed_verification_with_worklog_to_notion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selection = select_first_task(build_ledger_with_materialised_notion_task())
+    (tmp_path / "worker-worklog.txt").write_text("Made changes but tests failed.")
+    (tmp_path / "verification-output.txt").write_text("$ pytest\nfailed\n")
+    observed_content = capture_notion_log_content(monkeypatch)
+
+    log_failed_verification_to_notion(selection=selection, task_path=tmp_path)
+
+    assert observed_content["subheading"] == "Verification failed"
+    assert "Worker worklog:" in observed_content["blocks"][1]["text"]
+    assert "Made changes but tests failed." in observed_content["blocks"][1]["text"]
+    assert observed_content["blocks"][2]["text"] == "$ pytest\nfailed\n"
 
 
 def test_controller_logs_successful_verification_and_commit_to_notion(
@@ -249,9 +292,36 @@ def test_controller_logs_successful_verification_and_commit_to_notion(
 
     assert observed_content["subheading"] == "Ralph R1 completed"
     assert observed_content["blocks"][0]["text"] == "Worker promise: DONE"
-    assert observed_content["blocks"][1]["text"] == "M src/parser.py"
-    assert observed_content["blocks"][2]["text"] == "$ pytest\npassed\n"
-    assert observed_content["blocks"][3]["text"] == "Commit hash: abc123"
+    assert "Worker worklog:" in observed_content["blocks"][1]["text"]
+    assert DEFAULT_WORKLOG_FALLBACK in observed_content["blocks"][1]["text"]
+    assert observed_content["blocks"][2]["text"] == "M src/parser.py"
+    assert observed_content["blocks"][3]["text"] == "$ pytest\npassed\n"
+    assert observed_content["blocks"][4]["text"] == "Commit hash: abc123"
+
+
+def test_controller_logs_successful_completion_with_worklog_to_notion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selection = select_first_task(build_ledger_with_materialised_notion_task())
+    (tmp_path / "promise.txt").write_text("DONE")
+    (tmp_path / "worker-worklog.txt").write_text("Added parser function.\nAll tests pass.")
+    (tmp_path / "verification-output.txt").write_text("$ pytest\npassed\n")
+    observed_content = capture_notion_log_content(monkeypatch)
+
+    log_completed_worker_to_notion(
+        selection=selection,
+        task_path=tmp_path,
+        changed_files=["M src/parser.py"],
+        commit_hash="abc123",
+    )
+
+    assert observed_content["subheading"] == "Ralph R1 completed"
+    assert observed_content["blocks"][0]["text"] == "Worker promise: DONE"
+    assert "Worker worklog:" in observed_content["blocks"][1]["text"]
+    assert "Added parser function." in observed_content["blocks"][1]["text"]
+    assert "All tests pass." in observed_content["blocks"][1]["text"]
+    assert observed_content["blocks"][2]["text"] == "M src/parser.py"
 
 
 def test_extract_created_notion_task_id_uses_output_file_and_excludes_related_task(

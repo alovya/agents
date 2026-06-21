@@ -55,6 +55,12 @@ WORKER_VERIFICATION_BLOCK_PATTERN = re.compile(
     re.DOTALL | re.MULTILINE,
 )
 WORKER_COMMIT_LINE_PATTERN = re.compile(r"^RALPH_COMMIT (?P<commit_hash>[0-9a-f]{40})$", re.MULTILINE)
+WORKER_WORKLOG_BLOCK_PATTERN = re.compile(
+    r"^RALPH_WORKLOG_BEGIN\n(?P<worklog>.*?)^RALPH_WORKLOG_END$",
+    re.DOTALL | re.MULTILINE,
+)
+
+DEFAULT_WORKLOG_FALLBACK = "Worker did not provide a structured worklog. See agent-output.txt for the full transcript."
 
 PRIVATE_CONTROL_PATH_NAMES = frozenset({"PLAN.md", "ledger.yaml", ".ralph"})
 
@@ -134,11 +140,14 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
         _write_text(task_path / "promise.txt", agent_result.promise)
 
         if agent_result.promise != "DONE":
+            worklog = extract_worker_worklog(agent_result.output)
+            _write_text(task_path / "worker-worklog.txt", worklog)
             log_worker_promise_to_notion(
                 selection=selection,
                 task_path=task_path,
                 promise=agent_result.promise,
                 agent_output=agent_result.output,
+                worklog=worklog,
             )
             print(f"Agent stopped with {agent_result.promise}. See {task_path}")
             return
@@ -174,12 +183,14 @@ def _accept_worker_completed_task(
     task_path: Path,
     agent_output: str,
 ) -> str:
+    worklog = extract_worker_worklog(agent_output, require_unique_for_done=True)
     verification_output = _extract_worker_verification_output(
         task=selection.task,
         agent_output=agent_output,
     )
     commit_hash = _extract_worker_commit_hash(agent_output)
 
+    _write_text(task_path / "worker-worklog.txt", worklog)
     _write_text(task_path / "verification-output.txt", verification_output)
     _write_text(task_path / "commit.txt", commit_hash)
     _validate_worker_commit_matches_repo_state(
@@ -226,6 +237,15 @@ def _extract_worker_commit_hash(agent_output: str) -> str:
     if len(matches) != 1:
         raise RuntimeError("Worker DONE must include exactly one RALPH_COMMIT line with the committed HEAD.")
     return matches[0]
+
+
+def extract_worker_worklog(agent_output: str, require_unique_for_done: bool = False) -> str:
+    matches = WORKER_WORKLOG_BLOCK_PATTERN.findall(agent_output)
+    if len(matches) > 1 and require_unique_for_done:
+        raise RuntimeError("Worker DONE must include at most one RALPH_WORKLOG block.")
+    if len(matches) == 0:
+        return DEFAULT_WORKLOG_FALLBACK
+    return matches[0].strip()
 
 
 def _validate_worker_commit_matches_repo_state(

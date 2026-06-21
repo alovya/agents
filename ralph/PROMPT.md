@@ -30,7 +30,18 @@ Rules:
 - Run every verification command listed in the active task before returning DONE.
 - Commit the finished repo changes before returning DONE with `git commit --no-verify -m "Ralph: <task id> <task title>"`.
 - Do not use `git commit` without `--no-verify`.
-- After verification passes and the commit exists, include exactly one verification transcript block:
+- Before the verification block, include exactly one structured worklog block summarising your work:
+
+RALPH_WORKLOG_BEGIN
+Commands run and their relevant outputs or errors.
+Files changed and why.
+Key decisions made during implementation.
+Any unresolved risks or concerns.
+RALPH_WORKLOG_END
+
+This worklog is expected for DONE and useful for BLOCKED or ABORT. It helps humans review execution without reading the full transcript.
+
+- After the worklog block, include exactly one verification transcript block:
 
 RALPH_VERIFICATION_BEGIN
 $ <verification command>

@@ -19,6 +19,9 @@ from ralph.plan_selection import (
 )
 
 
+DEFAULT_WORKLOG_FALLBACK = "Worker did not provide a structured worklog. See agent-output.txt for the full transcript."
+
+
 DEFAULT_NOTION_TRACKER_STATE_PATH = Path("/workspace/.notion-task-tracker/notion_tasks_tree.json")
 
 
@@ -108,11 +111,13 @@ def log_worker_promise_to_notion(
     task_path: Path,
     promise: str,
     agent_output: str,
+    worklog: str | None = None,
 ) -> None:
     notion_task_id = materialised_notion_task_id_from_task(selection.task)
     if notion_task_id is None:
         return
 
+    worklog_text = worklog if worklog else DEFAULT_WORKLOG_FALLBACK
     _append_notion_task_log(
         notion_task_id=notion_task_id,
         task_path=task_path,
@@ -121,6 +126,7 @@ def log_worker_promise_to_notion(
             "subheading": f"Worker returned {promise}",
             "blocks": [
                 {"type": "paragraph", "text": f"Ralph task {selection.task['id']} stopped before verification."},
+                {"type": "code", "language": "text", "text": f"Worker worklog:\n{worklog_text}"},
                 {"type": "code", "language": "text", "text": agent_output},
                 {"type": "paragraph", "text": f"Transcript path: {task_path / 'agent-output.txt'}"},
             ],
@@ -133,6 +139,7 @@ def log_failed_verification_to_notion(selection: TaskSelection, task_path: Path)
     if notion_task_id is None:
         return
 
+    worklog_text = _read_text_if_file_exists(task_path / "worker-worklog.txt") or DEFAULT_WORKLOG_FALLBACK
     _append_notion_task_log(
         notion_task_id=notion_task_id,
         task_path=task_path,
@@ -141,6 +148,7 @@ def log_failed_verification_to_notion(selection: TaskSelection, task_path: Path)
             "subheading": "Verification failed",
             "blocks": [
                 {"type": "paragraph", "text": f"Ralph task {selection.task['id']} returned DONE, then verification failed."},
+                {"type": "code", "language": "text", "text": f"Worker worklog:\n{worklog_text}"},
                 {
                     "type": "code",
                     "language": "text",
@@ -162,6 +170,7 @@ def log_completed_worker_to_notion(
     if notion_task_id is None:
         return
 
+    worklog_text = _read_text_if_file_exists(task_path / "worker-worklog.txt") or DEFAULT_WORKLOG_FALLBACK
     _append_notion_task_log(
         notion_task_id=notion_task_id,
         task_path=task_path,
@@ -170,6 +179,7 @@ def log_completed_worker_to_notion(
             "subheading": f"Ralph {selection.task['id']} completed",
             "blocks": [
                 {"type": "paragraph", "text": f"Worker promise: {_read_text_if_file_exists(task_path / 'promise.txt').strip()}"},
+                {"type": "code", "language": "text", "text": f"Worker worklog:\n{worklog_text}"},
                 {"type": "code", "language": "text", "text": "\n".join(changed_files) or "No changed files were captured before commit."},
                 {
                     "type": "code",

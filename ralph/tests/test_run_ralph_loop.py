@@ -21,6 +21,8 @@ from ralph.run_ralph_loop import (
     _parse_arguments,
     _parse_agent_promise,
     _refuse_unsafe_starting_state,
+    extract_worker_worklog,
+    DEFAULT_WORKLOG_FALLBACK,
 )
 from ralph.sandbox import run_agent_visibility_smoke_test
 
@@ -371,6 +373,130 @@ def test_accept_worker_completed_task_rejects_missing_verification_transcript(
                     "<promise>DONE</promise>",
                 ]
             ),
+        )
+
+    assert yaml.safe_load(job.ledger_path.read_text())["tasks"][0]["status"] == "pending"
+
+
+def test_extract_worker_worklog_returns_block_content() -> None:
+    agent_output = "\n".join([
+        "Working on the task...",
+        "RALPH_WORKLOG_BEGIN",
+        "Ran pytest: all tests pass.",
+        "Changed src/parser.py to add validation.",
+        "RALPH_WORKLOG_END",
+        "Done.",
+    ])
+
+    worklog = extract_worker_worklog(agent_output)
+
+    assert worklog == "Ran pytest: all tests pass.\nChanged src/parser.py to add validation."
+
+
+def test_extract_worker_worklog_returns_fallback_when_no_block() -> None:
+    agent_output = "No worklog block here.\n<promise>BLOCKED</promise>"
+
+    worklog = extract_worker_worklog(agent_output)
+
+    assert worklog == DEFAULT_WORKLOG_FALLBACK
+
+
+def test_extract_worker_worklog_rejects_multiple_blocks_for_done() -> None:
+    agent_output = "\n".join([
+        "RALPH_WORKLOG_BEGIN",
+        "First worklog.",
+        "RALPH_WORKLOG_END",
+        "RALPH_WORKLOG_BEGIN",
+        "Second worklog.",
+        "RALPH_WORKLOG_END",
+    ])
+
+    with pytest.raises(RuntimeError, match="at most one RALPH_WORKLOG block"):
+        extract_worker_worklog(agent_output, require_unique_for_done=True)
+
+
+def test_extract_worker_worklog_uses_first_block_when_multiple_and_not_done() -> None:
+    agent_output = "\n".join([
+        "RALPH_WORKLOG_BEGIN",
+        "First worklog.",
+        "RALPH_WORKLOG_END",
+        "RALPH_WORKLOG_BEGIN",
+        "Second worklog.",
+        "RALPH_WORKLOG_END",
+    ])
+
+    worklog = extract_worker_worklog(agent_output, require_unique_for_done=False)
+
+    assert worklog == "First worklog."
+
+
+def test_accept_worker_completed_task_writes_worklog_file(tmp_path: Path) -> None:
+    repo_path = initialise_git_repo(tmp_path / "target-repo")
+    ledger = build_example_ledger()
+    job = create_job_with_ledger(tmp_path, ledger)
+    task_path = tmp_path / "task"
+    parser_path = repo_path / "src" / "parser.py"
+    parser_path.parent.mkdir()
+    parser_path.write_text("def parse_value(value):\n    return value\n")
+    run_git(repo_path, "add", ".")
+    run_git(repo_path, "commit", "--no-verify", "-m", "Ralph: R1 Add parser")
+    worker_commit_hash = run_git(repo_path, "rev-parse", "HEAD").strip()
+    agent_output = "\n".join([
+        "RALPH_WORKLOG_BEGIN",
+        "Created src/parser.py with parse_value function.",
+        "Ran verification: test passed.",
+        "RALPH_WORKLOG_END",
+        "RALPH_VERIFICATION_BEGIN",
+        "$ test -f src/parser.py",
+        "RALPH_VERIFICATION_END",
+        f"RALPH_COMMIT {worker_commit_hash}",
+        "<promise>DONE</promise>",
+    ])
+
+    _accept_worker_completed_task(
+        repo_path=repo_path,
+        job=job,
+        ledger=ledger,
+        selection=select_first_task(ledger),
+        task_path=task_path,
+        agent_output=agent_output,
+    )
+
+    worklog_path = task_path / "worker-worklog.txt"
+    assert worklog_path.is_file()
+    assert "Created src/parser.py" in worklog_path.read_text()
+
+
+def test_accept_worker_completed_task_rejects_done_with_multiple_worklog_blocks(
+    tmp_path: Path,
+) -> None:
+    repo_path = initialise_git_repo(tmp_path / "target-repo")
+    ledger = build_example_ledger()
+    job = create_job_with_ledger(tmp_path, ledger)
+    task_path = tmp_path / "task"
+    worker_commit_hash = run_git(repo_path, "rev-parse", "HEAD").strip()
+    agent_output = "\n".join([
+        "RALPH_WORKLOG_BEGIN",
+        "First worklog.",
+        "RALPH_WORKLOG_END",
+        "RALPH_WORKLOG_BEGIN",
+        "Second worklog.",
+        "RALPH_WORKLOG_END",
+        "RALPH_VERIFICATION_BEGIN",
+        "$ test -f src/parser.py",
+        "RALPH_VERIFICATION_END",
+        f"RALPH_COMMIT {worker_commit_hash}",
+        "<promise>DONE</promise>",
+    ])
+
+    with pytest.raises(RuntimeError, match="at most one RALPH_WORKLOG block"):
+        _accept_worker_completed_task(
+            repo_path=repo_path,
+            job=job,
+            ledger=ledger,
+            selection=select_first_task(ledger),
+            task_path=task_path,
+            agent_output=agent_output,
         )
 
     assert yaml.safe_load(job.ledger_path.read_text())["tasks"][0]["status"] == "pending"

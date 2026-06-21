@@ -68,3 +68,24 @@ def test_render_agent_prompt_documents_python_venv(tmp_path: Path) -> None:
     assert "already first on PATH" in prompt
     assert "ntt" not in prompt
     assert "Notion" not in prompt
+
+
+def test_render_agent_prompt_tells_workers_to_emit_worklog_block(tmp_path: Path) -> None:
+    ledger = build_example_ledger()
+    selection = TaskSelection(
+        task=ledger["tasks"][0],
+        shared_plan_context="Shared context.",
+        active_task_plan_context="First task context.",
+    )
+
+    prompt = render_agent_prompt(
+        repo_path=tmp_path,
+        ledger=ledger,
+        selection=selection,
+        python_venv_path=None,
+    )
+
+    assert "RALPH_WORKLOG_BEGIN" in prompt
+    assert "RALPH_WORKLOG_END" in prompt
+    assert "worklog is expected for DONE" in prompt
+    assert "useful for BLOCKED or ABORT" in prompt
