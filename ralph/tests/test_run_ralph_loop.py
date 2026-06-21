@@ -85,6 +85,24 @@ def test_direct_script_help_remains_runnable_from_repo_root() -> None:
     assert "smoke-test" in completed_process.stdout
 
 
+def test_package_invocation_help_remains_runnable() -> None:
+    repo_path = Path(__file__).resolve().parents[2]
+
+    completed_process = subprocess.run(
+        ["/workspace/venv/bin/python", "-m", "ralph.run_ralph_loop", "--help"],
+        cwd=repo_path,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+
+    assert completed_process.returncode == 0
+    assert "Run Ralph task loops with sliced plan context." in completed_process.stdout
+    assert "run" in completed_process.stdout
+    assert "smoke-test" in completed_process.stdout
+
+
 def test_extracts_only_active_plan_slice() -> None:
     ledger = _build_example_ledger()
     plan_text = _build_example_plan()
