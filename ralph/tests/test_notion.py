@@ -221,6 +221,24 @@ def test_controller_logs_blocked_worker_promise_to_notion(
     assert "Transcript path:" in observed_content["blocks"][1]["text"]
 
 
+def test_controller_logs_claude_worker_promise_with_readable_transcript_first(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selection = select_first_task(build_ledger_with_materialised_notion_task())
+    observed_content = capture_notion_log_content(monkeypatch)
+
+    log_worker_promise_to_notion(
+        selection=selection,
+        task_path=tmp_path,
+        promise="BLOCKED",
+        agent_backend="claude",
+    )
+
+    assert observed_content["blocks"][1]["text"] == f"Transcript path: {tmp_path / 'agent-output.txt'}"
+    assert observed_content["blocks"][2]["text"] == f"Raw Claude stream path: {tmp_path / 'agent-output.raw.jsonl'}"
+
+
 def test_controller_logs_failed_verification_to_notion(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -236,6 +254,24 @@ def test_controller_logs_failed_verification_to_notion(
     assert "DONE, then verification failed" in observed_content["blocks"][0]["text"]
     assert observed_content["blocks"][1]["text"] == "$ pytest\nfailed\n"
     assert "Transcript path:" in observed_content["blocks"][2]["text"]
+
+
+def test_controller_logs_claude_failed_verification_with_raw_stream_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selection = select_first_task(build_ledger_with_materialised_notion_task())
+    (tmp_path / "verification-output.txt").write_text("$ pytest\nfailed\n")
+    observed_content = capture_notion_log_content(monkeypatch)
+
+    log_failed_verification_to_notion(
+        selection=selection,
+        task_path=tmp_path,
+        agent_backend="claude",
+    )
+
+    assert observed_content["blocks"][2]["text"] == f"Transcript path: {tmp_path / 'agent-output.txt'}"
+    assert observed_content["blocks"][3]["text"] == f"Raw Claude stream path: {tmp_path / 'agent-output.raw.jsonl'}"
 
 
 def test_controller_logs_successful_verification_and_commit_to_notion(
@@ -258,6 +294,26 @@ def test_controller_logs_successful_verification_and_commit_to_notion(
     assert observed_content["blocks"][1]["text"] == "$ pytest\npassed\n"
     assert observed_content["blocks"][2]["text"] == "Commit hash: abc123"
     assert "Transcript path:" in observed_content["blocks"][3]["text"]
+
+
+def test_controller_logs_claude_completion_with_raw_stream_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selection = select_first_task(build_ledger_with_materialised_notion_task())
+    (tmp_path / "verification-output.txt").write_text("$ pytest\npassed\n")
+    observed_content = capture_notion_log_content(monkeypatch)
+
+    log_completed_worker_to_notion(
+        selection=selection,
+        task_path=tmp_path,
+        changed_files=["M src/parser.py"],
+        commit_hash="abc123",
+        agent_backend="claude",
+    )
+
+    assert observed_content["blocks"][3]["text"] == f"Transcript path: {tmp_path / 'agent-output.txt'}"
+    assert observed_content["blocks"][4]["text"] == f"Raw Claude stream path: {tmp_path / 'agent-output.raw.jsonl'}"
 
 
 def test_extract_created_notion_task_id_uses_output_file_and_excludes_related_task(

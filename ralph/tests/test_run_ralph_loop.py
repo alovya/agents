@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from ralph.agent_backends import AgentBackend
 from ralph.tests.conftest import (
     build_example_ledger,
     build_ledger_with_materialised_notion_task,
@@ -25,6 +26,7 @@ from ralph.run_ralph_loop import (
     _parse_arguments,
     _parse_agent_promise,
     _refuse_unsafe_starting_state,
+    _run_agent_command,
 )
 from ralph.sandbox import run_agent_visibility_smoke_test
 
@@ -163,6 +165,36 @@ def test_parse_args_accepts_agent_backend_for_run_and_smoke_test() -> None:
 
     assert run_arguments.agent_backend == "claude"
     assert smoke_arguments.agent_backend == "claude"
+
+
+def test_claude_runtime_error_points_at_readable_transcript_then_raw_stream(
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / "agent-output.txt"
+    backend_config = AgentBackend(
+        backend_name="claude",
+        command_name="/workspace/venv/bin/python",
+        agent_state_dir=tmp_path / "claude-config",
+        agent_home_environment_variable="CLAUDE_CONFIG_DIR",
+    )
+
+    with pytest.raises(RuntimeError) as error:
+        _run_agent_command(
+            command=[
+                "/workspace/venv/bin/python",
+                "-c",
+                "import sys; sys.stdout.write('{}\\n'); sys.exit(7)",
+            ],
+            prompt="prompt ignored by failing agent\n",
+            output_path=output_path,
+            tee_output=False,
+            backend_config=backend_config,
+        )
+
+    assert str(error.value).splitlines() == [
+        f"Agent failed with exit code 7. See readable transcript: {output_path}",
+        f"Raw Claude stream: {tmp_path / 'agent-output.raw.jsonl'}",
+    ]
 
 
 def test_find_ralph_job_uses_workspace_home_by_default(monkeypatch: pytest.MonkeyPatch) -> None:

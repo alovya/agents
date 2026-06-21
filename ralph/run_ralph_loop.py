@@ -148,6 +148,7 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
                 selection=selection,
                 task_path=task_path,
                 promise=agent_result.promise,
+                agent_backend=arguments.agent_backend,
             )
             print(f"Agent stopped with {agent_result.promise}. See {task_path}")
             return
@@ -167,13 +168,18 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
                 agent_output=agent_result.output,
             )
         except Exception:
-            log_failed_verification_to_notion(selection=selection, task_path=task_path)
+            log_failed_verification_to_notion(
+                selection=selection,
+                task_path=task_path,
+                agent_backend=arguments.agent_backend,
+            )
             raise
         log_completed_worker_to_notion(
             selection=selection,
             task_path=task_path,
             changed_files=_read_committed_files(repo_path=repo_path, commit_hash=commit_hash),
             commit_hash=commit_hash,
+            agent_backend=arguments.agent_backend,
         )
         print(f"Completed {selection.task['id']}: {commit_hash}")
 
@@ -407,14 +413,25 @@ def _run_agent_command(
         tee_output=tee_output,
     )
 
+    if completed_process.returncode != 0:
+        raise RuntimeError(_build_agent_failure_message(
+            exit_code=completed_process.returncode,
+            output_path=output_path,
+            agent_backend=backend_config.backend_name,
+        ))
     output = extract_agent_result_text(
         backend_config=backend_config,
         raw_output=completed_process.stdout or "",
     )
-    if completed_process.returncode != 0:
-        raise RuntimeError(f"Agent failed with exit code {completed_process.returncode}. See {output_path}")
     promise = _parse_agent_promise(output)
     return AgentResult(promise=promise, output=output)
+
+
+def _build_agent_failure_message(exit_code: int, output_path: Path, agent_backend: str) -> str:
+    message = f"Agent failed with exit code {exit_code}. See readable transcript: {output_path}"
+    if agent_backend == "claude":
+        message += f"\nRaw Claude stream: {output_path.with_suffix('.raw.jsonl')}"
+    return message
 
 
 def _read_committed_files(repo_path: Path, commit_hash: str) -> list[str]:
