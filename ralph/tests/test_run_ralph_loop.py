@@ -9,15 +9,30 @@ from pathlib import Path
 import pytest
 import yaml
 
+from ralph.notion import (
+    DEFAULT_NOTION_TRACKER_STATE_PATH,
+    build_notion_task_creation_command as _build_notion_task_creation_command,
+    extract_created_notion_task_id as _extract_created_notion_task_id,
+    log_completed_worker_to_notion as _log_completed_worker_to_notion,
+    log_failed_verification_to_notion as _log_failed_verification_to_notion,
+    log_slice_start_to_notion as _log_slice_start_to_notion,
+    log_worker_promise_to_notion as _log_worker_promise_to_notion,
+    materialise_planned_notion_task_before_worker_launch as _materialise_planned_notion_task_before_worker_launch,
+    prepare_notion_task_before_worker_runs_task as _prepare_notion_task_before_worker_runs_task,
+)
+from ralph.plan_selection import (
+    TaskSelection,
+    read_tasks_from_ledger as _read_tasks_from_ledger,
+    select_next_task_from_plan_and_ledger as _select_next_task_from_plan_and_ledger,
+)
+from ralph.prompt import render_agent_prompt as _render_agent_prompt
 from ralph.run_ralph_loop import (
     AgentBackend,
     AgentResult,
     CODEX_RULES_BACKUP_FILENAME,
     CodexRulesSnapshot,
-    DEFAULT_NOTION_TRACKER_STATE_PATH,
     DEFAULT_RALPH_HOME_PATH,
     RalphJob,
-    TaskSelection,
     WORKER_AGENT_BINARY_PATH,
     WORKER_HOME_PATH,
     WORKER_TEMP_PATH,
@@ -25,40 +40,29 @@ from ralph.run_ralph_loop import (
     _backend_permission_setup,
     _build_agent_visibility_smoke_test_prompt,
     _build_bwrap_agent_command,
-    _build_notion_task_creation_command,
     _build_worker_allowed_bash_commands,
     _codex_permission_setup,
     _codex_rules_path,
     _create_task_directory,
-    _extract_created_notion_task_id,
     _extract_claude_stream_result_text,
     _find_ralph_job,
     _find_interrupted_codex_rules_backup,
     _generate_codex_execpolicy_rules,
-    _log_completed_worker_to_notion,
-    _log_failed_verification_to_notion,
-    _log_slice_start_to_notion,
-    _log_worker_promise_to_notion,
     main,
-    _materialise_planned_notion_task_before_worker_launch,
     _mark_task_done,
     _parse_command_to_execpolicy_pattern,
-    _prepare_notion_task_before_worker_runs_task,
     _parse_arguments,
     _parse_agent_promise,
     _read_codex_rules_backup,
-    _read_tasks_from_ledger,
     _recover_interrupted_codex_rules,
     _reject_worker_visible_path_that_overlaps_hidden_state,
     _refuse_unsafe_starting_state,
-    _render_agent_prompt,
     _resolve_ralph_home_path,
     _resolve_python_venv_path,
     _require_codex_home_path,
     _restore_codex_rules,
     _run_agent_visibility_smoke_test,
     _run_command_and_tee_output,
-    _select_next_task_from_plan_and_ledger,
     _select_agent_backend_config,
     _snapshot_codex_rules,
     _write_codex_rules_atomically,
@@ -1259,8 +1263,8 @@ def test_materialises_planned_notion_task_under_existing_alovya_parent(
             stdout=json.dumps({"completed_operations": ["update_properties:task:ALOVYA-90"]}),
         )
 
-    monkeypatch.setattr("ralph.run_ralph_loop._resolve_notion_tracker_command_path", lambda: "ntt")
-    monkeypatch.setattr("ralph.run_ralph_loop._run_notion_tracker_command", run_notion_tracker_command_mock)
+    monkeypatch.setattr("ralph.notion._resolve_notion_tracker_command_path", lambda: "ntt")
+    monkeypatch.setattr("ralph.notion._run_notion_tracker_command", run_notion_tracker_command_mock)
 
     updated_ledger = _materialise_planned_notion_task_before_worker_launch(
         job=job,
@@ -1319,8 +1323,8 @@ def test_materialises_planned_notion_task_after_related_ralph_task_exists(
             stdout=json.dumps({"completed_operations": ["update_properties:task:ALOVYA-91"]}),
         )
 
-    monkeypatch.setattr("ralph.run_ralph_loop._resolve_notion_tracker_command_path", lambda: "ntt")
-    monkeypatch.setattr("ralph.run_ralph_loop._run_notion_tracker_command", run_notion_tracker_command_mock)
+    monkeypatch.setattr("ralph.notion._resolve_notion_tracker_command_path", lambda: "ntt")
+    monkeypatch.setattr("ralph.notion._run_notion_tracker_command", run_notion_tracker_command_mock)
 
     updated_ledger = _materialise_planned_notion_task_before_worker_launch(
         job=job,
@@ -1378,8 +1382,8 @@ def test_prepare_notion_task_blocks_worker_launch_when_notion_tracker_fails(
     def run_notion_tracker_command_mock(command: list[str]) -> subprocess.CompletedProcess[str]:
         raise RuntimeError("Notion task tracker command failed")
 
-    monkeypatch.setattr("ralph.run_ralph_loop._resolve_notion_tracker_command_path", lambda: "ntt")
-    monkeypatch.setattr("ralph.run_ralph_loop._run_notion_tracker_command", run_notion_tracker_command_mock)
+    monkeypatch.setattr("ralph.notion._resolve_notion_tracker_command_path", lambda: "ntt")
+    monkeypatch.setattr("ralph.notion._run_notion_tracker_command", run_notion_tracker_command_mock)
 
     with pytest.raises(RuntimeError, match="Notion task tracker command failed"):
         _prepare_notion_task_before_worker_runs_task(
@@ -1480,7 +1484,7 @@ def test_extract_created_notion_task_id_uses_output_file_and_excludes_related_ta
 
 
 def test_build_notion_task_creation_command_builds_sibling_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("ralph.run_ralph_loop._resolve_notion_tracker_command_path", lambda: "ntt")
+    monkeypatch.setattr("ralph.notion._resolve_notion_tracker_command_path", lambda: "ntt")
 
     command = _build_notion_task_creation_command(
         relationship="sibling",
@@ -2008,8 +2012,8 @@ def _capture_notion_log_content(monkeypatch: pytest.MonkeyPatch) -> dict[str, ob
         observed_content["command"] = command
         return subprocess.CompletedProcess(args=command, returncode=0, stdout="{}")
 
-    monkeypatch.setattr("ralph.run_ralph_loop._resolve_notion_tracker_command_path", lambda: "ntt")
-    monkeypatch.setattr("ralph.run_ralph_loop._run_notion_tracker_command", run_notion_tracker_command_mock)
+    monkeypatch.setattr("ralph.notion._resolve_notion_tracker_command_path", lambda: "ntt")
+    monkeypatch.setattr("ralph.notion._run_notion_tracker_command", run_notion_tracker_command_mock)
     return observed_content
 
 
