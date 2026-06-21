@@ -9,6 +9,24 @@ from pathlib import Path
 import pytest
 import yaml
 
+from ralph.tests.conftest import (
+    build_example_ledger,
+    build_example_plan,
+    build_ledger_where_first_pending_task_waits_and_second_pending_task_is_ready,
+    build_ledger_with_materialised_notion_task,
+    build_ledger_with_planned_notion_task,
+    build_test_backend_config,
+    build_three_task_plan,
+    capture_notion_log_content,
+    command_windows,
+    contains_subsequence,
+    create_job_with_ledger,
+    create_python_venv_shape,
+    initialise_git_repo,
+    run_git,
+    select_first_task,
+    write_executable_shim,
+)
 from ralph.notion import (
     DEFAULT_NOTION_TRACKER_STATE_PATH,
     build_notion_task_creation_command as _build_notion_task_creation_command,
@@ -116,8 +134,8 @@ def test_package_invocation_help_remains_runnable() -> None:
 
 
 def test_extracts_only_active_plan_slice() -> None:
-    ledger = _build_example_ledger()
-    plan_text = _build_example_plan()
+    ledger = build_example_ledger()
+    plan_text = build_example_plan()
 
     selection = _select_next_task_from_plan_and_ledger(ledger, plan_text)
 
@@ -136,7 +154,7 @@ Shared context.
 """
 
     with pytest.raises(ValueError, match="missing Ralph task blocks"):
-        _select_next_task_from_plan_and_ledger(_build_example_ledger(), plan_text)
+        _select_next_task_from_plan_and_ledger(build_example_ledger(), plan_text)
 
 
 def test_rejects_task_plan_without_allowed_bash_block() -> None:
@@ -167,7 +185,7 @@ Second task context.
 """
 
     with pytest.raises(ValueError, match="exactly one ralph-allowed-bash block"):
-        _select_next_task_from_plan_and_ledger(_build_example_ledger(), plan_text)
+        _select_next_task_from_plan_and_ledger(build_example_ledger(), plan_text)
 
 
 def test_rejects_task_plan_without_verification_block() -> None:
@@ -198,23 +216,23 @@ Second task context.
 """
 
     with pytest.raises(ValueError, match="exactly one ralph-verification block"):
-        _select_next_task_from_plan_and_ledger(_build_example_ledger(), plan_text)
+        _select_next_task_from_plan_and_ledger(build_example_ledger(), plan_text)
 
 
 def test_selects_dependency_ready_task() -> None:
-    ledger = _build_example_ledger()
+    ledger = build_example_ledger()
     ledger["tasks"][0]["status"] = "done"
 
-    selection = _select_next_task_from_plan_and_ledger(ledger, _build_example_plan())
+    selection = _select_next_task_from_plan_and_ledger(ledger, build_example_plan())
 
     assert selection.task["id"] == "R2"
     assert selection.task["verification_commands"] == ["python -m pytest tests/test_cli.py"]
 
 
 def test_selects_first_pending_task_after_skipping_pending_task_with_unfinished_dependencies() -> None:
-    ledger = _build_ledger_where_first_pending_task_waits_and_second_pending_task_is_ready()
+    ledger = build_ledger_where_first_pending_task_waits_and_second_pending_task_is_ready()
 
-    selection = _select_next_task_from_plan_and_ledger(ledger, _build_three_task_plan())
+    selection = _select_next_task_from_plan_and_ledger(ledger, build_three_task_plan())
 
     assert selection.task["id"] == "R2"
     assert selection.active_task_plan_context.strip().startswith("Second task context.")
@@ -524,7 +542,7 @@ def test_create_task_directory_sanitizes_task_id(tmp_path: Path) -> None:
 
 
 def test_render_agent_prompt_excludes_unrelated_task_slice(tmp_path: Path) -> None:
-    ledger = _build_example_ledger()
+    ledger = build_example_ledger()
     selection = TaskSelection(
         task=ledger["tasks"][0],
         shared_plan_context="Shared context.",
@@ -545,7 +563,7 @@ def test_render_agent_prompt_excludes_unrelated_task_slice(tmp_path: Path) -> No
 
 
 def test_render_agent_prompt_keeps_plan_instructions_without_duplicating_ledger_prose(tmp_path: Path) -> None:
-    ledger = _build_example_ledger()
+    ledger = build_example_ledger()
     ledger["tasks"][0]["context"] = "Duplicated task prose from ledger YAML."
     selection = TaskSelection(
         task=ledger["tasks"][0],
@@ -565,7 +583,7 @@ def test_render_agent_prompt_keeps_plan_instructions_without_duplicating_ledger_
 
 
 def test_render_agent_prompt_documents_python_venv(tmp_path: Path) -> None:
-    ledger = _build_example_ledger()
+    ledger = build_example_ledger()
     selection = TaskSelection(
         task=ledger["tasks"][0],
         shared_plan_context="Shared context.",
@@ -599,8 +617,8 @@ def test_build_bwrap_command_mounts_python_venv_from_path(
     codex_home_path.mkdir()
     codex_home_path.joinpath(".tmp").mkdir()
     python_venv_path.mkdir()
-    _write_executable_shim(bwrap_path)
-    _write_executable_shim(agent_path)
+    write_executable_shim(bwrap_path)
+    write_executable_shim(agent_path)
     monkeypatch.setenv("PATH", str(bin_path))
     monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
 
@@ -612,31 +630,31 @@ def test_build_bwrap_command_mounts_python_venv_from_path(
     )
 
     assert command[0] == str(bwrap_path)
-    assert _contains_subsequence(command, ["--ro-bind", str(agent_path), str(WORKER_AGENT_BINARY_PATH)])
+    assert contains_subsequence(command, ["--ro-bind", str(agent_path), str(WORKER_AGENT_BINARY_PATH)])
     assert str(WORKER_AGENT_BINARY_PATH) in command
-    assert _contains_subsequence(command, ["--proc", "/proc"])
-    assert _contains_subsequence(command, ["--ro-bind", "/usr", "/usr"])
+    assert contains_subsequence(command, ["--proc", "/proc"])
+    assert contains_subsequence(command, ["--ro-bind", "/usr", "/usr"])
     for compatibility_path in [Path("/bin"), Path("/lib"), Path("/lib64"), Path("/sbin")]:
         if compatibility_path.is_symlink():
-            assert _contains_subsequence(command, ["--symlink", os.readlink(compatibility_path), str(compatibility_path)])
+            assert contains_subsequence(command, ["--symlink", os.readlink(compatibility_path), str(compatibility_path)])
         else:
-            assert _contains_subsequence(command, ["--ro-bind", str(compatibility_path), str(compatibility_path)])
-    assert _contains_subsequence(command, ["--ro-bind", "/etc/hosts", "/etc/hosts"])
-    assert _contains_subsequence(
+            assert contains_subsequence(command, ["--ro-bind", str(compatibility_path), str(compatibility_path)])
+    assert contains_subsequence(command, ["--ro-bind", "/etc/hosts", "/etc/hosts"])
+    assert contains_subsequence(
         command,
         ["--ro-bind", str(Path("/etc/resolv.conf").resolve()), "/etc/resolv.conf"],
     )
-    assert _contains_subsequence(command, ["--ro-bind", "/etc/nsswitch.conf", "/etc/nsswitch.conf"])
-    assert _contains_subsequence(command, ["--ro-bind", "/etc/ld.so.cache", "/etc/ld.so.cache"])
-    assert _contains_subsequence(
+    assert contains_subsequence(command, ["--ro-bind", "/etc/nsswitch.conf", "/etc/nsswitch.conf"])
+    assert contains_subsequence(command, ["--ro-bind", "/etc/ld.so.cache", "/etc/ld.so.cache"])
+    assert contains_subsequence(
         command,
         ["--ro-bind", "/etc/ssl/certs/ca-certificates.crt", "/etc/ssl/certs/ca-certificates.crt"],
     )
-    assert _contains_subsequence(command, ["--bind", str(codex_home_path), str(codex_home_path)])
-    assert _contains_subsequence(command, ["--tmpfs", str(codex_home_path / ".tmp")])
-    assert _contains_subsequence(command, ["--ro-bind", str(python_venv_path), str(python_venv_path)])
-    assert _contains_subsequence(command, ["--setenv", "VIRTUAL_ENV", str(python_venv_path)])
-    assert _contains_subsequence(command, ["--setenv", "SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt"])
+    assert contains_subsequence(command, ["--bind", str(codex_home_path), str(codex_home_path)])
+    assert contains_subsequence(command, ["--tmpfs", str(codex_home_path / ".tmp")])
+    assert contains_subsequence(command, ["--ro-bind", str(python_venv_path), str(python_venv_path)])
+    assert contains_subsequence(command, ["--setenv", "VIRTUAL_ENV", str(python_venv_path)])
+    assert contains_subsequence(command, ["--setenv", "SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt"])
     assert str(python_venv_path / "bin") in command[command.index("PATH") + 1].split(":")[0]
 
 
@@ -652,8 +670,8 @@ def test_build_bwrap_command_uses_allowlisted_worker_environment(
     bin_path.mkdir()
     repo_path.mkdir()
     codex_home_path.mkdir()
-    _write_executable_shim(bwrap_path)
-    _write_executable_shim(agent_path)
+    write_executable_shim(bwrap_path)
+    write_executable_shim(agent_path)
     monkeypatch.setenv("PATH", str(bin_path))
     monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
     monkeypatch.setenv("NOTION_API_KEY", "secret-notion-token")
@@ -667,16 +685,16 @@ def test_build_bwrap_command_uses_allowlisted_worker_environment(
         python_venv_path=None,
     )
 
-    assert ["--ro-bind", "/", "/"] not in _command_windows(command, 3)
-    assert _contains_subsequence(command, ["--tmpfs", "/"])
-    assert _contains_subsequence(command, ["--bind", str(repo_path), str(repo_path)])
-    assert _contains_subsequence(command, ["--bind", str(codex_home_path), str(codex_home_path)])
-    assert _contains_subsequence(command, ["--ro-bind", str(agent_path), str(WORKER_AGENT_BINARY_PATH)])
-    assert _contains_subsequence(command, ["--clearenv"])
-    assert _contains_subsequence(command, ["--setenv", "HOME", str(WORKER_HOME_PATH)])
-    assert _contains_subsequence(command, ["--setenv", "TMPDIR", str(WORKER_TEMP_PATH)])
-    assert _contains_subsequence(command, ["--setenv", "CODEX_HOME", str(codex_home_path)])
-    assert _contains_subsequence(command, ["--setenv", "XDG_CONFIG_HOME", str(WORKER_HOME_PATH / ".config")])
+    assert ["--ro-bind", "/", "/"] not in command_windows(command, 3)
+    assert contains_subsequence(command, ["--tmpfs", "/"])
+    assert contains_subsequence(command, ["--bind", str(repo_path), str(repo_path)])
+    assert contains_subsequence(command, ["--bind", str(codex_home_path), str(codex_home_path)])
+    assert contains_subsequence(command, ["--ro-bind", str(agent_path), str(WORKER_AGENT_BINARY_PATH)])
+    assert contains_subsequence(command, ["--clearenv"])
+    assert contains_subsequence(command, ["--setenv", "HOME", str(WORKER_HOME_PATH)])
+    assert contains_subsequence(command, ["--setenv", "TMPDIR", str(WORKER_TEMP_PATH)])
+    assert contains_subsequence(command, ["--setenv", "CODEX_HOME", str(codex_home_path)])
+    assert contains_subsequence(command, ["--setenv", "XDG_CONFIG_HOME", str(WORKER_HOME_PATH / ".config")])
     assert "--unsetenv" not in command
     assert str(Path.home() / ".notion-task-tracker") not in command
     assert "secret-notion-token" not in command
@@ -699,8 +717,8 @@ def test_build_bwrap_command_uses_claude_worker_environment(
     repo_path.mkdir()
     codex_home_path.mkdir()
     claude_config_dir_path.mkdir()
-    _write_executable_shim(bwrap_path)
-    _write_executable_shim(claude_path)
+    write_executable_shim(bwrap_path)
+    write_executable_shim(claude_path)
     monkeypatch.setenv("PATH", str(bin_path))
     monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_config_dir_path))
@@ -712,9 +730,9 @@ def test_build_bwrap_command_uses_claude_worker_environment(
         python_venv_path=None,
     )
 
-    assert _contains_subsequence(command, ["--bind", str(claude_config_dir_path), str(claude_config_dir_path)])
-    assert _contains_subsequence(command, ["--setenv", "CLAUDE_CONFIG_DIR", str(claude_config_dir_path)])
-    assert not _contains_subsequence(command, ["--bind", str(codex_home_path), str(codex_home_path)])
+    assert contains_subsequence(command, ["--bind", str(claude_config_dir_path), str(claude_config_dir_path)])
+    assert contains_subsequence(command, ["--setenv", "CLAUDE_CONFIG_DIR", str(claude_config_dir_path)])
+    assert not contains_subsequence(command, ["--bind", str(codex_home_path), str(codex_home_path)])
     assert "CODEX_HOME" not in command
 
 
@@ -730,8 +748,8 @@ def test_build_bwrap_agent_command_mounts_codex_binary(
     bin_path.mkdir()
     repo_path.mkdir()
     codex_home_path.mkdir()
-    _write_executable_shim(bwrap_path)
-    _write_executable_shim(codex_path)
+    write_executable_shim(bwrap_path)
+    write_executable_shim(codex_path)
     monkeypatch.setenv("PATH", str(bin_path))
     monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
 
@@ -742,7 +760,7 @@ def test_build_bwrap_agent_command_mounts_codex_binary(
         python_venv_path=None,
     )
 
-    assert _contains_subsequence(command, ["--ro-bind", str(codex_path), str(WORKER_AGENT_BINARY_PATH)])
+    assert contains_subsequence(command, ["--ro-bind", str(codex_path), str(WORKER_AGENT_BINARY_PATH)])
 
 
 def test_build_bwrap_agent_command_uses_claude_command_tail(
@@ -757,8 +775,8 @@ def test_build_bwrap_agent_command_uses_claude_command_tail(
     bin_path.mkdir()
     repo_path.mkdir()
     claude_config_dir_path.mkdir()
-    _write_executable_shim(bwrap_path)
-    _write_executable_shim(claude_path)
+    write_executable_shim(bwrap_path)
+    write_executable_shim(claude_path)
     monkeypatch.setenv("PATH", str(bin_path))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_config_dir_path))
 
@@ -775,7 +793,7 @@ def test_build_bwrap_agent_command_uses_claude_command_tail(
         ],
     )
 
-    assert _contains_subsequence(command, ["--ro-bind", str(claude_path), str(WORKER_AGENT_BINARY_PATH)])
+    assert contains_subsequence(command, ["--ro-bind", str(claude_path), str(WORKER_AGENT_BINARY_PATH)])
     claude_index = len(command) - 1 - list(reversed(command)).index(str(WORKER_AGENT_BINARY_PATH))
     assert command[claude_index:] == [
         str(WORKER_AGENT_BINARY_PATH),
@@ -878,7 +896,7 @@ def test_build_agent_visibility_smoke_test_prompt_checks_sandbox_contract(tmp_pa
 
     prompt = _build_agent_visibility_smoke_test_prompt(
         repo_path=repo_path,
-        backend_config=_build_test_backend_config(
+        backend_config=build_test_backend_config(
             backend_name="codex",
             agent_state_dir=agent_state_dir,
             agent_home_environment_variable="CODEX_HOME",
@@ -916,7 +934,7 @@ def test_build_agent_visibility_smoke_test_prompt_checks_sandbox_contract(tmp_pa
 def test_build_agent_visibility_smoke_test_prompt_skips_venv_checks_when_absent(tmp_path: Path) -> None:
     prompt = _build_agent_visibility_smoke_test_prompt(
         repo_path=tmp_path / "target-repo",
-        backend_config=_build_test_backend_config(
+        backend_config=build_test_backend_config(
             backend_name="codex",
             agent_state_dir=tmp_path / "codex-home",
             agent_home_environment_variable="CODEX_HOME",
@@ -931,7 +949,7 @@ def test_build_agent_visibility_smoke_test_prompt_skips_venv_checks_when_absent(
 def test_build_agent_visibility_smoke_test_prompt_does_not_reject_explicit_mounts(tmp_path: Path) -> None:
     prompt = _build_agent_visibility_smoke_test_prompt(
         repo_path=tmp_path / "target-repo",
-        backend_config=_build_test_backend_config(
+        backend_config=build_test_backend_config(
             backend_name="codex",
             agent_state_dir=Path("/workspace/.codex"),
             agent_home_environment_variable="CODEX_HOME",
@@ -946,7 +964,7 @@ def test_build_agent_visibility_smoke_test_prompt_does_not_reject_explicit_mount
 def test_build_agent_visibility_smoke_test_prompt_hides_unselected_backend_state(tmp_path: Path) -> None:
     prompt = _build_agent_visibility_smoke_test_prompt(
         repo_path=tmp_path / "target-repo",
-        backend_config=_build_test_backend_config(
+        backend_config=build_test_backend_config(
             backend_name="claude",
             agent_state_dir=Path("/workspace/.claude"),
             agent_home_environment_variable="CLAUDE_CONFIG_DIR",
@@ -1022,8 +1040,8 @@ def test_refuse_unsafe_starting_state_rejects_sensitive_repo_mount(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    repo_path = _initialise_git_repo(tmp_path / "target-repo")
-    job = _create_job_with_ledger(tmp_path, _build_example_ledger())
+    repo_path = initialise_git_repo(tmp_path / "target-repo")
+    job = create_job_with_ledger(tmp_path, build_example_ledger())
     sensitive_state_path = repo_path / ".aws"
     sensitive_state_path.mkdir()
     monkeypatch.setattr(
@@ -1036,13 +1054,13 @@ def test_refuse_unsafe_starting_state_rejects_sensitive_repo_mount(
 
 
 def test_refuse_unsafe_starting_state_accepts_public_ralph_examples(tmp_path: Path) -> None:
-    repo_path = _initialise_git_repo(tmp_path / "target-repo")
-    job = _create_job_with_ledger(tmp_path, _build_example_ledger())
+    repo_path = initialise_git_repo(tmp_path / "target-repo")
+    job = create_job_with_ledger(tmp_path, build_example_ledger())
     example_plan_path = repo_path / "ralph" / "examples" / "PLAN.md"
     example_plan_path.parent.mkdir(parents=True)
     example_plan_path.write_text("Example Ralph plan.")
-    _run_git(repo_path, "add", ".")
-    _run_git(repo_path, "commit", "-m", "Add example Ralph plan")
+    run_git(repo_path, "add", ".")
+    run_git(repo_path, "commit", "-m", "Add example Ralph plan")
 
     _refuse_unsafe_starting_state(repo_path, job)
 
@@ -1111,7 +1129,7 @@ def test_resolve_python_venv_path_rejects_sensitive_path_overlap(
 ) -> None:
     sensitive_state_path = tmp_path / "sensitive-state"
     python_venv_path = sensitive_state_path / "tool-venv"
-    _create_python_venv_shape(python_venv_path)
+    create_python_venv_shape(python_venv_path)
     monkeypatch.setattr(
         "ralph.sandbox.build_sensitive_paths_that_workers_must_not_see",
         lambda: [sensitive_state_path],
@@ -1126,7 +1144,7 @@ def test_resolve_python_venv_path_accepts_non_sensitive_helper_venv(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     python_venv_path = tmp_path / "tool-venv"
-    _create_python_venv_shape(python_venv_path)
+    create_python_venv_shape(python_venv_path)
     monkeypatch.setattr(
         "ralph.sandbox.build_sensitive_paths_that_workers_must_not_see",
         lambda: [tmp_path / "sensitive-state"],
@@ -1136,7 +1154,7 @@ def test_resolve_python_venv_path_accepts_non_sensitive_helper_venv(
 
 
 def test_marks_task_done_without_mutating_input() -> None:
-    ledger = _build_example_ledger()
+    ledger = build_example_ledger()
 
     updated_ledger = _mark_task_done(ledger, "R1")
 
@@ -1148,16 +1166,16 @@ def test_marks_task_done_without_mutating_input() -> None:
 def test_accepts_worker_completed_task_after_worker_verifies_and_commits(
     tmp_path: Path,
 ) -> None:
-    repo_path = _initialise_git_repo(tmp_path / "target-repo")
-    ledger = _build_example_ledger()
-    job = _create_job_with_ledger(tmp_path, ledger)
+    repo_path = initialise_git_repo(tmp_path / "target-repo")
+    ledger = build_example_ledger()
+    job = create_job_with_ledger(tmp_path, ledger)
     task_path = tmp_path / "task"
     parser_path = repo_path / "src" / "parser.py"
     parser_path.parent.mkdir()
     parser_path.write_text("def parse_value(value):\n    return value\n")
-    _run_git(repo_path, "add", ".")
-    _run_git(repo_path, "commit", "--no-verify", "-m", "Ralph: R1 Add parser")
-    worker_commit_hash = _run_git(repo_path, "rev-parse", "HEAD").strip()
+    run_git(repo_path, "add", ".")
+    run_git(repo_path, "commit", "--no-verify", "-m", "Ralph: R1 Add parser")
+    worker_commit_hash = run_git(repo_path, "rev-parse", "HEAD").strip()
     agent_output = "\n".join(
         [
             "RALPH_VERIFICATION_BEGIN",
@@ -1172,12 +1190,12 @@ def test_accepts_worker_completed_task_after_worker_verifies_and_commits(
         repo_path=repo_path,
         job=job,
         ledger=ledger,
-        selection=_select_first_task(ledger),
+        selection=select_first_task(ledger),
         task_path=task_path,
         agent_output=agent_output,
     )
 
-    committed_subject = _run_git(repo_path, "log", "--format=%s", "-1").strip()
+    committed_subject = run_git(repo_path, "log", "--format=%s", "-1").strip()
 
     assert accepted_commit_hash == worker_commit_hash
     assert committed_subject == "Ralph: R1 Add parser"
@@ -1189,16 +1207,16 @@ def test_accepts_worker_completed_task_after_worker_verifies_and_commits(
 def test_accept_worker_completed_task_rejects_uncommitted_worker_changes(
     tmp_path: Path,
 ) -> None:
-    repo_path = _initialise_git_repo(tmp_path / "target-repo")
-    ledger = _build_example_ledger()
-    job = _create_job_with_ledger(tmp_path, ledger)
+    repo_path = initialise_git_repo(tmp_path / "target-repo")
+    ledger = build_example_ledger()
+    job = create_job_with_ledger(tmp_path, ledger)
     task_path = tmp_path / "task"
     parser_path = repo_path / "src" / "parser.py"
     parser_path.parent.mkdir()
     parser_path.write_text("def parse_value(value):\n    return value\n")
-    _run_git(repo_path, "add", ".")
-    _run_git(repo_path, "commit", "--no-verify", "-m", "Ralph: R1 Add parser")
-    worker_commit_hash = _run_git(repo_path, "rev-parse", "HEAD").strip()
+    run_git(repo_path, "add", ".")
+    run_git(repo_path, "commit", "--no-verify", "-m", "Ralph: R1 Add parser")
+    worker_commit_hash = run_git(repo_path, "rev-parse", "HEAD").strip()
     parser_path.write_text("def parse_value(value):\n    return value.strip()\n")
     agent_output = "\n".join(
         [
@@ -1215,7 +1233,7 @@ def test_accept_worker_completed_task_rejects_uncommitted_worker_changes(
             repo_path=repo_path,
             job=job,
             ledger=ledger,
-            selection=_select_first_task(ledger),
+            selection=select_first_task(ledger),
             task_path=task_path,
             agent_output=agent_output,
         )
@@ -1228,23 +1246,23 @@ def test_accept_worker_completed_task_rejects_uncommitted_worker_changes(
 def test_accept_worker_completed_task_rejects_missing_verification_transcript(
     tmp_path: Path,
 ) -> None:
-    repo_path = _initialise_git_repo(tmp_path / "target-repo")
-    ledger = _build_example_ledger()
-    job = _create_job_with_ledger(tmp_path, ledger)
+    repo_path = initialise_git_repo(tmp_path / "target-repo")
+    ledger = build_example_ledger()
+    job = create_job_with_ledger(tmp_path, ledger)
 
     with pytest.raises(RuntimeError, match="verification transcript entries"):
         _accept_worker_completed_task(
             repo_path=repo_path,
             job=job,
             ledger=ledger,
-            selection=_select_first_task(ledger),
+            selection=select_first_task(ledger),
             task_path=tmp_path / "task",
             agent_output="\n".join(
                 [
                     "RALPH_VERIFICATION_BEGIN",
                     "$ python -m pytest",
                     "RALPH_VERIFICATION_END",
-                    f"RALPH_COMMIT {_run_git(repo_path, 'rev-parse', 'HEAD').strip()}",
+                    f"RALPH_COMMIT {run_git(repo_path, 'rev-parse', 'HEAD').strip()}",
                     "<promise>DONE</promise>",
                 ]
             ),
@@ -1257,8 +1275,8 @@ def test_materialises_planned_notion_task_under_existing_alovya_parent(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    ledger = _build_ledger_with_planned_notion_task(related_to="ALOVYA-89")
-    job = _create_job_with_ledger(tmp_path, ledger)
+    ledger = build_ledger_with_planned_notion_task(related_to="ALOVYA-89")
+    job = create_job_with_ledger(tmp_path, ledger)
     task_path = tmp_path / "task"
     task_path.mkdir()
     observed_commands: list[list[str]] = []
@@ -1303,7 +1321,7 @@ def test_materialises_planned_notion_task_after_related_ralph_task_exists(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    ledger = _build_ledger_with_planned_notion_task(related_to="R1", task_id="R2")
+    ledger = build_ledger_with_planned_notion_task(related_to="R1", task_id="R2")
     ledger["tasks"].insert(0, {
         "id": "R1",
         "title": "Prepare parent",
@@ -1318,7 +1336,7 @@ def test_materialises_planned_notion_task_after_related_ralph_task_exists(
         },
     })
     ledger["tasks"][1]["depends_on"] = ["R1"]
-    job = _create_job_with_ledger(tmp_path, ledger)
+    job = create_job_with_ledger(tmp_path, ledger)
     task_path = tmp_path / "task"
     task_path.mkdir()
     observed_commands: list[list[str]] = []
@@ -1350,7 +1368,7 @@ def test_materialises_planned_notion_task_after_related_ralph_task_exists(
 def test_materialising_planned_notion_task_blocks_when_related_ralph_task_is_not_materialised(
     tmp_path: Path,
 ) -> None:
-    ledger = _build_ledger_with_planned_notion_task(related_to="R1", task_id="R2")
+    ledger = build_ledger_with_planned_notion_task(related_to="R1", task_id="R2")
     ledger["tasks"].insert(0, {
         "id": "R1",
         "title": "Prepare parent",
@@ -1365,7 +1383,7 @@ def test_materialising_planned_notion_task_blocks_when_related_ralph_task_is_not
         },
     })
     ledger["tasks"][1]["depends_on"] = ["R1"]
-    job = _create_job_with_ledger(tmp_path, ledger)
+    job = create_job_with_ledger(tmp_path, ledger)
     task_path = tmp_path / "task"
     task_path.mkdir()
 
@@ -1382,8 +1400,8 @@ def test_prepare_notion_task_blocks_worker_launch_when_notion_tracker_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    ledger = _build_ledger_with_planned_notion_task(related_to="ALOVYA-89")
-    job = _create_job_with_ledger(tmp_path, ledger)
+    ledger = build_ledger_with_planned_notion_task(related_to="ALOVYA-89")
+    job = create_job_with_ledger(tmp_path, ledger)
     task_path = tmp_path / "task"
     task_path.mkdir()
 
@@ -1397,7 +1415,7 @@ def test_prepare_notion_task_blocks_worker_launch_when_notion_tracker_fails(
         _prepare_notion_task_before_worker_runs_task(
             job=job,
             ledger=ledger,
-            selection=_select_first_task(ledger),
+            selection=select_first_task(ledger),
             task_path=task_path,
         )
 
@@ -1408,8 +1426,8 @@ def test_controller_logs_slice_start_to_notion(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    selection = _select_first_task(_build_ledger_with_materialised_notion_task())
-    observed_content = _capture_notion_log_content(monkeypatch)
+    selection = select_first_task(build_ledger_with_materialised_notion_task())
+    observed_content = capture_notion_log_content(monkeypatch)
 
     _log_slice_start_to_notion(selection=selection, task_path=tmp_path)
 
@@ -1425,8 +1443,8 @@ def test_controller_logs_blocked_worker_promise_to_notion(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    selection = _select_first_task(_build_ledger_with_materialised_notion_task())
-    observed_content = _capture_notion_log_content(monkeypatch)
+    selection = select_first_task(build_ledger_with_materialised_notion_task())
+    observed_content = capture_notion_log_content(monkeypatch)
 
     _log_worker_promise_to_notion(
         selection=selection,
@@ -1443,10 +1461,10 @@ def test_controller_logs_failed_verification_to_notion(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    selection = _select_first_task(_build_ledger_with_materialised_notion_task())
+    selection = select_first_task(build_ledger_with_materialised_notion_task())
     verification_output_path = tmp_path / "verification-output.txt"
     verification_output_path.write_text("$ pytest\nfailed\n")
-    observed_content = _capture_notion_log_content(monkeypatch)
+    observed_content = capture_notion_log_content(monkeypatch)
 
     _log_failed_verification_to_notion(selection=selection, task_path=tmp_path)
 
@@ -1458,10 +1476,10 @@ def test_controller_logs_successful_verification_and_commit_to_notion(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    selection = _select_first_task(_build_ledger_with_materialised_notion_task())
+    selection = select_first_task(build_ledger_with_materialised_notion_task())
     (tmp_path / "promise.txt").write_text("DONE")
     (tmp_path / "verification-output.txt").write_text("$ pytest\npassed\n")
-    observed_content = _capture_notion_log_content(monkeypatch)
+    observed_content = capture_notion_log_content(monkeypatch)
 
     _log_completed_worker_to_notion(
         selection=selection,
@@ -1531,7 +1549,7 @@ def test_build_notion_task_creation_command_builds_sibling_command(tmp_path: Pat
     ],
 )
 def test_read_tasks_rejects_malformed_notion_task_entries(mutate_ledger, expected_message: str) -> None:
-    ledger = _build_ledger_with_planned_notion_task(related_to="ALOVYA-89", task_id="R2")
+    ledger = build_ledger_with_planned_notion_task(related_to="ALOVYA-89", task_id="R2")
     ledger["tasks"].insert(0, {
         "id": "R1",
         "title": "Prepare parent",
@@ -1670,7 +1688,7 @@ def test_codex_rules_backup_location_under_ralph_task_directory(tmp_path: Path) 
 
 
 def test_find_interrupted_codex_rules_backup_returns_backup_path(tmp_path: Path) -> None:
-    job = _create_job_with_ledger(tmp_path, _build_example_ledger())
+    job = create_job_with_ledger(tmp_path, build_example_ledger())
     task_path = job.tasks_path / "R1_20260621T120000Z"
     task_path.mkdir(parents=True)
     marker_path = task_path / CODEX_RULES_BACKUP_FILENAME
@@ -1682,7 +1700,7 @@ def test_find_interrupted_codex_rules_backup_returns_backup_path(tmp_path: Path)
 
 
 def test_find_interrupted_codex_rules_backup_returns_none_when_absent(tmp_path: Path) -> None:
-    job = _create_job_with_ledger(tmp_path, _build_example_ledger())
+    job = create_job_with_ledger(tmp_path, build_example_ledger())
     job.tasks_path.mkdir(parents=True, exist_ok=True)
 
     found_marker = _find_interrupted_codex_rules_backup(job)
@@ -1700,7 +1718,7 @@ def test_recover_interrupted_codex_rules_restores_and_raises(
     rules_path.parent.mkdir(parents=True)
     rules_path.write_text("generated rules")
 
-    job = _create_job_with_ledger(tmp_path, _build_example_ledger())
+    job = create_job_with_ledger(tmp_path, build_example_ledger())
     task_path = job.tasks_path / "R1_20260621T120000Z"
     task_path.mkdir(parents=True)
     marker_path = task_path / CODEX_RULES_BACKUP_FILENAME
@@ -1725,7 +1743,7 @@ def test_recover_interrupted_codex_rules_removes_rules_when_originally_absent(
     rules_path.parent.mkdir(parents=True)
     rules_path.write_text("generated rules")
 
-    job = _create_job_with_ledger(tmp_path, _build_example_ledger())
+    job = create_job_with_ledger(tmp_path, build_example_ledger())
     task_path = job.tasks_path / "R1_20260621T120000Z"
     task_path.mkdir(parents=True)
     marker_path = task_path / CODEX_RULES_BACKUP_FILENAME
@@ -1788,8 +1806,8 @@ def test_build_bwrap_agent_command_keeps_codex_command_tail_with_ask_for_approva
     bin_path.mkdir()
     repo_path.mkdir()
     codex_home_path.mkdir()
-    _write_executable_shim(bwrap_path)
-    _write_executable_shim(codex_path)
+    write_executable_shim(bwrap_path)
+    write_executable_shim(codex_path)
     monkeypatch.setenv("PATH", str(bin_path))
     monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
 
@@ -1825,295 +1843,8 @@ def test_accepts_example_ledger() -> None:
 
 @pytest.mark.parametrize("command_policy_key", ["allowed_bash_commands", "verification_commands"])
 def test_read_tasks_rejects_command_policy_in_ledger(command_policy_key: str) -> None:
-    ledger = _build_example_ledger()
+    ledger = build_example_ledger()
     ledger["tasks"][0][command_policy_key] = ["rg *"]
 
     with pytest.raises(ValueError, match=f"must keep {command_policy_key} in PLAN.md"):
         _read_tasks_from_ledger(ledger)
-
-
-def _build_example_ledger() -> dict[str, object]:
-    return {
-        "version": 1,
-        "job_name": "example",
-        "tasks": [
-            {
-                "id": "R1",
-                "title": "Add parser",
-                "status": "pending",
-                "depends_on": [],
-                "touchable_paths": ["src/parser.py"],
-            },
-            {
-                "id": "R2",
-                "title": "Add command line entrypoint",
-                "status": "pending",
-                "depends_on": ["R1"],
-                "touchable_paths": ["src/cli.py"],
-            },
-        ],
-    }
-
-
-def _build_ledger_where_first_pending_task_waits_and_second_pending_task_is_ready() -> dict[str, object]:
-    return {
-        "version": 1,
-        "job_name": "example",
-        "tasks": [
-            {
-                "id": "R0",
-                "title": "Prepare dependency",
-                "status": "blocked",
-                "depends_on": [],
-                "touchable_paths": ["src/dependency.py"],
-            },
-            {
-                "id": "R1",
-                "title": "Wait for dependency",
-                "status": "pending",
-                "depends_on": ["R0"],
-                "touchable_paths": ["src/waiting.py"],
-            },
-            {
-                "id": "R2",
-                "title": "First ready task",
-                "status": "pending",
-                "depends_on": [],
-                "touchable_paths": ["src/first_ready.py"],
-            },
-            {
-                "id": "R3",
-                "title": "Second ready task",
-                "status": "pending",
-                "depends_on": [],
-                "touchable_paths": ["src/second_ready.py"],
-            },
-        ],
-    }
-
-
-def _build_example_plan() -> str:
-    return """
-<!-- ralph-shared:start -->
-Shared context.
-<!-- ralph-shared:end -->
-
-<!-- ralph-task:start R1 -->
-First task context.
-
-<!-- ralph-allowed-bash:start -->
-- rg *
-- sed -n *
-<!-- ralph-allowed-bash:end -->
-
-<!-- ralph-verification:start -->
-- test -f src/parser.py
-<!-- ralph-verification:end -->
-<!-- ralph-task:end R1 -->
-
-<!-- ralph-task:start R2 -->
-Second task context.
-
-<!-- ralph-allowed-bash:start -->
-- rg *
-- sed -n *
-<!-- ralph-allowed-bash:end -->
-
-<!-- ralph-verification:start -->
-- python -m pytest tests/test_cli.py
-<!-- ralph-verification:end -->
-<!-- ralph-task:end R2 -->
-"""
-
-
-def _build_three_task_plan() -> str:
-    return """
-<!-- ralph-shared:start -->
-Shared context.
-<!-- ralph-shared:end -->
-
-<!-- ralph-task:start R0 -->
-Dependency task context.
-
-<!-- ralph-allowed-bash:start -->
-- rg *
-<!-- ralph-allowed-bash:end -->
-
-<!-- ralph-verification:start -->
-- test -f src/dependency.py
-<!-- ralph-verification:end -->
-<!-- ralph-task:end R0 -->
-
-<!-- ralph-task:start R1 -->
-Waiting task context.
-
-<!-- ralph-allowed-bash:start -->
-- rg *
-<!-- ralph-allowed-bash:end -->
-
-<!-- ralph-verification:start -->
-- test -f src/waiting.py
-<!-- ralph-verification:end -->
-<!-- ralph-task:end R1 -->
-
-<!-- ralph-task:start R2 -->
-Second task context.
-
-<!-- ralph-allowed-bash:start -->
-- rg *
-<!-- ralph-allowed-bash:end -->
-
-<!-- ralph-verification:start -->
-- test -f src/first_ready.py
-<!-- ralph-verification:end -->
-<!-- ralph-task:end R2 -->
-
-<!-- ralph-task:start R3 -->
-Third task context.
-
-<!-- ralph-allowed-bash:start -->
-- rg *
-<!-- ralph-allowed-bash:end -->
-
-<!-- ralph-verification:start -->
-- test -f src/second_ready.py
-<!-- ralph-verification:end -->
-<!-- ralph-task:end R3 -->
-"""
-
-
-def _build_ledger_with_planned_notion_task(related_to: str, task_id: str = "R1") -> dict[str, object]:
-    return {
-        "version": 1,
-        "job_name": "example",
-        "tasks": [
-            {
-                "id": task_id,
-                "title": "Add parser",
-                "status": "pending",
-                "depends_on": [],
-                "touchable_paths": ["src/parser.py"],
-                "notion_task": {
-                    "planned": True,
-                    "relationship": "child",
-                    "related_to": related_to,
-                    "title": "Add parser",
-                    "materialized_task_id": None,
-                },
-            }
-        ],
-    }
-
-
-def _build_ledger_with_materialised_notion_task() -> dict[str, object]:
-    ledger = _build_ledger_with_planned_notion_task(related_to="ALOVYA-89")
-    ledger["tasks"][0]["notion_task"]["materialized_task_id"] = "ALOVYA-90"
-    return ledger
-
-
-def _capture_notion_log_content(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
-    observed_content: dict[str, object] = {}
-
-    def run_notion_tracker_command_mock(command: list[str]) -> subprocess.CompletedProcess[str]:
-        content_path = Path(command[command.index("--content-path") + 1])
-        observed_content.update(json.loads(content_path.read_text(encoding="utf-8")))
-        observed_content["command"] = command
-        return subprocess.CompletedProcess(args=command, returncode=0, stdout="{}")
-
-    monkeypatch.setattr("ralph.notion._resolve_notion_tracker_command_path", lambda: "ntt")
-    monkeypatch.setattr("ralph.notion._run_notion_tracker_command", run_notion_tracker_command_mock)
-    return observed_content
-
-
-def _contains_subsequence(command: list[str], expected: list[str]) -> bool:
-    return any(
-        command[index:index + len(expected)] == expected
-        for index in range(len(command) - len(expected) + 1)
-    )
-
-
-def _build_test_backend_config(
-    backend_name: str,
-    agent_state_dir: Path,
-    agent_home_environment_variable: str,
-) -> AgentBackend:
-    return AgentBackend(
-        backend_name=backend_name,
-        command_name=f"{backend_name}-cli",
-        agent_state_dir=agent_state_dir,
-        agent_home_environment_variable=agent_home_environment_variable,
-    )
-
-
-def _command_windows(command: list[str], size: int) -> list[list[str]]:
-    return [
-        command[index:index + size]
-        for index in range(len(command) - size + 1)
-    ]
-
-
-def _select_first_task(ledger: dict[str, object]) -> TaskSelection:
-    return TaskSelection(
-        task={
-            **ledger["tasks"][0],
-            "allowed_bash_commands": ["rg *", "sed -n *"],
-            "verification_commands": ["test -f src/parser.py"],
-        },
-        shared_plan_context="Shared context.",
-        active_task_plan_context="First task context.",
-    )
-
-
-def _create_job_with_ledger(tmp_path: Path, ledger: dict[str, object]) -> RalphJob:
-    job_path = tmp_path / "job"
-    job = RalphJob(
-        job_name="example",
-        job_path=job_path,
-        plan_path=job_path / "PLAN.md",
-        ledger_path=job_path / "ledger.yaml",
-        tasks_path=job_path / "tasks",
-    )
-    job_path.mkdir()
-    _write_yaml_file(job.ledger_path, ledger)
-    return job
-
-
-def _initialise_git_repo(repo_path: Path) -> Path:
-    repo_path.mkdir()
-    _run_git(repo_path, "init")
-    _run_git(repo_path, "config", "user.email", "ralph-test@example.com")
-    _run_git(repo_path, "config", "user.name", "Ralph Test")
-    readme_path = repo_path / "README.md"
-    readme_path.write_text("Ralph test repository\n")
-    _run_git(repo_path, "add", ".")
-    _run_git(repo_path, "commit", "-m", "Initial commit")
-    return repo_path
-
-
-def _create_python_venv_shape(python_venv_path: Path) -> None:
-    python_path = python_venv_path / "bin" / "python"
-    python_path.parent.mkdir(parents=True)
-    python_path.write_text("")
-
-
-def _write_executable_shim(shim_path: Path) -> None:
-    shim_path.write_text("#!/bin/sh\nexit 0\n")
-    shim_path.chmod(0o755)
-
-
-def _run_git(repo_path: Path, *arguments: str) -> str:
-    completed_process = subprocess.run(
-        ["git", *arguments],
-        cwd=repo_path,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        check=False,
-    )
-    if completed_process.returncode != 0:
-        raise RuntimeError(f"git {' '.join(arguments)} failed:\n{completed_process.stdout}")
-    return completed_process.stdout
-
-
-def _quote_shell_path(path: Path) -> str:
-    return shlex.quote(str(path))
