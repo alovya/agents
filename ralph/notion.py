@@ -192,7 +192,7 @@ def materialised_notion_task_id_from_task(task: dict[str, Any]) -> str | None:
 
 
 def build_worker_notion_log_command(notion_task_id: str) -> str:
-    return f"ntt --log --ticket-number {ticket_number_from_alovya_task_id(notion_task_id)} --content-path .ralph-worklog.md"
+    return f"ntt --log --ticket-number {ticket_number_from_alovya_task_id(notion_task_id)} --content-path .ralph-worklog.json"
 
 
 def build_notion_task_creation_command(

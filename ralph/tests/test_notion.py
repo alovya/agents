@@ -300,7 +300,7 @@ def test_build_notion_task_creation_command_builds_sibling_command(tmp_path: Pat
 def test_build_worker_notion_log_command_uses_ticket_number() -> None:
     command = build_worker_notion_log_command("ALOVYA-123")
 
-    assert command == "ntt --log --ticket-number 123 --content-path .ralph-worklog.md"
+    assert command == "ntt --log --ticket-number 123 --content-path .ralph-worklog.json"
 
 
 def test_controller_completion_log_does_not_include_worker_worklog_block(

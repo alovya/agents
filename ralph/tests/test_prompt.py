@@ -106,12 +106,16 @@ def test_render_agent_prompt_includes_notion_log_command_when_materialised(tmp_p
     )
 
     assert "ntt --log --ticket-number 90" in prompt
-    assert ".ralph-worklog.md" in prompt
-    assert "Commands run" in prompt
-    assert "Files changed" in prompt
-    assert "Decisions made" in prompt
-    assert "Unresolved risks" in prompt
+    assert ".ralph-worklog.json" in prompt
+    assert "subheading" in prompt
+    assert "blocks" in prompt
+    assert "commands run" in prompt
+    assert "files changed" in prompt
+    assert "decisions made" in prompt
+    assert "unresolved risks" in prompt
     assert "BLOCKED or ABORT, log the blocker" in prompt
+    assert "Do not use shell redirection" in prompt
+    assert "Do not put this JSON in the final answer" in prompt
 
 
 def test_render_agent_prompt_notion_log_not_applicable_without_task(tmp_path: Path) -> None:

@@ -45,7 +45,7 @@ def describe_python_venv_for_worker_prompt(python_venv_path: Path | None) -> str
     )
 
 
-WORKER_NOTION_WORKLOG_FILENAME = ".ralph-worklog.md"
+WORKER_NOTION_WORKLOG_FILENAME = ".ralph-worklog.json"
 
 
 def _build_notion_log_instructions(task: dict[str, Any]) -> str:
@@ -61,12 +61,20 @@ def _build_notion_log_instructions(task: dict[str, Any]) -> str:
     command = build_worker_notion_log_command(materialised_task_id)
     return "\n".join([
         "Notion worklog (required before verification):",
-        f"- Write a Markdown worklog file to `{WORKER_NOTION_WORKLOG_FILENAME}` containing:",
-        "  - Commands run (with key outputs or errors)",
-        "  - Files changed and why",
-        "  - Decisions made",
-        "  - Unresolved risks (if any)",
-        f"- Run the Notion log command: `{command}`",
+        f"- Write `{WORKER_NOTION_WORKLOG_FILENAME}` as a valid ntt content JSON object with the following shape:",
+        '  ```json',
+        '  {',
+        '    "subheading": "Short log title",',
+        '    "blocks": [',
+        '      {"type": "paragraph", "text": "Human-readable summary"},',
+        '      {"type": "code", "language": "text", "text": "command output or details"}',
+        '    ]',
+        '  }',
+        '  ```',
+        "- Include blocks for: commands run (with key outputs or errors), files changed and why, decisions made, unresolved risks (if any), and the Notion log command result.",
+        f"- Run the Notion log command exactly as: `{command}`",
+        "- Do not use shell redirection when running the ntt command.",
+        "- Do not put this JSON in the final answer for the controller to parse.",
         "- If the log command fails or the content file is malformed, rewrite the file and rerun before returning.",
         "- For BLOCKED or ABORT, log the blocker or abort reason to Notion before returning.",
         "- If the Notion command fails but the code task is complete, proceed with DONE.",
