@@ -179,10 +179,16 @@ Do not copy task prose or full implementation notes into the ledger.
 
 ## Execution
 
-Run:
+Run as a direct script or as a package module:
 
 ```bash
 CODEX_HOME=/workspace/.codex python /workspace/agents/ralph/run_ralph_loop.py run --repo-path /path/to/repo --job-name example --agent-backend codex
+```
+
+Or equivalently as a package:
+
+```bash
+CODEX_HOME=/workspace/.codex python -m ralph.run_ralph_loop run --repo-path /path/to/repo --job-name example --agent-backend codex
 ```
 
 Codex workers require `CODEX_HOME` to point at the Codex state directory that the

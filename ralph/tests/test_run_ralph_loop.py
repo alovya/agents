@@ -26,47 +26,55 @@ from ralph.plan_selection import (
     select_next_task_from_plan_and_ledger as _select_next_task_from_plan_and_ledger,
 )
 from ralph.prompt import render_agent_prompt as _render_agent_prompt
-from ralph.run_ralph_loop import (
+from ralph.agent_backends import (
     AgentBackend,
     AgentResult,
+    build_worker_allowed_bash_commands as _build_worker_allowed_bash_commands,
+    run_command_and_tee_output as _run_command_and_tee_output,
+    select_agent_backend_config as _select_agent_backend_config,
+)
+from ralph.claude_backend import (
+    extract_claude_stream_result_text as _extract_claude_stream_result_text,
+)
+from ralph.codex_backend import (
     CODEX_RULES_BACKUP_FILENAME,
     CodexRulesSnapshot,
+    codex_permission_setup as _codex_permission_setup,
+    codex_rules_path as _codex_rules_path,
+    find_interrupted_codex_rules_backup as _find_interrupted_codex_rules_backup,
+    generate_codex_execpolicy_rules as _generate_codex_execpolicy_rules,
+    parse_command_to_execpolicy_pattern as _parse_command_to_execpolicy_pattern,
+    read_codex_rules_backup as _read_codex_rules_backup,
+    recover_interrupted_codex_rules as _recover_interrupted_codex_rules,
+    require_codex_home_path as _require_codex_home_path,
+    restore_codex_rules as _restore_codex_rules,
+    snapshot_codex_rules as _snapshot_codex_rules,
+    write_codex_rules_atomically as _write_codex_rules_atomically,
+    write_codex_rules_backup as _write_codex_rules_backup,
+)
+from ralph.sandbox import (
     DEFAULT_RALPH_HOME_PATH,
-    RalphJob,
     WORKER_AGENT_BINARY_PATH,
     WORKER_HOME_PATH,
     WORKER_TEMP_PATH,
+    backend_permission_setup as _backend_permission_setup,
+    build_agent_visibility_smoke_test_prompt as _build_agent_visibility_smoke_test_prompt,
+    build_bwrap_agent_command as _build_bwrap_agent_command,
+    reject_worker_visible_path_that_overlaps_hidden_state as _reject_worker_visible_path_that_overlaps_hidden_state,
+    resolve_python_venv_path as _resolve_python_venv_path,
+    resolve_ralph_home_path as _resolve_ralph_home_path,
+    run_agent_visibility_smoke_test as _run_agent_visibility_smoke_test,
+)
+from ralph.run_ralph_loop import (
+    RalphJob,
     _accept_worker_completed_task,
-    _backend_permission_setup,
-    _build_agent_visibility_smoke_test_prompt,
-    _build_bwrap_agent_command,
-    _build_worker_allowed_bash_commands,
-    _codex_permission_setup,
-    _codex_rules_path,
     _create_task_directory,
-    _extract_claude_stream_result_text,
     _find_ralph_job,
-    _find_interrupted_codex_rules_backup,
-    _generate_codex_execpolicy_rules,
     main,
     _mark_task_done,
-    _parse_command_to_execpolicy_pattern,
     _parse_arguments,
     _parse_agent_promise,
-    _read_codex_rules_backup,
-    _recover_interrupted_codex_rules,
-    _reject_worker_visible_path_that_overlaps_hidden_state,
     _refuse_unsafe_starting_state,
-    _resolve_ralph_home_path,
-    _resolve_python_venv_path,
-    _require_codex_home_path,
-    _restore_codex_rules,
-    _run_agent_visibility_smoke_test,
-    _run_command_and_tee_output,
-    _select_agent_backend_config,
-    _snapshot_codex_rules,
-    _write_codex_rules_atomically,
-    _write_codex_rules_backup,
     _write_yaml_file,
 )
 
@@ -468,7 +476,7 @@ def test_smoke_test_resolves_repo_path_before_running_sandbox_check(
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
-        "ralph.run_ralph_loop._run_agent_visibility_smoke_test",
+        "ralph.run_ralph_loop.run_agent_visibility_smoke_test",
         run_agent_visibility_smoke_test_mock,
     )
 
@@ -972,7 +980,7 @@ def test_run_agent_visibility_smoke_test_rejects_sensitive_repo_mount(
     sensitive_state_path = repo_path / ".aws"
     sensitive_state_path.mkdir(parents=True)
     monkeypatch.setattr(
-        "ralph.run_ralph_loop._build_sensitive_paths_that_workers_must_not_see",
+        "ralph.sandbox.build_sensitive_paths_that_workers_must_not_see",
         lambda: [sensitive_state_path],
     )
 
@@ -994,7 +1002,7 @@ def test_worker_visible_path_check_rejects_hidden_state_overlap_but_accepts_norm
     normal_repo_path.mkdir()
     hidden_state_path.mkdir()
     monkeypatch.setattr(
-        "ralph.run_ralph_loop._build_sensitive_paths_that_workers_must_not_see",
+        "ralph.sandbox.build_sensitive_paths_that_workers_must_not_see",
         lambda: [hidden_state_path],
     )
 
@@ -1019,7 +1027,7 @@ def test_refuse_unsafe_starting_state_rejects_sensitive_repo_mount(
     sensitive_state_path = repo_path / ".aws"
     sensitive_state_path.mkdir()
     monkeypatch.setattr(
-        "ralph.run_ralph_loop._build_sensitive_paths_that_workers_must_not_see",
+        "ralph.sandbox.build_sensitive_paths_that_workers_must_not_see",
         lambda: [sensitive_state_path],
     )
 
@@ -1056,7 +1064,7 @@ def test_require_codex_home_path_accepts_exact_codex_home(
     codex_home_path.mkdir()
     monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
     monkeypatch.setattr(
-        "ralph.run_ralph_loop._build_sensitive_paths_that_workers_must_not_see",
+        "ralph.sandbox.build_sensitive_paths_that_workers_must_not_see",
         lambda: [codex_home_path],
     )
 
@@ -1073,7 +1081,7 @@ def test_require_codex_home_path_accepts_symlink_to_exact_codex_home(
     codex_home_link_path.symlink_to(codex_home_path)
     monkeypatch.setenv("CODEX_HOME", str(codex_home_link_path))
     monkeypatch.setattr(
-        "ralph.run_ralph_loop._build_sensitive_paths_that_workers_must_not_see",
+        "ralph.sandbox.build_sensitive_paths_that_workers_must_not_see",
         lambda: [codex_home_path],
     )
 
@@ -1089,7 +1097,7 @@ def test_require_codex_home_path_rejects_broad_sensitive_parent(
     sensitive_state_path.mkdir(parents=True)
     monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
     monkeypatch.setattr(
-        "ralph.run_ralph_loop._build_sensitive_paths_that_workers_must_not_see",
+        "ralph.sandbox.build_sensitive_paths_that_workers_must_not_see",
         lambda: [codex_home_path / ".codex", sensitive_state_path],
     )
 
@@ -1105,7 +1113,7 @@ def test_resolve_python_venv_path_rejects_sensitive_path_overlap(
     python_venv_path = sensitive_state_path / "tool-venv"
     _create_python_venv_shape(python_venv_path)
     monkeypatch.setattr(
-        "ralph.run_ralph_loop._build_sensitive_paths_that_workers_must_not_see",
+        "ralph.sandbox.build_sensitive_paths_that_workers_must_not_see",
         lambda: [sensitive_state_path],
     )
 
@@ -1120,7 +1128,7 @@ def test_resolve_python_venv_path_accepts_non_sensitive_helper_venv(
     python_venv_path = tmp_path / "tool-venv"
     _create_python_venv_shape(python_venv_path)
     monkeypatch.setattr(
-        "ralph.run_ralph_loop._build_sensitive_paths_that_workers_must_not_see",
+        "ralph.sandbox.build_sensitive_paths_that_workers_must_not_see",
         lambda: [tmp_path / "sensitive-state"],
     )
 
