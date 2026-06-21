@@ -11,12 +11,9 @@ import yaml
 
 from ralph.tests.conftest import (
     build_example_ledger,
-    build_example_plan,
-    build_ledger_where_first_pending_task_waits_and_second_pending_task_is_ready,
     build_ledger_with_materialised_notion_task,
     build_ledger_with_planned_notion_task,
     build_test_backend_config,
-    build_three_task_plan,
     capture_notion_log_content,
     command_windows,
     contains_subsequence,
@@ -38,15 +35,9 @@ from ralph.notion import (
     materialise_planned_notion_task_before_worker_launch as _materialise_planned_notion_task_before_worker_launch,
     prepare_notion_task_before_worker_runs_task as _prepare_notion_task_before_worker_runs_task,
 )
-from ralph.plan_selection import (
-    TaskSelection,
-    read_tasks_from_ledger as _read_tasks_from_ledger,
-    select_next_task_from_plan_and_ledger as _select_next_task_from_plan_and_ledger,
-)
-from ralph.prompt import render_agent_prompt as _render_agent_prompt
+from ralph.plan_selection import TaskSelection
 from ralph.agent_backends import (
     AgentBackend,
-    AgentResult,
     build_worker_allowed_bash_commands as _build_worker_allowed_bash_commands,
     run_command_and_tee_output as _run_command_and_tee_output,
     select_agent_backend_config as _select_agent_backend_config,
@@ -75,7 +66,6 @@ from ralph.sandbox import (
     WORKER_AGENT_BINARY_PATH,
     WORKER_HOME_PATH,
     WORKER_TEMP_PATH,
-    backend_permission_setup as _backend_permission_setup,
     build_agent_visibility_smoke_test_prompt as _build_agent_visibility_smoke_test_prompt,
     build_bwrap_agent_command as _build_bwrap_agent_command,
     reject_worker_visible_path_that_overlaps_hidden_state as _reject_worker_visible_path_that_overlaps_hidden_state,
@@ -131,111 +121,6 @@ def test_package_invocation_help_remains_runnable() -> None:
     assert "Run Ralph task loops with sliced plan context." in completed_process.stdout
     assert "run" in completed_process.stdout
     assert "smoke-test" in completed_process.stdout
-
-
-def test_extracts_only_active_plan_slice() -> None:
-    ledger = build_example_ledger()
-    plan_text = build_example_plan()
-
-    selection = _select_next_task_from_plan_and_ledger(ledger, plan_text)
-
-    assert selection.task["id"] == "R1"
-    assert "First task context." in selection.active_task_plan_context
-    assert "Second task context." not in selection.active_task_plan_context
-    assert selection.task["allowed_bash_commands"] == ["rg *", "sed -n *"]
-    assert selection.task["verification_commands"] == ["test -f src/parser.py"]
-
-
-def test_rejects_missing_plan_slice() -> None:
-    plan_text = """
-<!-- ralph-shared:start -->
-Shared context.
-<!-- ralph-shared:end -->
-"""
-
-    with pytest.raises(ValueError, match="missing Ralph task blocks"):
-        _select_next_task_from_plan_and_ledger(build_example_ledger(), plan_text)
-
-
-def test_rejects_task_plan_without_allowed_bash_block() -> None:
-    plan_text = """
-<!-- ralph-shared:start -->
-Shared context.
-<!-- ralph-shared:end -->
-
-<!-- ralph-task:start R1 -->
-First task context.
-
-<!-- ralph-verification:start -->
-- test -f src/parser.py
-<!-- ralph-verification:end -->
-<!-- ralph-task:end R1 -->
-
-<!-- ralph-task:start R2 -->
-Second task context.
-
-<!-- ralph-allowed-bash:start -->
-- rg *
-<!-- ralph-allowed-bash:end -->
-
-<!-- ralph-verification:start -->
-- python -m pytest tests/test_cli.py
-<!-- ralph-verification:end -->
-<!-- ralph-task:end R2 -->
-"""
-
-    with pytest.raises(ValueError, match="exactly one ralph-allowed-bash block"):
-        _select_next_task_from_plan_and_ledger(build_example_ledger(), plan_text)
-
-
-def test_rejects_task_plan_without_verification_block() -> None:
-    plan_text = """
-<!-- ralph-shared:start -->
-Shared context.
-<!-- ralph-shared:end -->
-
-<!-- ralph-task:start R1 -->
-First task context.
-
-<!-- ralph-allowed-bash:start -->
-- rg *
-<!-- ralph-allowed-bash:end -->
-<!-- ralph-task:end R1 -->
-
-<!-- ralph-task:start R2 -->
-Second task context.
-
-<!-- ralph-allowed-bash:start -->
-- rg *
-<!-- ralph-allowed-bash:end -->
-
-<!-- ralph-verification:start -->
-- python -m pytest tests/test_cli.py
-<!-- ralph-verification:end -->
-<!-- ralph-task:end R2 -->
-"""
-
-    with pytest.raises(ValueError, match="exactly one ralph-verification block"):
-        _select_next_task_from_plan_and_ledger(build_example_ledger(), plan_text)
-
-
-def test_selects_dependency_ready_task() -> None:
-    ledger = build_example_ledger()
-    ledger["tasks"][0]["status"] = "done"
-
-    selection = _select_next_task_from_plan_and_ledger(ledger, build_example_plan())
-
-    assert selection.task["id"] == "R2"
-    assert selection.task["verification_commands"] == ["python -m pytest tests/test_cli.py"]
-
-
-def test_selects_first_pending_task_after_skipping_pending_task_with_unfinished_dependencies() -> None:
-    ledger = build_ledger_where_first_pending_task_waits_and_second_pending_task_is_ready()
-
-    selection = _select_next_task_from_plan_and_ledger(ledger, build_three_task_plan())
-
-    assert selection.task["id"] == "R2"
-    assert selection.active_task_plan_context.strip().startswith("Second task context.")
 
 
 def test_parses_exactly_one_promise() -> None:
@@ -539,69 +424,6 @@ def test_create_task_directory_sanitizes_task_id(tmp_path: Path) -> None:
 
     assert task_path.name.startswith("R-1-cleanup_")
     assert task_path.is_dir()
-
-
-def test_render_agent_prompt_excludes_unrelated_task_slice(tmp_path: Path) -> None:
-    ledger = build_example_ledger()
-    selection = TaskSelection(
-        task=ledger["tasks"][0],
-        shared_plan_context="Shared context.",
-        active_task_plan_context="First task context.",
-    )
-
-    prompt = _render_agent_prompt(
-        repo_path=tmp_path,
-        ledger=ledger,
-        selection=selection,
-        python_venv_path=None,
-    )
-
-    assert "First task context." in prompt
-    assert "Second task context." not in prompt
-    assert "/.ralph" not in prompt
-    assert "Codex" not in prompt
-
-
-def test_render_agent_prompt_keeps_plan_instructions_without_duplicating_ledger_prose(tmp_path: Path) -> None:
-    ledger = build_example_ledger()
-    ledger["tasks"][0]["context"] = "Duplicated task prose from ledger YAML."
-    selection = TaskSelection(
-        task=ledger["tasks"][0],
-        shared_plan_context="Shared context.",
-        active_task_plan_context="Task instructions kept from PLAN.md.",
-    )
-
-    prompt = _render_agent_prompt(
-        repo_path=tmp_path,
-        ledger=ledger,
-        selection=selection,
-        python_venv_path=None,
-    )
-
-    assert "Task instructions kept from PLAN.md." in prompt
-    assert "Duplicated task prose from ledger YAML." not in prompt
-
-
-def test_render_agent_prompt_documents_python_venv(tmp_path: Path) -> None:
-    ledger = build_example_ledger()
-    selection = TaskSelection(
-        task=ledger["tasks"][0],
-        shared_plan_context="Shared context.",
-        active_task_plan_context="First task context.",
-    )
-    python_venv_path = tmp_path / "venv"
-
-    prompt = _render_agent_prompt(
-        repo_path=tmp_path,
-        ledger=ledger,
-        selection=selection,
-        python_venv_path=python_venv_path,
-    )
-
-    assert f"Python venv: {python_venv_path}" in prompt
-    assert "already first on PATH" in prompt
-    assert "ntt" not in prompt
-    assert "Notion" not in prompt
 
 
 def test_build_bwrap_command_mounts_python_venv_from_path(
@@ -1536,32 +1358,6 @@ def test_build_notion_task_creation_command_builds_sibling_command(tmp_path: Pat
     ]
 
 
-@pytest.mark.parametrize(
-    ("mutate_ledger", "expected_message"),
-    [
-        (lambda ledger: ledger["tasks"][1]["notion_task"].__setitem__("planned", "yes"), "planned"),
-        (lambda ledger: ledger["tasks"][1]["notion_task"].__setitem__("relationship", "parent"), "relationship"),
-        (lambda ledger: ledger["tasks"][1]["notion_task"].__setitem__("related_to", ""), "related_to"),
-        (lambda ledger: ledger["tasks"][1]["notion_task"].__setitem__("title", ""), "title"),
-        (lambda ledger: ledger["tasks"][1]["notion_task"].__setitem__("materialized_task_id", "R1"), "materialized_task_id"),
-        (lambda ledger: ledger["tasks"][1]["notion_task"].__setitem__("related_to", "R3"), "unknown Ralph task"),
-        (lambda ledger: ledger["tasks"][1]["notion_task"].__setitem__("related_to", "R1"), "must depend on related Ralph task"),
-    ],
-)
-def test_read_tasks_rejects_malformed_notion_task_entries(mutate_ledger, expected_message: str) -> None:
-    ledger = build_ledger_with_planned_notion_task(related_to="ALOVYA-89", task_id="R2")
-    ledger["tasks"].insert(0, {
-        "id": "R1",
-        "title": "Prepare parent",
-        "status": "pending",
-        "depends_on": [],
-    })
-    mutate_ledger(ledger)
-
-    with pytest.raises(ValueError, match=expected_message):
-        _read_tasks_from_ledger(ledger)
-
-
 def test_generate_codex_execpolicy_rules_renders_prefix_rule_syntax() -> None:
     allowed_bash_commands = ["rg pattern", "sed -n 1p"]
 
@@ -1832,19 +1628,3 @@ def test_build_bwrap_agent_command_keeps_codex_command_tail_with_ask_for_approva
         "-",
     ]
     assert "--ignore-rules" not in command
-
-
-def test_accepts_example_ledger() -> None:
-    example_ledger_path = Path(__file__).resolve().parents[1] / "examples" / "ledger.yaml"
-    ledger = yaml.safe_load(example_ledger_path.read_text())
-
-    assert _read_tasks_from_ledger(ledger)
-
-
-@pytest.mark.parametrize("command_policy_key", ["allowed_bash_commands", "verification_commands"])
-def test_read_tasks_rejects_command_policy_in_ledger(command_policy_key: str) -> None:
-    ledger = build_example_ledger()
-    ledger["tasks"][0][command_policy_key] = ["rg *"]
-
-    with pytest.raises(ValueError, match=f"must keep {command_policy_key} in PLAN.md"):
-        _read_tasks_from_ledger(ledger)
