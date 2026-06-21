@@ -228,6 +228,35 @@ Claude workers require `CLAUDE_CONFIG_DIR` to point at the Claude Code state
 directory that the worker may use. Ralph mounts only that selected Claude state
 path, and does not pass `CODEX_HOME` to Claude workers.
 
+### Claude Worker Output
+
+Claude worker output produces two artefacts for each task:
+
+1. `agent-output.txt` is the operator-facing transcript. It is the text Ralph
+   tees to the terminal while the worker is running.
+2. `agent-output.raw.jsonl` is the diagnostic transcript. It preserves Claude's
+   newline-delimited stream-json exactly as Claude emitted it.
+
+The readable transcript favours the events a human needs while watching a task:
+
+1. Assistant text is written as plain transcript lines.
+2. Assistant tool-use blocks are summarised as the tool name plus useful input
+   fields such as the command and description.
+3. User tool-result blocks are written as command output, or as tool errors when
+   Claude marks the result as an error.
+4. Result events write the final answer when that answer has not already appeared
+   in assistant text.
+5. Hook and partial-message events are suppressed unless they carry a useful
+   error message.
+6. Malformed stream lines are kept visible in the readable transcript so an
+   operator can see that Claude emitted invalid stream-json.
+
+Promise parsing still uses Claude's final `result` event when that event is
+available. If Claude does not emit a final result event, Ralph falls back to the
+last assistant text. Keep the raw stream artefact available because hook events,
+partial messages, usage metadata, and malformed stream lines can be useful when
+debugging a Claude worker or the formatter itself.
+
 If workers need helper commands from a Python venv, pass that venv explicitly:
 
 ```bash
