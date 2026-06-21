@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 from ralph.run_ralph_loop import (
-    AgentBackendConfig,
+    AgentBackend,
     AgentResult,
     CODEX_RULES_BACKUP_MARKER_FILENAME,
     CodexRulesSnapshot,
@@ -41,13 +41,13 @@ from ralph.run_ralph_loop import (
     _materialise_planned_notion_task_before_worker_launch,
     _mark_task_done,
     _parse_command_to_execpolicy_pattern,
-    _prepare_notion_task_for_worker_launch,
+    _prepare_notion_task_before_worker_runs_task,
     _parse_arguments,
     _parse_agent_promise,
     _read_codex_rules_backup_marker,
     _read_tasks_from_ledger,
     _recover_stale_codex_rules_backup_marker,
-    _refuse_explicit_worker_mount_that_overlaps_sensitive_hidden_paths,
+    _reject_worker_visible_path_that_overlaps_hidden_state,
     _refuse_unsafe_starting_state,
     _render_agent_prompt,
     _resolve_ralph_home_path,
@@ -842,14 +842,14 @@ def test_build_worker_allowed_bash_commands_combines_controller_and_plan_command
 
 def test_build_agent_visibility_smoke_test_prompt_checks_sandbox_contract(tmp_path: Path) -> None:
     repo_path = tmp_path / "target repo"
-    agent_home_path = tmp_path / "codex home"
+    agent_state_dir = tmp_path / "codex home"
     python_venv_path = tmp_path / "tool venv"
 
     prompt = _build_agent_visibility_smoke_test_prompt(
         repo_path=repo_path,
         backend_config=_build_test_backend_config(
             backend_name="codex",
-            agent_home_path=agent_home_path,
+            agent_state_dir=agent_state_dir,
             agent_home_environment_variable="CODEX_HOME",
         ),
         python_venv_path=python_venv_path,
@@ -869,7 +869,7 @@ def test_build_agent_visibility_smoke_test_prompt_checks_sandbox_contract(tmp_pa
     assert 'test -z "${NOTION_API_KEY:-}"' in prompt
     assert 'test -z "${OPENAI_API_KEY:-}"' in prompt
     assert 'test "${CODEX_HOME-}" =' in prompt
-    assert str(agent_home_path) in prompt
+    assert str(agent_state_dir) in prompt
     assert 'test -z "${CLAUDE_CONFIG_DIR:-}"' in prompt
     assert "mkdir" in prompt
     assert "rmdir" in prompt
@@ -887,7 +887,7 @@ def test_build_agent_visibility_smoke_test_prompt_skips_venv_checks_when_absent(
         repo_path=tmp_path / "target-repo",
         backend_config=_build_test_backend_config(
             backend_name="codex",
-            agent_home_path=tmp_path / "codex-home",
+            agent_state_dir=tmp_path / "codex-home",
             agent_home_environment_variable="CODEX_HOME",
         ),
         python_venv_path=None,
@@ -902,7 +902,7 @@ def test_build_agent_visibility_smoke_test_prompt_does_not_reject_explicit_mount
         repo_path=tmp_path / "target-repo",
         backend_config=_build_test_backend_config(
             backend_name="codex",
-            agent_home_path=Path("/workspace/.codex"),
+            agent_state_dir=Path("/workspace/.codex"),
             agent_home_environment_variable="CODEX_HOME",
         ),
         python_venv_path=None,
@@ -917,7 +917,7 @@ def test_build_agent_visibility_smoke_test_prompt_hides_unselected_backend_state
         repo_path=tmp_path / "target-repo",
         backend_config=_build_test_backend_config(
             backend_name="claude",
-            agent_home_path=Path("/workspace/.claude"),
+            agent_state_dir=Path("/workspace/.claude"),
             agent_home_environment_variable="CLAUDE_CONFIG_DIR",
         ),
         python_venv_path=None,
@@ -975,13 +975,13 @@ def test_worker_visible_path_check_rejects_hidden_state_overlap_but_accepts_norm
         lambda: [hidden_state_path],
     )
 
-    _refuse_explicit_worker_mount_that_overlaps_sensitive_hidden_paths(
+    _reject_worker_visible_path_that_overlaps_hidden_state(
         path=normal_repo_path,
         role="Target repo",
     )
 
     with pytest.raises(ValueError, match="Target repo must not overlap"):
-        _refuse_explicit_worker_mount_that_overlaps_sensitive_hidden_paths(
+        _reject_worker_visible_path_that_overlaps_hidden_state(
             path=hidden_state_path,
             role="Target repo",
         )
@@ -1363,7 +1363,7 @@ def test_prepare_notion_task_blocks_worker_launch_when_notion_tracker_fails(
     monkeypatch.setattr("ralph.run_ralph_loop._run_notion_tracker_command", run_notion_tracker_command_mock)
 
     with pytest.raises(RuntimeError, match="Notion task tracker command failed"):
-        _prepare_notion_task_for_worker_launch(
+        _prepare_notion_task_before_worker_runs_task(
             job=job,
             ledger=ledger,
             selection=_select_first_task(ledger),
@@ -1728,7 +1728,7 @@ def test_codex_agent_run_writes_temporary_rules_then_restores_original_rules(
         prompt: str,
         output_path: Path,
         tee_output: bool,
-        backend_config: AgentBackendConfig,
+        backend_config: AgentBackend,
     ) -> AgentResult:
         observed_rules_during_worker_launch.append(rules_path.read_text(encoding="utf-8"))
         observed_marker_during_worker_launch.append(
@@ -1743,10 +1743,10 @@ def test_codex_agent_run_writes_temporary_rules_then_restores_original_rules(
         prompt="Worker prompt",
         output_path=output_path,
         tee_output=False,
-        backend_config=AgentBackendConfig(
+        backend_config=AgentBackend(
             backend_name="codex",
             command_name="codex",
-            agent_home_path=codex_home_path,
+            agent_state_dir=codex_home_path,
             agent_home_environment_variable="CODEX_HOME",
         ),
         allowed_bash_commands=["rg *"],
@@ -2018,13 +2018,13 @@ def _contains_subsequence(command: list[str], expected: list[str]) -> bool:
 
 def _build_test_backend_config(
     backend_name: str,
-    agent_home_path: Path,
+    agent_state_dir: Path,
     agent_home_environment_variable: str,
-) -> AgentBackendConfig:
-    return AgentBackendConfig(
+) -> AgentBackend:
+    return AgentBackend(
         backend_name=backend_name,
         command_name=f"{backend_name}-cli",
-        agent_home_path=agent_home_path,
+        agent_state_dir=agent_state_dir,
         agent_home_environment_variable=agent_home_environment_variable,
     )
 

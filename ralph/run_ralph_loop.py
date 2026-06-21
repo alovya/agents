@@ -79,11 +79,14 @@ class AgentResult:
 
 
 @dataclass(frozen=True)
-class AgentBackendConfig:
+class AgentBackend:
     backend_name: str
     command_name: str
-    agent_home_path: Path
+    agent_state_dir: Path
     agent_home_environment_variable: str
+
+
+PRIVATE_CONTROL_PATH_NAMES = frozenset({"PLAN.md", "ledger.yaml", ".ralph"})
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -126,7 +129,7 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
 
         task_path = _create_task_directory(job.tasks_path, selection.task["id"])
         print(f"Ralph task: {task_path}")
-        ledger, selection = _prepare_notion_task_for_worker_launch(
+        ledger, selection = _prepare_notion_task_before_worker_runs_task(
             job=job,
             ledger=ledger,
             selection=selection,
@@ -268,7 +271,7 @@ def _validate_worker_commit_matches_repo_state(
         raise RuntimeError(f"Task {task['id']} returned DONE but left uncommitted target repo changes.")
 
 
-def _prepare_notion_task_for_worker_launch(
+def _prepare_notion_task_before_worker_runs_task(
     job: RalphJob,
     ledger: dict[str, Any],
     selection: TaskSelection,
@@ -491,16 +494,13 @@ def _refuse_unsafe_starting_state(repo_path: Path, job: RalphJob) -> None:
         raise FileNotFoundError(f"Target repo does not exist: {repo_path}")
     if _is_path_inside(child_path=job.job_path, parent_path=repo_path):
         raise RuntimeError(f"Ralph job path must not be inside target repo: {job.job_path}")
-    _refuse_explicit_worker_mount_that_overlaps_sensitive_hidden_paths(
+    _reject_worker_visible_path_that_overlaps_hidden_state(
         path=repo_path,
         role="Target repo",
     )
-    if _contains_private_control_path_named_under_repo(repo_path, "PLAN.md"):
-        raise RuntimeError("Refusing to run because PLAN.md exists under the target repo.")
-    if _contains_private_control_path_named_under_repo(repo_path, "ledger.yaml"):
-        raise RuntimeError("Refusing to run because ledger.yaml exists under the target repo.")
-    if _contains_private_control_path_named_under_repo(repo_path, ".ralph"):
-        raise RuntimeError("Refusing to run because .ralph exists under the target repo.")
+    for control_path_name in PRIVATE_CONTROL_PATH_NAMES:
+        if _repo_contains_private_control_path(repo_path, control_path_name):
+            raise RuntimeError(f"Refusing to run because {control_path_name} exists under the target repo.")
     if _read_git_status(repo_path):
         raise RuntimeError("Refusing to run because the target repo is dirty.")
 
@@ -542,12 +542,12 @@ def _render_agent_prompt(
 ) -> str:
     prompt_template_path = Path(__file__).resolve().parent / "PROMPT.md"
     prompt_template = prompt_template_path.read_text()
-    visible_ledger = _remove_plan_like_fields(ledger)
-    active_task = _remove_plan_like_fields(selection.task)
+    visible_ledger = _remove_duplicated_task_prose_before_rendering_prompt(ledger)
+    active_task = _remove_duplicated_task_prose_before_rendering_prompt(selection.task)
 
     return prompt_template.format(
         repo_path=repo_path,
-        tool_environment_context=_describe_tool_environment(python_venv_path),
+        tool_environment_context=_describe_python_venv_for_worker_prompt(python_venv_path),
         active_task_yaml=_dump_yaml(active_task),
         visible_ledger_yaml=_dump_yaml(visible_ledger),
         shared_plan_context=selection.shared_plan_context.strip(),
@@ -604,7 +604,7 @@ def _run_agent_command(
     prompt: str,
     output_path: Path,
     tee_output: bool,
-    backend_config: AgentBackendConfig,
+    backend_config: AgentBackend,
 ) -> AgentResult:
     if tee_output:
         completed_process = _run_command_and_tee_output(
@@ -638,11 +638,11 @@ def _run_codex_agent_with_rules_management(
     prompt: str,
     output_path: Path,
     tee_output: bool,
-    backend_config: AgentBackendConfig,
+    backend_config: AgentBackend,
     allowed_bash_commands: list[str],
     task_path: Path,
 ) -> AgentResult:
-    codex_home_path = backend_config.agent_home_path
+    codex_home_path = backend_config.agent_state_dir
     rules_path = _codex_rules_path(codex_home_path)
     backup_marker_path = task_path / CODEX_RULES_BACKUP_MARKER_FILENAME
 
@@ -711,7 +711,7 @@ def _run_agent_visibility_smoke_test(
 ) -> None:
     if not repo_path.is_dir():
         raise FileNotFoundError(f"Target repo does not exist: {repo_path}")
-    _refuse_explicit_worker_mount_that_overlaps_sensitive_hidden_paths(
+    _reject_worker_visible_path_that_overlaps_hidden_state(
         path=repo_path,
         role="Target repo",
     )
@@ -755,7 +755,7 @@ def _run_agent_visibility_smoke_test(
 
 def _build_agent_visibility_smoke_test_prompt(
     repo_path: Path,
-    backend_config: AgentBackendConfig,
+    backend_config: AgentBackend,
     python_venv_path: Path | None,
 ) -> str:
     shell_command = _build_agent_visibility_smoke_test_agent_command(
@@ -774,7 +774,7 @@ def _build_agent_visibility_smoke_test_prompt(
 
 def _build_agent_visibility_smoke_test_agent_command(
     repo_path: Path,
-    backend_config: AgentBackendConfig,
+    backend_config: AgentBackend,
     python_venv_path: Path | None,
 ) -> str:
     shell_command = _build_agent_visibility_smoke_test_shell_command(
@@ -787,14 +787,14 @@ def _build_agent_visibility_smoke_test_agent_command(
 
 def _build_agent_visibility_smoke_test_shell_command(
     repo_path: Path,
-    backend_config: AgentBackendConfig,
+    backend_config: AgentBackend,
     python_venv_path: Path | None,
 ) -> str:
     hidden_paths = _remove_paths_that_overlap_explicit_mounts(
         hidden_paths=_build_sensitive_paths_that_workers_must_not_see(),
         explicitly_visible_paths=_build_explicit_worker_mount_paths(
             repo_path=repo_path,
-            agent_home_path=backend_config.agent_home_path,
+            agent_state_dir=backend_config.agent_state_dir,
             python_venv_path=python_venv_path,
         ),
     )
@@ -809,7 +809,7 @@ def _build_agent_visibility_smoke_test_shell_command(
     command_parts += _build_shell_assertions_that_worker_environment_matches_bwrap_setenv_options(
         _build_backend_state_environment_variables_to_verify_exactly(
             agent_home_environment_variable=backend_config.agent_home_environment_variable,
-            agent_home_path=backend_config.agent_home_path,
+            agent_state_dir=backend_config.agent_state_dir,
             python_venv_path=python_venv_path,
         )
     )
@@ -822,10 +822,10 @@ def _build_agent_visibility_smoke_test_shell_command(
 
 def _build_explicit_worker_mount_paths(
     repo_path: Path,
-    agent_home_path: Path,
+    agent_state_dir: Path,
     python_venv_path: Path | None,
 ) -> list[Path]:
-    explicitly_visible_paths = [repo_path, agent_home_path]
+    explicitly_visible_paths = [repo_path, agent_state_dir]
     if python_venv_path is not None:
         explicitly_visible_paths.append(python_venv_path)
     return explicitly_visible_paths
@@ -945,10 +945,10 @@ def _build_shell_assertions_that_worker_environment_matches_bwrap_setenv_options
 
 def _build_backend_state_environment_variables_to_verify_exactly(
     agent_home_environment_variable: str,
-    agent_home_path: Path,
+    agent_state_dir: Path,
     python_venv_path: Path | None,
 ) -> list[tuple[str, str]]:
-    environment_variables = [(agent_home_environment_variable, str(agent_home_path))]
+    environment_variables = [(agent_home_environment_variable, str(agent_state_dir))]
     if python_venv_path is not None:
         environment_variables.append(("VIRTUAL_ENV", str(python_venv_path)))
     return environment_variables
@@ -1255,7 +1255,7 @@ def _quote_shell_value(value: Path | str) -> str:
 def _select_agent_backend_config(
     agent_backend: str,
     agent_command: str | None,
-) -> AgentBackendConfig:
+) -> AgentBackend:
     if agent_backend == "codex":
         return _build_codex_backend_config(agent_command)
     if agent_backend == "claude":
@@ -1263,29 +1263,29 @@ def _select_agent_backend_config(
     raise ValueError(f"Unsupported agent backend: {agent_backend}")
 
 
-def _build_codex_backend_config(agent_command: str | None) -> AgentBackendConfig:
-    agent_home_path = _require_agent_home_path_from_environment_variable("CODEX_HOME")
-    return AgentBackendConfig(
+def _build_codex_backend_config(agent_command: str | None) -> AgentBackend:
+    agent_state_dir = _require_agent_state_dir_from_environment_variable("CODEX_HOME")
+    return AgentBackend(
         backend_name="codex",
         command_name=agent_command or _read_default_codex_agent_command(),
-        agent_home_path=agent_home_path,
+        agent_state_dir=agent_state_dir,
         agent_home_environment_variable="CODEX_HOME",
     )
 
 
-def _build_claude_backend_config(agent_command: str | None) -> AgentBackendConfig:
-    agent_home_path = _require_agent_home_path_from_environment_variable("CLAUDE_CONFIG_DIR")
-    return AgentBackendConfig(
+def _build_claude_backend_config(agent_command: str | None) -> AgentBackend:
+    agent_state_dir = _require_agent_state_dir_from_environment_variable("CLAUDE_CONFIG_DIR")
+    return AgentBackend(
         backend_name="claude",
         command_name=agent_command or _read_default_claude_agent_command(),
-        agent_home_path=agent_home_path,
+        agent_state_dir=agent_state_dir,
         agent_home_environment_variable="CLAUDE_CONFIG_DIR",
     )
 
 
 def _build_bwrap_agent_command(
     repo_path: Path,
-    backend_config: AgentBackendConfig,
+    backend_config: AgentBackend,
     python_venv_path: Path | None,
     allowed_bash_commands: list[str] | None = None,
 ) -> list[str]:
@@ -1305,7 +1305,7 @@ def _build_bwrap_agent_command(
     command += ["--bind", str(repo_path), str(repo_path)]
     command += ["--dev", "/dev"]
 
-    command += _build_bwrap_agent_home_mount_options(backend_config.agent_home_path)
+    command += _build_bwrap_agent_home_mount_options(backend_config.agent_state_dir)
     command += _build_bwrap_dir_options_for_bind_mount_target(WORKER_HOME_PATH)
     command += _build_bwrap_dir_options_for_bind_mount_target(WORKER_TEMP_PATH)
 
@@ -1317,7 +1317,7 @@ def _build_bwrap_agent_command(
     command += _build_bwrap_setenv_options(
         _build_bwrap_worker_environment_variables(
             agent_home_environment_variable=backend_config.agent_home_environment_variable,
-            agent_home_path=backend_config.agent_home_path,
+            agent_state_dir=backend_config.agent_state_dir,
             python_venv_path=python_venv_path,
         )
     )
@@ -1332,7 +1332,7 @@ def _build_bwrap_agent_command(
 
 
 def _build_agent_command_tail(
-    backend_config: AgentBackendConfig,
+    backend_config: AgentBackend,
     repo_path: Path,
     allowed_bash_commands: list[str],
 ) -> list[str]:
@@ -1387,7 +1387,7 @@ def _build_claude_allowed_tools(allowed_bash_commands: list[str]) -> list[str]:
     return allowed_tools
 
 
-def _extract_agent_result_text(backend_config: AgentBackendConfig, raw_output: str) -> str:
+def _extract_agent_result_text(backend_config: AgentBackend, raw_output: str) -> str:
     if backend_config.backend_name != "claude":
         return raw_output
     return _extract_claude_stream_result_text(raw_output)
@@ -1440,13 +1440,13 @@ def _extract_text_from_claude_assistant_event(event: dict[str, Any]) -> str:
 
 def _build_bwrap_worker_environment_variables(
     agent_home_environment_variable: str,
-    agent_home_path: Path,
+    agent_state_dir: Path,
     python_venv_path: Path | None,
 ) -> list[tuple[str, str]]:
     environment_variables = [
         ("HOME", str(WORKER_HOME_PATH)),
         ("TMPDIR", str(WORKER_TEMP_PATH)),
-        (agent_home_environment_variable, str(agent_home_path)),
+        (agent_home_environment_variable, str(agent_state_dir)),
         ("XDG_CONFIG_HOME", str(WORKER_HOME_PATH / ".config")),
         ("XDG_CACHE_HOME", str(WORKER_HOME_PATH / ".cache")),
         ("XDG_DATA_HOME", str(WORKER_HOME_PATH / ".local" / "share")),
@@ -1518,11 +1518,11 @@ def _build_bwrap_host_os_compatibility_mount_options(compatibility_path: Path) -
     )
 
 
-def _build_bwrap_agent_home_mount_options(agent_home_path: Path) -> list[str]:
-    options = _build_bwrap_dir_options_for_bind_mount_target(agent_home_path)
-    options += ["--bind", str(agent_home_path), str(agent_home_path)]
-    if (agent_home_path / ".tmp").is_dir():
-        options += ["--tmpfs", str(agent_home_path / ".tmp")]
+def _build_bwrap_agent_home_mount_options(agent_state_dir: Path) -> list[str]:
+    options = _build_bwrap_dir_options_for_bind_mount_target(agent_state_dir)
+    options += ["--bind", str(agent_state_dir), str(agent_state_dir)]
+    if (agent_state_dir / ".tmp").is_dir():
+        options += ["--tmpfs", str(agent_state_dir / ".tmp")]
     return options
 
 
@@ -1545,32 +1545,32 @@ def _build_bwrap_read_only_dir_mount_options(host_path: Path, sandbox_path: Path
 
 
 def _require_codex_home_path() -> Path:
-    return _require_agent_home_path_from_environment_variable("CODEX_HOME")
+    return _require_agent_state_dir_from_environment_variable("CODEX_HOME")
 
 
-def _require_agent_home_path_from_environment_variable(variable_name: str) -> Path:
+def _require_agent_state_dir_from_environment_variable(variable_name: str) -> Path:
     configured_path = os.environ.get(variable_name)
     if not configured_path:
         raise RuntimeError(f"{variable_name} must be set before running Ralph agents.")
 
-    agent_home_path = Path(configured_path).expanduser().resolve()
-    if not agent_home_path.is_dir():
-        raise RuntimeError(f"{variable_name} does not exist: {agent_home_path}")
-    _refuse_agent_home_path_that_exposes_other_sensitive_state(
-        agent_home_path=agent_home_path,
+    agent_state_dir = Path(configured_path).expanduser().resolve()
+    if not agent_state_dir.is_dir():
+        raise RuntimeError(f"{variable_name} does not exist: {agent_state_dir}")
+    _refuse_agent_state_dir_that_exposes_other_sensitive_state(
+        agent_state_dir=agent_state_dir,
         variable_name=variable_name,
     )
-    return agent_home_path
+    return agent_state_dir
 
 
-def _refuse_agent_home_path_that_exposes_other_sensitive_state(agent_home_path: Path, variable_name: str) -> None:
+def _refuse_agent_state_dir_that_exposes_other_sensitive_state(agent_state_dir: Path, variable_name: str) -> None:
     for sensitive_path in _build_sensitive_paths_that_workers_must_not_see():
-        if _paths_resolve_to_same_location(left_path=agent_home_path, right_path=sensitive_path):
+        if _paths_resolve_to_same_location(left_path=agent_state_dir, right_path=sensitive_path):
             continue
-        if _paths_overlap(left_path=agent_home_path, right_path=sensitive_path):
+        if _paths_overlap(left_path=agent_state_dir, right_path=sensitive_path):
             raise ValueError(
                 f"{variable_name} must not overlap other worker-hidden sensitive state: "
-                f"{agent_home_path} overlaps {sensitive_path}"
+                f"{agent_state_dir} overlaps {sensitive_path}"
             )
 
 
@@ -1585,14 +1585,14 @@ def _resolve_python_venv_path(python_venv: str | None) -> Path | None:
         raise FileNotFoundError(f"Python venv does not exist: {python_venv_path}")
     if not (python_venv_path / "bin" / "python").is_file():
         raise FileNotFoundError(f"Python venv is missing bin/python: {python_venv_path}")
-    _refuse_explicit_worker_mount_that_overlaps_sensitive_hidden_paths(
+    _reject_worker_visible_path_that_overlaps_hidden_state(
         path=python_venv_path,
         role="Python venv",
     )
     return python_venv_path
 
 
-def _refuse_explicit_worker_mount_that_overlaps_sensitive_hidden_paths(path: Path, role: str) -> None:
+def _reject_worker_visible_path_that_overlaps_hidden_state(path: Path, role: str) -> None:
     for sensitive_path in _build_sensitive_paths_that_workers_must_not_see():
         if _paths_overlap(left_path=path, right_path=sensitive_path):
             raise ValueError(
@@ -1839,15 +1839,15 @@ def _mark_task_done(ledger: dict[str, Any], task_id: str) -> dict[str, Any]:
     return updated_ledger
 
 
-def _remove_plan_like_fields(value: Any) -> Any:
+def _remove_duplicated_task_prose_before_rendering_prompt(value: Any) -> Any:
     if isinstance(value, dict):
         return {
-            key: _remove_plan_like_fields(child_value)
+            key: _remove_duplicated_task_prose_before_rendering_prompt(child_value)
             for key, child_value in value.items()
             if key not in {"plan", "context", "notes", "description", "implementation"}
         }
     if isinstance(value, list):
-        return [_remove_plan_like_fields(item) for item in value]
+        return [_remove_duplicated_task_prose_before_rendering_prompt(item) for item in value]
     return value
 
 
@@ -1875,7 +1875,7 @@ def _build_safe_dirname(value: str) -> str:
     return safe_value
 
 
-def _contains_private_control_path_named_under_repo(repo_path: Path, name: str) -> bool:
+def _repo_contains_private_control_path(repo_path: Path, name: str) -> bool:
     return any(
         path.name == name and not _is_public_ralph_example_path(repo_path=repo_path, path=path)
         for path in repo_path.rglob(name)
@@ -1929,7 +1929,7 @@ def _read_default_claude_agent_command() -> str:
     return os.environ.get("RALPH_AGENT_COMMAND", os.environ.get("RALPH_CLAUDE_COMMAND", "claude"))
 
 
-def _describe_tool_environment(python_venv_path: Path | None) -> str:
+def _describe_python_venv_for_worker_prompt(python_venv_path: Path | None) -> str:
     if python_venv_path is None:
         return "No Python venv was configured for helper tools. Use only tools already available on PATH."
 
