@@ -125,6 +125,7 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
             selection=selection,
             python_venv_path=python_venv_path,
         )
+        _save_worker_prompt_before_launch(task_path=task_path, prompt=prompt)
         agent_result = _run_agent(
             repo_path=repo_path,
             task=selection.task,
@@ -204,6 +205,10 @@ def _validate_and_log_worker_worklog(
     )
     delete_worker_worklog_file(repo_path)
     return worklog
+
+
+def _save_worker_prompt_before_launch(task_path: Path, prompt: str) -> None:
+    _write_text(task_path / "PROMPT.md", prompt)
 
 
 def _accept_worker_completed_task(

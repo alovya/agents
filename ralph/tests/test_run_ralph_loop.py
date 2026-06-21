@@ -27,6 +27,7 @@ from ralph.run_ralph_loop import (
     _parse_agent_promise,
     _refuse_unsafe_starting_state,
     _run_agent_command,
+    _save_worker_prompt_before_launch,
 )
 from ralph.sandbox import run_agent_visibility_smoke_test
 
@@ -302,6 +303,19 @@ def test_marks_task_done_without_mutating_input() -> None:
     assert ledger["tasks"][0]["status"] == "pending"
     assert updated_ledger["tasks"][0]["status"] == "done"
     assert "completed_at" in updated_ledger["tasks"][0]
+
+
+def test_save_worker_prompt_before_launch_writes_sliced_prompt_as_markdown(
+    tmp_path: Path,
+) -> None:
+    task_path = tmp_path / "task"
+
+    _save_worker_prompt_before_launch(
+        task_path=task_path,
+        prompt="# Worker prompt\n\nSliced task context.",
+    )
+
+    assert task_path.joinpath("PROMPT.md").read_text() == "# Worker prompt\n\nSliced task context."
 
 
 def test_accepts_worker_completed_task_after_worker_verifies_and_commits(
