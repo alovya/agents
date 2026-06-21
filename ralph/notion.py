@@ -111,13 +111,13 @@ def log_worker_promise_to_notion(
     task_path: Path,
     promise: str,
     agent_output: str,
-    worklog: str | None = None,
+    worklog_json: dict[str, Any] | None = None,
 ) -> None:
     notion_task_id = materialised_notion_task_id_from_task(selection.task)
     if notion_task_id is None:
         return
 
-    worklog_text = worklog if worklog else DEFAULT_WORKLOG_FALLBACK
+    worklog_display = _format_worklog_json_for_notion(worklog_json)
     _append_notion_task_log(
         notion_task_id=notion_task_id,
         task_path=task_path,
@@ -126,7 +126,7 @@ def log_worker_promise_to_notion(
             "subheading": f"Worker returned {promise}",
             "blocks": [
                 {"type": "paragraph", "text": f"Ralph task {selection.task['id']} stopped before verification."},
-                {"type": "code", "language": "text", "text": f"Worker worklog:\n{worklog_text}"},
+                {"type": "code", "language": "json", "text": f"Worker worklog:\n{worklog_display}"},
                 {"type": "code", "language": "text", "text": agent_output},
                 {"type": "paragraph", "text": f"Transcript path: {task_path / 'agent-output.txt'}"},
             ],
@@ -139,7 +139,7 @@ def log_failed_verification_to_notion(selection: TaskSelection, task_path: Path)
     if notion_task_id is None:
         return
 
-    worklog_text = _read_text_if_file_exists(task_path / "worker-worklog.txt") or DEFAULT_WORKLOG_FALLBACK
+    worklog_display = _read_worklog_json_for_notion(task_path)
     _append_notion_task_log(
         notion_task_id=notion_task_id,
         task_path=task_path,
@@ -148,7 +148,7 @@ def log_failed_verification_to_notion(selection: TaskSelection, task_path: Path)
             "subheading": "Verification failed",
             "blocks": [
                 {"type": "paragraph", "text": f"Ralph task {selection.task['id']} returned DONE, then verification failed."},
-                {"type": "code", "language": "text", "text": f"Worker worklog:\n{worklog_text}"},
+                {"type": "code", "language": "json", "text": f"Worker worklog:\n{worklog_display}"},
                 {
                     "type": "code",
                     "language": "text",
@@ -170,7 +170,9 @@ def log_completed_worker_to_notion(
     if notion_task_id is None:
         return
 
-    worklog_text = _read_text_if_file_exists(task_path / "worker-worklog.txt") or DEFAULT_WORKLOG_FALLBACK
+    worklog_json = _read_worklog_json_from_file(task_path)
+    worklog_display = _format_worklog_json_for_notion(worklog_json)
+    unresolved_risks = _extract_unresolved_risks_from_worklog(worklog_json)
     _append_notion_task_log(
         notion_task_id=notion_task_id,
         task_path=task_path,
@@ -179,7 +181,7 @@ def log_completed_worker_to_notion(
             "subheading": f"Ralph {selection.task['id']} completed",
             "blocks": [
                 {"type": "paragraph", "text": f"Worker promise: {_read_text_if_file_exists(task_path / 'promise.txt').strip()}"},
-                {"type": "code", "language": "text", "text": f"Worker worklog:\n{worklog_text}"},
+                {"type": "code", "language": "json", "text": f"Worker worklog:\n{worklog_display}"},
                 {"type": "code", "language": "text", "text": "\n".join(changed_files) or "No changed files were captured before commit."},
                 {
                     "type": "code",
@@ -188,7 +190,7 @@ def log_completed_worker_to_notion(
                 },
                 {"type": "paragraph", "text": f"Commit hash: {commit_hash}"},
                 {"type": "paragraph", "text": f"Transcript path: {task_path / 'agent-output.txt'}"},
-                {"type": "paragraph", "text": "Unresolved risks: none recorded by the controller."},
+                {"type": "paragraph", "text": f"Unresolved risks: {unresolved_risks}"},
             ],
         },
     )
@@ -203,6 +205,10 @@ def materialised_notion_task_id_from_task(task: dict[str, Any]) -> str | None:
     if materialised_task_id:
         return materialised_task_id
     return None
+
+
+def build_worker_notion_log_command(notion_task_id: str) -> str:
+    return f"ntt --log --ticket-number {ticket_number_from_alovya_task_id(notion_task_id)} --content-path .ralph-worklog.json"
 
 
 def build_notion_task_creation_command(
@@ -397,6 +403,38 @@ def _read_text_if_file_exists(path: Path) -> str:
     if path.is_file():
         return path.read_text(encoding="utf-8")
     return ""
+
+
+def _read_worklog_json_from_file(task_path: Path) -> dict[str, Any] | None:
+    worklog_json_path = task_path / "worker-worklog.json"
+    if not worklog_json_path.is_file():
+        return None
+    try:
+        return json.loads(worklog_json_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+
+
+def _read_worklog_json_for_notion(task_path: Path) -> str:
+    worklog_json = _read_worklog_json_from_file(task_path)
+    return _format_worklog_json_for_notion(worklog_json)
+
+
+def _format_worklog_json_for_notion(worklog_json: dict[str, Any] | None) -> str:
+    if worklog_json is None:
+        return DEFAULT_WORKLOG_FALLBACK
+    return json.dumps(worklog_json, indent=2, sort_keys=True)
+
+
+def _extract_unresolved_risks_from_worklog(worklog_json: dict[str, Any] | None) -> str:
+    if worklog_json is None:
+        return "none recorded by the controller."
+    risks = worklog_json.get("unresolved_risks")
+    if not risks:
+        return "none reported by the worker."
+    if isinstance(risks, list):
+        return "; ".join(str(r) for r in risks) if risks else "none reported by the worker."
+    return str(risks)
 
 
 def _write_text(path: Path, text: str) -> None:

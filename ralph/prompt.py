@@ -26,6 +26,7 @@ def render_agent_prompt(
         visible_ledger_yaml=_dump_yaml(visible_ledger),
         shared_plan_context=selection.shared_plan_context.strip(),
         active_task_plan_context=selection.active_task_plan_context.strip(),
+        notion_log_instructions=_build_notion_log_instructions(selection.task),
     )
 
 
@@ -42,6 +43,30 @@ def describe_python_venv_for_worker_prompt(python_venv_path: Path | None) -> str
             "Use commands installed in this venv only when the active task requires them.",
         ]
     )
+
+
+def _build_notion_log_instructions(task: dict[str, Any]) -> str:
+    notion_task = task.get("notion_task")
+    if not isinstance(notion_task, dict):
+        return _build_notion_log_instructions_not_applicable()
+
+    materialised_task_id = notion_task.get("materialized_task_id")
+    if not materialised_task_id:
+        return _build_notion_log_instructions_not_applicable()
+
+    from ralph.notion import build_worker_notion_log_command
+    command = build_worker_notion_log_command(materialised_task_id)
+    return "\n".join([
+        "Notion logging:",
+        f"- After writing your worklog JSON to a repo-local file (e.g., `.ralph-worklog.json`), run:",
+        f"  {command}",
+        "- Include the command you ran and its result (success or failure with output) in the JSON worklog.",
+        "- If the Notion command fails, still proceed with DONE if the code task itself is complete.",
+    ])
+
+
+def _build_notion_log_instructions_not_applicable() -> str:
+    return "Notion logging is not applicable for this task. Set notion_log_command and notion_log_result to null in the worklog JSON."
 
 
 def _remove_duplicated_task_prose_before_rendering_prompt(value: Any) -> Any:

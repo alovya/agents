@@ -10,6 +10,7 @@ from ralph.notion import (
     DEFAULT_NOTION_TRACKER_STATE_PATH,
     DEFAULT_WORKLOG_FALLBACK,
     build_notion_task_creation_command,
+    build_worker_notion_log_command,
     extract_created_notion_task_id,
     log_completed_worker_to_notion,
     log_failed_verification_to_notion,
@@ -219,7 +220,7 @@ def test_controller_logs_blocked_worker_promise_to_notion(
     assert observed_content["blocks"][2]["text"] == "Missing dependency"
 
 
-def test_controller_logs_blocked_worker_with_worklog_to_notion(
+def test_controller_logs_blocked_worker_with_worklog_json_to_notion(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -231,7 +232,7 @@ def test_controller_logs_blocked_worker_with_worklog_to_notion(
         task_path=tmp_path,
         promise="BLOCKED",
         agent_output="Missing dependency",
-        worklog="Tried to install dependency but failed.",
+        worklog_json={"commands_run": ["pip install"], "relevant_outputs_or_errors": "Tried to install dependency but failed."},
     )
 
     assert observed_content["subheading"] == "Worker returned BLOCKED"
@@ -257,12 +258,12 @@ def test_controller_logs_failed_verification_to_notion(
     assert observed_content["blocks"][2]["text"] == "$ pytest\nfailed\n"
 
 
-def test_controller_logs_failed_verification_with_worklog_to_notion(
+def test_controller_logs_failed_verification_with_worklog_json_to_notion(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     selection = select_first_task(build_ledger_with_materialised_notion_task())
-    (tmp_path / "worker-worklog.txt").write_text("Made changes but tests failed.")
+    (tmp_path / "worker-worklog.json").write_text(json.dumps({"decisions_made": ["Made changes but tests failed."]}))
     (tmp_path / "verification-output.txt").write_text("$ pytest\nfailed\n")
     observed_content = capture_notion_log_content(monkeypatch)
 
@@ -297,15 +298,24 @@ def test_controller_logs_successful_verification_and_commit_to_notion(
     assert observed_content["blocks"][2]["text"] == "M src/parser.py"
     assert observed_content["blocks"][3]["text"] == "$ pytest\npassed\n"
     assert observed_content["blocks"][4]["text"] == "Commit hash: abc123"
+    assert "none recorded by the controller" in observed_content["blocks"][6]["text"]
 
 
-def test_controller_logs_successful_completion_with_worklog_to_notion(
+def test_controller_logs_successful_completion_with_worklog_json_to_notion(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     selection = select_first_task(build_ledger_with_materialised_notion_task())
     (tmp_path / "promise.txt").write_text("DONE")
-    (tmp_path / "worker-worklog.txt").write_text("Added parser function.\nAll tests pass.")
+    (tmp_path / "worker-worklog.json").write_text(json.dumps({
+        "commands_run": ["pytest"],
+        "relevant_outputs_or_errors": "All tests pass.",
+        "files_changed": {"src/parser.py": "Added parser function."},
+        "decisions_made": [],
+        "unresolved_risks": ["Minor risk A"],
+        "notion_log_command": None,
+        "notion_log_result": None,
+    }))
     (tmp_path / "verification-output.txt").write_text("$ pytest\npassed\n")
     observed_content = capture_notion_log_content(monkeypatch)
 
@@ -322,6 +332,7 @@ def test_controller_logs_successful_completion_with_worklog_to_notion(
     assert "Added parser function." in observed_content["blocks"][1]["text"]
     assert "All tests pass." in observed_content["blocks"][1]["text"]
     assert observed_content["blocks"][2]["text"] == "M src/parser.py"
+    assert "Minor risk A" in observed_content["blocks"][6]["text"]
 
 
 def test_extract_created_notion_task_id_uses_output_file_and_excludes_related_task(
@@ -363,3 +374,9 @@ def test_build_notion_task_creation_command_builds_sibling_command(tmp_path: Pat
         "--output-path",
         str(tmp_path / "output.json"),
     ]
+
+
+def test_build_worker_notion_log_command_uses_ticket_number() -> None:
+    command = build_worker_notion_log_command("ALOVYA-123")
+
+    assert command == "ntt --log --ticket-number 123 --content-path .ralph-worklog.json"

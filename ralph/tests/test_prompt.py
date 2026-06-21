@@ -66,11 +66,10 @@ def test_render_agent_prompt_documents_python_venv(tmp_path: Path) -> None:
 
     assert f"Python venv: {python_venv_path}" in prompt
     assert "already first on PATH" in prompt
-    assert "ntt" not in prompt
-    assert "Notion" not in prompt
+    assert "ntt --log --ticket-number" not in prompt
 
 
-def test_render_agent_prompt_tells_workers_to_emit_worklog_block(tmp_path: Path) -> None:
+def test_render_agent_prompt_tells_workers_to_emit_json_worklog_block(tmp_path: Path) -> None:
     ledger = build_example_ledger()
     selection = TaskSelection(
         task=ledger["tasks"][0],
@@ -85,7 +84,53 @@ def test_render_agent_prompt_tells_workers_to_emit_worklog_block(tmp_path: Path)
         python_venv_path=None,
     )
 
-    assert "RALPH_WORKLOG_BEGIN" in prompt
-    assert "RALPH_WORKLOG_END" in prompt
-    assert "worklog is expected for DONE" in prompt
-    assert "useful for BLOCKED or ABORT" in prompt
+    assert "RALPH_WORKLOG_JSON_BEGIN" in prompt
+    assert "RALPH_WORKLOG_JSON_END" in prompt
+    assert "worklog is required for DONE" in prompt
+    assert "reject DONE if the JSON is malformed" in prompt
+    assert "commands_run" in prompt
+    assert "files_changed" in prompt
+    assert "decisions_made" in prompt
+    assert "unresolved_risks" in prompt
+    assert "notion_log_command" in prompt
+    assert "notion_log_result" in prompt
+
+
+def test_render_agent_prompt_includes_notion_log_command_when_materialised(tmp_path: Path) -> None:
+    from ralph.tests.conftest import build_ledger_with_materialised_notion_task
+
+    ledger = build_ledger_with_materialised_notion_task()
+    selection = TaskSelection(
+        task=ledger["tasks"][0],
+        shared_plan_context="Shared context.",
+        active_task_plan_context="First task context.",
+    )
+
+    prompt = render_agent_prompt(
+        repo_path=tmp_path,
+        ledger=ledger,
+        selection=selection,
+        python_venv_path=None,
+    )
+
+    assert "ntt --log --ticket-number 90" in prompt
+    assert ".ralph-worklog.json" in prompt
+
+
+def test_render_agent_prompt_notion_log_not_applicable_without_task(tmp_path: Path) -> None:
+    ledger = build_example_ledger()
+    selection = TaskSelection(
+        task=ledger["tasks"][0],
+        shared_plan_context="Shared context.",
+        active_task_plan_context="First task context.",
+    )
+
+    prompt = render_agent_prompt(
+        repo_path=tmp_path,
+        ledger=ledger,
+        selection=selection,
+        python_venv_path=None,
+    )
+
+    assert "not applicable for this task" in prompt
+    assert "ntt --log" not in prompt

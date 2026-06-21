@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import re
 import subprocess
 import sys
@@ -59,8 +60,13 @@ WORKER_WORKLOG_BLOCK_PATTERN = re.compile(
     r"^RALPH_WORKLOG_BEGIN\n(?P<worklog>.*?)^RALPH_WORKLOG_END$",
     re.DOTALL | re.MULTILINE,
 )
+WORKER_WORKLOG_JSON_BLOCK_PATTERN = re.compile(
+    r"^RALPH_WORKLOG_JSON_BEGIN\n(?P<worklog_json>.*?)^RALPH_WORKLOG_JSON_END$",
+    re.DOTALL | re.MULTILINE,
+)
 
 DEFAULT_WORKLOG_FALLBACK = "Worker did not provide a structured worklog. See agent-output.txt for the full transcript."
+DEFAULT_WORKLOG_JSON_FALLBACK = {"error": "Worker did not provide valid worklog JSON. See agent-output.txt for the full transcript."}
 
 PRIVATE_CONTROL_PATH_NAMES = frozenset({"PLAN.md", "ledger.yaml", ".ralph"})
 
@@ -140,14 +146,14 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
         _write_text(task_path / "promise.txt", agent_result.promise)
 
         if agent_result.promise != "DONE":
-            worklog = extract_worker_worklog(agent_result.output)
-            _write_text(task_path / "worker-worklog.txt", worklog)
+            worklog_json = _extract_worker_worklog_json(agent_result.output, require_valid_for_done=False)
+            _write_json(task_path / "worker-worklog.json", worklog_json)
             log_worker_promise_to_notion(
                 selection=selection,
                 task_path=task_path,
                 promise=agent_result.promise,
                 agent_output=agent_result.output,
-                worklog=worklog,
+                worklog_json=worklog_json,
             )
             print(f"Agent stopped with {agent_result.promise}. See {task_path}")
             return
@@ -183,14 +189,14 @@ def _accept_worker_completed_task(
     task_path: Path,
     agent_output: str,
 ) -> str:
-    worklog = extract_worker_worklog(agent_output, require_unique_for_done=True)
+    worklog_json = _extract_worker_worklog_json(agent_output, require_valid_for_done=True)
     verification_output = _extract_worker_verification_output(
         task=selection.task,
         agent_output=agent_output,
     )
     commit_hash = _extract_worker_commit_hash(agent_output)
 
-    _write_text(task_path / "worker-worklog.txt", worklog)
+    _write_json(task_path / "worker-worklog.json", worklog_json)
     _write_text(task_path / "verification-output.txt", verification_output)
     _write_text(task_path / "commit.txt", commit_hash)
     _validate_worker_commit_matches_repo_state(
@@ -246,6 +252,44 @@ def extract_worker_worklog(agent_output: str, require_unique_for_done: bool = Fa
     if len(matches) == 0:
         return DEFAULT_WORKLOG_FALLBACK
     return matches[0].strip()
+
+
+def _extract_worker_worklog_json(agent_output: str, require_valid_for_done: bool) -> dict[str, Any]:
+    matches = WORKER_WORKLOG_JSON_BLOCK_PATTERN.findall(agent_output)
+
+    if len(matches) == 0:
+        if require_valid_for_done:
+            raise RuntimeError(
+                "Worker DONE must include exactly one RALPH_WORKLOG_JSON_BEGIN/END block with valid JSON."
+            )
+        return dict(DEFAULT_WORKLOG_JSON_FALLBACK)
+
+    if len(matches) > 1:
+        if require_valid_for_done:
+            raise RuntimeError(
+                "Worker DONE must include exactly one RALPH_WORKLOG_JSON_BEGIN/END block."
+            )
+        json_text = matches[0].strip()
+    else:
+        json_text = matches[0].strip()
+
+    try:
+        parsed = json.loads(json_text)
+    except json.JSONDecodeError as exc:
+        if require_valid_for_done:
+            raise RuntimeError(
+                f"Worker DONE worklog JSON is malformed: {exc}"
+            ) from exc
+        return {**DEFAULT_WORKLOG_JSON_FALLBACK, "raw_text": json_text}
+
+    if not isinstance(parsed, dict):
+        if require_valid_for_done:
+            raise RuntimeError(
+                "Worker DONE worklog JSON must be a top-level object, not an array or primitive."
+            )
+        return {**DEFAULT_WORKLOG_JSON_FALLBACK, "raw_text": json_text}
+
+    return parsed
 
 
 def _validate_worker_commit_matches_repo_state(
@@ -508,6 +552,11 @@ def _run_git(repo_path: Path, *arguments: str) -> str:
 def _write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)
+
+
+def _write_json(path: Path, value: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, indent=2, sort_keys=True))
 
 
 if __name__ == "__main__":
