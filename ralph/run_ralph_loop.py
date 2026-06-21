@@ -229,10 +229,10 @@ def _accept_worker_completed_task(
 
 def _extract_worker_verification_output(task: dict[str, Any], agent_output: str) -> str:
     matches = WORKER_VERIFICATION_BLOCK_PATTERN.findall(agent_output)
-    if len(matches) != 1:
+    if not matches:
         raise RuntimeError("Worker DONE must include one RALPH_VERIFICATION_BEGIN block.")
 
-    verification_output = matches[0].strip()
+    verification_output = matches[-1].strip()
     _validate_worker_verification_output_mentions_required_commands(
         task=task,
         verification_output=verification_output,
@@ -257,9 +257,9 @@ def _validate_worker_verification_output_mentions_required_commands(
 
 def _extract_worker_commit_hash(agent_output: str) -> str:
     matches = WORKER_COMMIT_LINE_PATTERN.findall(agent_output)
-    if len(matches) != 1:
+    if not matches:
         raise RuntimeError("Worker DONE must include exactly one RALPH_COMMIT line with the committed HEAD.")
-    return matches[0]
+    return matches[-1]
 
 
 def _validate_worker_commit_matches_repo_state(

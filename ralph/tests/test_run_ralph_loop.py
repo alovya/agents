@@ -313,6 +313,51 @@ def test_accepts_worker_completed_task_after_worker_verifies_and_commits(
     assert task_path.joinpath("commit.txt").read_text() == worker_commit_hash
 
 
+def test_accepts_worker_completed_task_after_prompt_examples_and_final_worker_markers(
+    tmp_path: Path,
+) -> None:
+    repo_path = initialise_git_repo(tmp_path / "target-repo")
+    ledger = build_example_ledger()
+    job = create_job_with_ledger(tmp_path, ledger)
+    task_path = tmp_path / "task"
+    parser_path = repo_path / "src" / "parser.py"
+    parser_path.parent.mkdir()
+    parser_path.write_text("def parse_value(value):\n    return value\n")
+    run_git(repo_path, "add", ".")
+    run_git(repo_path, "commit", "--no-verify", "-m", "Ralph: R1 Add parser")
+    worker_commit_hash = run_git(repo_path, "rev-parse", "HEAD").strip()
+    agent_output = "\n".join(
+        [
+            "Prompt example:",
+            "RALPH_VERIFICATION_BEGIN",
+            "$ <verification command>",
+            "<command output>",
+            "RALPH_VERIFICATION_END",
+            "RALPH_COMMIT 0000000000000000000000000000000000000000",
+            "Worker final answer:",
+            "RALPH_VERIFICATION_BEGIN",
+            "$ test -f src/parser.py",
+            "RALPH_VERIFICATION_END",
+            f"RALPH_COMMIT {worker_commit_hash}",
+            "<promise>DONE</promise>",
+        ]
+    )
+
+    accepted_commit_hash = _accept_worker_completed_task(
+        repo_path=repo_path,
+        job=job,
+        ledger=ledger,
+        selection=select_first_task(ledger),
+        task_path=task_path,
+        agent_output=agent_output,
+    )
+
+    assert accepted_commit_hash == worker_commit_hash
+    assert yaml.safe_load(job.ledger_path.read_text())["tasks"][0]["status"] == "done"
+    assert "$ test -f src/parser.py" in task_path.joinpath("verification-output.txt").read_text()
+    assert task_path.joinpath("commit.txt").read_text() == worker_commit_hash
+
+
 def test_accept_worker_completed_task_rejects_uncommitted_worker_changes(
     tmp_path: Path,
 ) -> None:
@@ -466,4 +511,3 @@ def test_validate_and_log_worker_worklog_raises_on_malformed_worklog(
             selection=select_first_task(ledger),
             task_path=task_path,
         )
-
