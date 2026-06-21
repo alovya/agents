@@ -11,6 +11,7 @@ import yaml
 
 from ralph.run_ralph_loop import (
     AgentBackendConfig,
+    AgentResult,
     CODEX_RULES_BACKUP_MARKER_FILENAME,
     CodexRulesSnapshot,
     DEFAULT_NOTION_TRACKER_STATE_PATH,
@@ -46,6 +47,7 @@ from ralph.run_ralph_loop import (
     _read_codex_rules_backup_marker,
     _read_tasks_from_ledger,
     _recover_stale_codex_rules_backup_marker,
+    _refuse_explicit_worker_mount_that_overlaps_sensitive_hidden_paths,
     _refuse_unsafe_starting_state,
     _render_agent_prompt,
     _resolve_ralph_home_path,
@@ -53,6 +55,7 @@ from ralph.run_ralph_loop import (
     _require_codex_home_path,
     _restore_codex_rules,
     _run_agent_visibility_smoke_test,
+    _run_codex_agent_with_rules_management,
     _run_command_and_tee_output,
     _select_next_task_from_plan_and_ledger,
     _select_agent_backend_config,
@@ -61,6 +64,24 @@ from ralph.run_ralph_loop import (
     _write_codex_rules_backup_marker,
     _write_yaml_file,
 )
+
+
+def test_direct_script_help_remains_runnable_from_repo_root() -> None:
+    repo_path = Path(__file__).resolve().parents[2]
+
+    completed_process = subprocess.run(
+        ["/workspace/venv/bin/python", "ralph/run_ralph_loop.py", "--help"],
+        cwd=repo_path,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+
+    assert completed_process.returncode == 0
+    assert "Run Ralph task loops with sliced plan context." in completed_process.stdout
+    assert "run" in completed_process.stdout
+    assert "smoke-test" in completed_process.stdout
 
 
 def test_extracts_only_active_plan_slice() -> None:
@@ -157,6 +178,15 @@ def test_selects_dependency_ready_task() -> None:
 
     assert selection.task["id"] == "R2"
     assert selection.task["verification_commands"] == ["python -m pytest tests/test_cli.py"]
+
+
+def test_selects_first_pending_task_after_skipping_pending_task_with_unfinished_dependencies() -> None:
+    ledger = _build_ledger_where_first_pending_task_waits_and_second_pending_task_is_ready()
+
+    selection = _select_next_task_from_plan_and_ledger(ledger, _build_three_task_plan())
+
+    assert selection.task["id"] == "R2"
+    assert selection.active_task_plan_context.strip().startswith("Second task context.")
 
 
 def test_parses_exactly_one_promise() -> None:
@@ -481,6 +511,26 @@ def test_render_agent_prompt_excludes_unrelated_task_slice(tmp_path: Path) -> No
     assert "Second task context." not in prompt
     assert "/.ralph" not in prompt
     assert "Codex" not in prompt
+
+
+def test_render_agent_prompt_keeps_plan_instructions_without_duplicating_ledger_prose(tmp_path: Path) -> None:
+    ledger = _build_example_ledger()
+    ledger["tasks"][0]["context"] = "Duplicated task prose from ledger YAML."
+    selection = TaskSelection(
+        task=ledger["tasks"][0],
+        shared_plan_context="Shared context.",
+        active_task_plan_context="Task instructions kept from PLAN.md.",
+    )
+
+    prompt = _render_agent_prompt(
+        repo_path=tmp_path,
+        ledger=ledger,
+        selection=selection,
+        python_venv_path=None,
+    )
+
+    assert "Task instructions kept from PLAN.md." in prompt
+    assert "Duplicated task prose from ledger YAML." not in prompt
 
 
 def test_render_agent_prompt_documents_python_venv(tmp_path: Path) -> None:
@@ -909,6 +959,31 @@ def test_run_agent_visibility_smoke_test_rejects_sensitive_repo_mount(
             agent_backend="codex",
             agent_command="agent-cli",
             python_venv_path=None,
+        )
+
+
+def test_worker_visible_path_check_rejects_hidden_state_overlap_but_accepts_normal_repo_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    normal_repo_path = tmp_path / "target-repo"
+    hidden_state_path = tmp_path / "hidden-state"
+    normal_repo_path.mkdir()
+    hidden_state_path.mkdir()
+    monkeypatch.setattr(
+        "ralph.run_ralph_loop._build_sensitive_paths_that_workers_must_not_see",
+        lambda: [hidden_state_path],
+    )
+
+    _refuse_explicit_worker_mount_that_overlaps_sensitive_hidden_paths(
+        path=normal_repo_path,
+        role="Target repo",
+    )
+
+    with pytest.raises(ValueError, match="Target repo must not overlap"):
+        _refuse_explicit_worker_mount_that_overlaps_sensitive_hidden_paths(
+            path=hidden_state_path,
+            role="Target repo",
         )
 
 
@@ -1634,6 +1709,57 @@ def test_recover_stale_codex_rules_backup_marker_removes_rules_when_originally_a
     assert not marker_path.exists()
 
 
+def test_codex_agent_run_writes_temporary_rules_then_restores_original_rules(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home_path = tmp_path / "codex-home"
+    task_path = tmp_path / "task"
+    output_path = task_path / "agent-output.txt"
+    rules_path = _codex_rules_path(codex_home_path)
+    codex_home_path.mkdir()
+    rules_path.parent.mkdir(parents=True)
+    rules_path.write_text("original rules", encoding="utf-8")
+    observed_rules_during_worker_launch: list[str] = []
+    observed_marker_during_worker_launch: list[bool] = []
+
+    def run_agent_command_mock(
+        command: list[str],
+        prompt: str,
+        output_path: Path,
+        tee_output: bool,
+        backend_config: AgentBackendConfig,
+    ) -> AgentResult:
+        observed_rules_during_worker_launch.append(rules_path.read_text(encoding="utf-8"))
+        observed_marker_during_worker_launch.append(
+            (task_path / CODEX_RULES_BACKUP_MARKER_FILENAME).is_file()
+        )
+        return AgentResult(promise="DONE", output="<promise>DONE</promise>")
+
+    monkeypatch.setattr("ralph.run_ralph_loop._run_agent_command", run_agent_command_mock)
+
+    agent_result = _run_codex_agent_with_rules_management(
+        command=["codex"],
+        prompt="Worker prompt",
+        output_path=output_path,
+        tee_output=False,
+        backend_config=AgentBackendConfig(
+            backend_name="codex",
+            command_name="codex",
+            agent_home_path=codex_home_path,
+            agent_home_environment_variable="CODEX_HOME",
+        ),
+        allowed_bash_commands=["rg *"],
+        task_path=task_path,
+    )
+
+    assert agent_result.promise == "DONE"
+    assert observed_marker_during_worker_launch == [True]
+    assert observed_rules_during_worker_launch == ["prefix_rule(pattern=['rg'], decision=\"allow\")\n"]
+    assert rules_path.read_text(encoding="utf-8") == "original rules"
+    assert not (task_path / CODEX_RULES_BACKUP_MARKER_FILENAME).exists()
+
+
 def test_build_bwrap_agent_command_keeps_codex_command_tail_with_ask_for_approval_untrusted(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1713,6 +1839,43 @@ def _build_example_ledger() -> dict[str, object]:
     }
 
 
+def _build_ledger_where_first_pending_task_waits_and_second_pending_task_is_ready() -> dict[str, object]:
+    return {
+        "version": 1,
+        "job_name": "example",
+        "tasks": [
+            {
+                "id": "R0",
+                "title": "Prepare dependency",
+                "status": "blocked",
+                "depends_on": [],
+                "touchable_paths": ["src/dependency.py"],
+            },
+            {
+                "id": "R1",
+                "title": "Wait for dependency",
+                "status": "pending",
+                "depends_on": ["R0"],
+                "touchable_paths": ["src/waiting.py"],
+            },
+            {
+                "id": "R2",
+                "title": "First ready task",
+                "status": "pending",
+                "depends_on": [],
+                "touchable_paths": ["src/first_ready.py"],
+            },
+            {
+                "id": "R3",
+                "title": "Second ready task",
+                "status": "pending",
+                "depends_on": [],
+                "touchable_paths": ["src/second_ready.py"],
+            },
+        ],
+    }
+
+
 def _build_example_plan() -> str:
     return """
 <!-- ralph-shared:start -->
@@ -1744,6 +1907,62 @@ Second task context.
 - python -m pytest tests/test_cli.py
 <!-- ralph-verification:end -->
 <!-- ralph-task:end R2 -->
+"""
+
+
+def _build_three_task_plan() -> str:
+    return """
+<!-- ralph-shared:start -->
+Shared context.
+<!-- ralph-shared:end -->
+
+<!-- ralph-task:start R0 -->
+Dependency task context.
+
+<!-- ralph-allowed-bash:start -->
+- rg *
+<!-- ralph-allowed-bash:end -->
+
+<!-- ralph-verification:start -->
+- test -f src/dependency.py
+<!-- ralph-verification:end -->
+<!-- ralph-task:end R0 -->
+
+<!-- ralph-task:start R1 -->
+Waiting task context.
+
+<!-- ralph-allowed-bash:start -->
+- rg *
+<!-- ralph-allowed-bash:end -->
+
+<!-- ralph-verification:start -->
+- test -f src/waiting.py
+<!-- ralph-verification:end -->
+<!-- ralph-task:end R1 -->
+
+<!-- ralph-task:start R2 -->
+Second task context.
+
+<!-- ralph-allowed-bash:start -->
+- rg *
+<!-- ralph-allowed-bash:end -->
+
+<!-- ralph-verification:start -->
+- test -f src/first_ready.py
+<!-- ralph-verification:end -->
+<!-- ralph-task:end R2 -->
+
+<!-- ralph-task:start R3 -->
+Third task context.
+
+<!-- ralph-allowed-bash:start -->
+- rg *
+<!-- ralph-allowed-bash:end -->
+
+<!-- ralph-verification:start -->
+- test -f src/second_ready.py
+<!-- ralph-verification:end -->
+<!-- ralph-task:end R3 -->
 """
 
 
