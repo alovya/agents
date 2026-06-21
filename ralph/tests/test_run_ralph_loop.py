@@ -7,11 +7,15 @@ import yaml
 
 from ralph.tests.conftest import (
     build_example_ledger,
+    build_ledger_with_materialised_notion_task,
+    capture_notion_log_content,
     create_job_with_ledger,
     initialise_git_repo,
     run_git,
     select_first_task,
 )
+from ralph.notion import WorklogValidationError
+from ralph.prompt import WORKER_NOTION_WORKLOG_FILENAME
 from ralph.run_ralph_loop import (
     _accept_worker_completed_task,
     _create_task_directory,
@@ -374,5 +378,92 @@ def test_accept_worker_completed_task_rejects_missing_verification_transcript(
         )
 
     assert yaml.safe_load(job.ledger_path.read_text())["tasks"][0]["status"] == "pending"
+
+
+def test_validate_and_log_worker_worklog_sends_worklog_to_notion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ralph.run_ralph_loop import _validate_and_log_worker_worklog
+
+    repo_path = initialise_git_repo(tmp_path / "target-repo")
+    ledger = build_ledger_with_materialised_notion_task()
+    task_path = tmp_path / "task"
+    task_path.mkdir()
+    worklog_path = repo_path / WORKER_NOTION_WORKLOG_FILENAME
+    worklog_path.write_text('{"subheading": "Task done", "blocks": [{"type": "paragraph", "text": "Work summary"}]}')
+    observed_content = capture_notion_log_content(monkeypatch)
+
+    worklog = _validate_and_log_worker_worklog(
+        repo_path=repo_path,
+        selection=select_first_task(ledger),
+        task_path=task_path,
+    )
+
+    assert worklog is not None
+    assert worklog["subheading"] == "Task done"
+    assert observed_content["subheading"] == "Task done"
+    assert observed_content["blocks"][0]["text"] == "Work summary"
+
+
+def test_validate_and_log_worker_worklog_skips_when_no_notion_task(
+    tmp_path: Path,
+) -> None:
+    from ralph.run_ralph_loop import _validate_and_log_worker_worklog
+
+    repo_path = initialise_git_repo(tmp_path / "target-repo")
+    ledger = build_example_ledger()
+    task_path = tmp_path / "task"
+    task_path.mkdir()
+
+    worklog = _validate_and_log_worker_worklog(
+        repo_path=repo_path,
+        selection=select_first_task(ledger),
+        task_path=task_path,
+    )
+
+    assert worklog is None
+
+
+def test_validate_and_log_worker_worklog_raises_on_missing_worklog(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ralph.run_ralph_loop import _validate_and_log_worker_worklog
+
+    repo_path = initialise_git_repo(tmp_path / "target-repo")
+    ledger = build_ledger_with_materialised_notion_task()
+    task_path = tmp_path / "task"
+    task_path.mkdir()
+    monkeypatch.setattr("ralph.notion._resolve_notion_tracker_command_path", lambda: "ntt")
+
+    with pytest.raises(WorklogValidationError, match="Worker worklog file not found"):
+        _validate_and_log_worker_worklog(
+            repo_path=repo_path,
+            selection=select_first_task(ledger),
+            task_path=task_path,
+        )
+
+
+def test_validate_and_log_worker_worklog_raises_on_malformed_worklog(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ralph.run_ralph_loop import _validate_and_log_worker_worklog
+
+    repo_path = initialise_git_repo(tmp_path / "target-repo")
+    ledger = build_ledger_with_materialised_notion_task()
+    task_path = tmp_path / "task"
+    task_path.mkdir()
+    worklog_path = repo_path / WORKER_NOTION_WORKLOG_FILENAME
+    worklog_path.write_text('{"subheading": "Task done"}')
+    monkeypatch.setattr("ralph.notion._resolve_notion_tracker_command_path", lambda: "ntt")
+
+    with pytest.raises(WorklogValidationError, match="missing required field: blocks"):
+        _validate_and_log_worker_worklog(
+            repo_path=repo_path,
+            selection=select_first_task(ledger),
+            task_path=task_path,
+        )
 
 

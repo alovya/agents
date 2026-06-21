@@ -57,11 +57,9 @@ def _build_notion_log_instructions(task: dict[str, Any]) -> str:
     if not materialised_task_id:
         return _build_notion_log_instructions_not_applicable()
 
-    from ralph.notion import build_worker_notion_log_command
-    command = build_worker_notion_log_command(materialised_task_id)
     return "\n".join([
-        "Notion worklog (required before verification):",
-        f"- Write `{WORKER_NOTION_WORKLOG_FILENAME}` as a valid ntt content JSON object with the following shape:",
+        "Notion worklog (required before DONE, BLOCKED, or ABORT):",
+        f"- Write `{WORKER_NOTION_WORKLOG_FILENAME}` in the repository root as a valid JSON object with this exact shape:",
         '  ```json',
         '  {',
         '    "subheading": "Short log title",',
@@ -71,14 +69,16 @@ def _build_notion_log_instructions(task: dict[str, Any]) -> str:
         '    ]',
         '  }',
         '  ```',
-        "- Include blocks for: commands run (with key outputs or errors), files changed and why, decisions made, unresolved risks (if any), and the Notion log command result.",
-        f"- Run the Notion log command exactly as: `{command}`",
-        "- Do not use shell redirection when running the ntt command.",
-        "- Do not put this JSON in the final answer for the controller to parse.",
-        "- If the log command fails or the content file is malformed, rewrite the file and rerun before returning.",
-        "- For BLOCKED or ABORT, log the blocker or abort reason to Notion before returning.",
-        "- If the Notion command fails but the code task is complete, proceed with DONE.",
-        f"- Delete `{WORKER_NOTION_WORKLOG_FILENAME}` after successfully logging to Notion.",
+        "- The `subheading` field is required and must be a non-empty string.",
+        "- The `blocks` field is required and must be a non-empty list.",
+        "- Each block must have `type` (either `paragraph` or `code`) and `text` (non-empty string).",
+        "- Code blocks must also have `language` (non-empty string, e.g. `text`, `python`, `yaml`).",
+        "- Include blocks for: commands run (with key outputs or errors), files changed and why, decisions made, and unresolved risks (if any).",
+        "- Do NOT run `ntt` or any Notion commands. The controller sends the worklog to Notion after validating it.",
+        "- Do NOT put the worklog JSON in your final answer. The controller reads it from the file.",
+        "- Do NOT delete the worklog file. The controller deletes it after successful logging.",
+        "- For BLOCKED or ABORT, include the blocker or abort reason in the worklog before returning.",
+        "- If the worklog file is missing or malformed when you return DONE/BLOCKED/ABORT, the controller will reject the task.",
     ])
 
 

@@ -17,6 +17,7 @@ from ralph.plan_selection import (
     refresh_task_selection_from_ledger,
     ticket_number_from_alovya_task_id,
 )
+from ralph.prompt import WORKER_NOTION_WORKLOG_FILENAME
 
 
 DEFAULT_NOTION_TRACKER_STATE_PATH = Path("/workspace/.notion-task-tracker/notion_tasks_tree.json")
@@ -191,8 +192,135 @@ def materialised_notion_task_id_from_task(task: dict[str, Any]) -> str | None:
     return None
 
 
-def build_worker_notion_log_command(notion_task_id: str) -> str:
-    return f"ntt --log --ticket-number {ticket_number_from_alovya_task_id(notion_task_id)} --content-path .ralph-worklog.json"
+class WorklogValidationError(Exception):
+    pass
+
+
+def validate_worker_worklog(repo_path: Path) -> dict[str, Any]:
+    worklog_path = repo_path / WORKER_NOTION_WORKLOG_FILENAME
+    if not worklog_path.is_file():
+        raise WorklogValidationError(
+            f"Worker worklog file not found: {worklog_path}\n"
+            f"Workers must write {WORKER_NOTION_WORKLOG_FILENAME} in the repository root before returning DONE, BLOCKED, or ABORT."
+        )
+
+    try:
+        content = worklog_path.read_text(encoding="utf-8")
+    except Exception as error:
+        raise WorklogValidationError(f"Could not read worker worklog file: {error}") from error
+
+    try:
+        worklog = json.loads(content)
+    except json.JSONDecodeError as error:
+        raise WorklogValidationError(
+            f"Worker worklog is not valid JSON: {error}\n"
+            f"Content: {content[:500]}{'...' if len(content) > 500 else ''}"
+        ) from error
+
+    if not isinstance(worklog, dict):
+        raise WorklogValidationError(
+            f"Worker worklog must be a JSON object, got {type(worklog).__name__}."
+        )
+
+    _validate_worklog_subheading(worklog)
+    _validate_worklog_blocks(worklog)
+    return worklog
+
+
+def _validate_worklog_subheading(worklog: dict[str, Any]) -> None:
+    if "subheading" not in worklog:
+        raise WorklogValidationError("Worker worklog missing required field: subheading")
+
+    subheading = worklog["subheading"]
+    if not isinstance(subheading, str):
+        raise WorklogValidationError(
+            f"Worker worklog field 'subheading' must be a string, got {type(subheading).__name__}."
+        )
+    if not subheading.strip():
+        raise WorklogValidationError("Worker worklog field 'subheading' must be a non-empty string.")
+
+
+def _validate_worklog_blocks(worklog: dict[str, Any]) -> None:
+    if "blocks" not in worklog:
+        raise WorklogValidationError("Worker worklog missing required field: blocks")
+
+    blocks = worklog["blocks"]
+    if not isinstance(blocks, list):
+        raise WorklogValidationError(
+            f"Worker worklog field 'blocks' must be a list, got {type(blocks).__name__}."
+        )
+    if not blocks:
+        raise WorklogValidationError("Worker worklog field 'blocks' must be a non-empty list.")
+
+    for index, block in enumerate(blocks):
+        _validate_worklog_block(block, index)
+
+
+def _validate_worklog_block(block: Any, index: int) -> None:
+    if not isinstance(block, dict):
+        raise WorklogValidationError(
+            f"Worker worklog blocks[{index}] must be an object, got {type(block).__name__}."
+        )
+
+    if "type" not in block:
+        raise WorklogValidationError(f"Worker worklog blocks[{index}] missing required field: type")
+
+    block_type = block["type"]
+    if block_type not in ("paragraph", "code"):
+        raise WorklogValidationError(
+            f"Worker worklog blocks[{index}] field 'type' must be 'paragraph' or 'code', got {block_type!r}."
+        )
+
+    if "text" not in block:
+        raise WorklogValidationError(f"Worker worklog blocks[{index}] missing required field: text")
+
+    text = block["text"]
+    if not isinstance(text, str):
+        raise WorklogValidationError(
+            f"Worker worklog blocks[{index}] field 'text' must be a string, got {type(text).__name__}."
+        )
+    if not text.strip():
+        raise WorklogValidationError(
+            f"Worker worklog blocks[{index}] field 'text' must be a non-empty string."
+        )
+
+    if block_type == "code":
+        if "language" not in block:
+            raise WorklogValidationError(
+                f"Worker worklog blocks[{index}] is a code block but missing required field: language"
+            )
+        language = block["language"]
+        if not isinstance(language, str):
+            raise WorklogValidationError(
+                f"Worker worklog blocks[{index}] field 'language' must be a string, got {type(language).__name__}."
+            )
+        if not language.strip():
+            raise WorklogValidationError(
+                f"Worker worklog blocks[{index}] field 'language' must be a non-empty string."
+            )
+
+
+def log_validated_worker_worklog_to_notion(
+    selection: TaskSelection,
+    task_path: Path,
+    worklog: dict[str, Any],
+) -> None:
+    notion_task_id = materialised_notion_task_id_from_task(selection.task)
+    if notion_task_id is None:
+        return
+
+    _append_notion_task_log(
+        notion_task_id=notion_task_id,
+        task_path=task_path,
+        log_name="worker-worklog",
+        content=worklog,
+    )
+
+
+def delete_worker_worklog_file(repo_path: Path) -> None:
+    worklog_path = repo_path / WORKER_NOTION_WORKLOG_FILENAME
+    if worklog_path.is_file():
+        worklog_path.unlink()
 
 
 def build_notion_task_creation_command(

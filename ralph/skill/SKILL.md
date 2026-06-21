@@ -109,16 +109,38 @@ credentials or tracker state to workers:
 
 1. At slice start, log the Ralph task id, goal, touchable paths, verification
    commands, and any immediate assumptions or constraints.
-2. During execution, log meaningful discoveries, blockers, design decisions, failed
-   commands, stack traces, and changed approach when they affect the work.
-3. At slice completion, log the concrete files changed, behaviour changed,
-   verification commands run, command outputs or failures, unresolved risks, and the
-   commit hash if the runner committed the slice.
+2. Workers write a `.ralph-worklog.json` file in the repository root with rich
+   execution details. Workers do NOT run `ntt` or any Notion commands. The
+   controller validates the worklog file and sends it to Notion after the worker
+   returns DONE, BLOCKED, or ABORT.
+3. At slice completion, the controller logs the concrete files changed, verification
+   commands run, and the commit hash.
 4. Use detailed `notion_task_tracker` log content with paragraph and code blocks.
    Do not write vague entries such as "implemented R1" or "ran tests" when the
    useful content is the command, output, diff summary, or error.
 5. If execution discovers follow-up tasks, log the reason and relationship on both
    the current task and the new child/sibling task when relevant.
+
+The worker worklog file must have this exact JSON shape:
+
+```json
+{
+  "subheading": "Short log title",
+  "blocks": [
+    {"type": "paragraph", "text": "Human-readable summary"},
+    {"type": "code", "language": "text", "text": "command output or details"}
+  ]
+}
+```
+
+Required fields:
+- `subheading`: non-empty string
+- `blocks`: non-empty list of block objects
+- Each block: `type` ("paragraph" or "code") and `text` (non-empty string)
+- Code blocks also require `language` (non-empty string)
+
+If the worker returns DONE, BLOCKED, or ABORT and the worklog file is missing or
+malformed, the controller rejects the task with a clear validation error.
 
 Record paired ALOVYA task ids in `ledger.yaml`, but do not copy Notion task prose or
 implementation notes into `ledger.yaml`.

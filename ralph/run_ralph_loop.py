@@ -27,10 +27,14 @@ from ralph.agent_backends import (
 )
 from ralph.codex_backend import recover_interrupted_codex_rules
 from ralph.notion import (
+    WorklogValidationError,
+    delete_worker_worklog_file,
     log_completed_worker_to_notion,
     log_failed_verification_to_notion,
+    log_validated_worker_worklog_to_notion,
     log_worker_promise_to_notion,
     prepare_notion_task_before_worker_runs_task,
+    validate_worker_worklog,
 )
 from ralph.plan_selection import (
     TaskSelection,
@@ -135,14 +139,26 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
         _write_text(task_path / "promise.txt", agent_result.promise)
 
         if agent_result.promise != "DONE":
+            worklog = _validate_and_log_worker_worklog(
+                repo_path=repo_path,
+                selection=selection,
+                task_path=task_path,
+            )
             log_worker_promise_to_notion(
                 selection=selection,
                 task_path=task_path,
                 promise=agent_result.promise,
             )
+            if worklog is not None:
+                delete_worker_worklog_file(repo_path)
             print(f"Agent stopped with {agent_result.promise}. See {task_path}")
             return
 
+        worklog = _validate_and_log_worker_worklog(
+            repo_path=repo_path,
+            selection=selection,
+            task_path=task_path,
+        )
         try:
             commit_hash = _accept_worker_completed_task(
                 repo_path=repo_path,
@@ -161,9 +177,30 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
             changed_files=_read_committed_files(repo_path=repo_path, commit_hash=commit_hash),
             commit_hash=commit_hash,
         )
+        if worklog is not None:
+            delete_worker_worklog_file(repo_path)
         print(f"Completed {selection.task['id']}: {commit_hash}")
 
     raise SystemExit(f"Reached max iterations: {arguments.max_iterations}")
+
+
+def _validate_and_log_worker_worklog(
+    repo_path: Path,
+    selection: TaskSelection,
+    task_path: Path,
+) -> dict[str, Any] | None:
+    from ralph.notion import materialised_notion_task_id_from_task
+
+    if materialised_notion_task_id_from_task(selection.task) is None:
+        return None
+
+    worklog = validate_worker_worklog(repo_path)
+    log_validated_worker_worklog_to_notion(
+        selection=selection,
+        task_path=task_path,
+        worklog=worklog,
+    )
+    return worklog
 
 
 def _accept_worker_completed_task(

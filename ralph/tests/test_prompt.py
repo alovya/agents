@@ -88,7 +88,7 @@ def test_render_agent_prompt_does_not_require_json_worklog_block(tmp_path: Path)
     assert "RALPH_WORKLOG_JSON_END" not in prompt
 
 
-def test_render_agent_prompt_includes_notion_log_command_when_materialised(tmp_path: Path) -> None:
+def test_render_agent_prompt_includes_worklog_instructions_when_materialised(tmp_path: Path) -> None:
     from ralph.tests.conftest import build_ledger_with_materialised_notion_task
 
     ledger = build_ledger_with_materialised_notion_task()
@@ -105,7 +105,6 @@ def test_render_agent_prompt_includes_notion_log_command_when_materialised(tmp_p
         python_venv_path=None,
     )
 
-    assert "ntt --log --ticket-number 90" in prompt
     assert ".ralph-worklog.json" in prompt
     assert "subheading" in prompt
     assert "blocks" in prompt
@@ -113,9 +112,12 @@ def test_render_agent_prompt_includes_notion_log_command_when_materialised(tmp_p
     assert "files changed" in prompt
     assert "decisions made" in prompt
     assert "unresolved risks" in prompt
-    assert "BLOCKED or ABORT, log the blocker" in prompt
-    assert "Do not use shell redirection" in prompt
-    assert "Do not put this JSON in the final answer" in prompt
+    assert "BLOCKED or ABORT" in prompt
+    assert "Do NOT run `ntt`" in prompt
+    assert "Do NOT put the worklog JSON in your final answer" in prompt
+    assert "Do NOT delete the worklog file" in prompt
+    assert "controller sends the worklog to Notion" in prompt
+    assert "ntt --log" not in prompt
 
 
 def test_render_agent_prompt_notion_log_not_applicable_without_task(tmp_path: Path) -> None:
