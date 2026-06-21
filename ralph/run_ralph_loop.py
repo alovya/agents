@@ -1307,27 +1307,25 @@ def _build_bwrap_agent_command(
     command += ["--tmpfs", "/"]
     command += ["--tmpfs", "/tmp"]
     command += _build_bwrap_runtime_mount_options()
-    command += _build_bwrap_dir_options_for_bind_mount_target(WORKER_AGENT_BINARY_PATH, create_target_dir=False)
+    command += _build_bwrap_sandbox_mount_target_dir_options(WORKER_AGENT_BINARY_PATH, create_target_dir=False)
     command += ["--ro-bind", str(host_agent_binary_path), str(WORKER_AGENT_BINARY_PATH)]
-    command += _build_bwrap_dir_options_for_bind_mount_target(repo_path)
+    command += _build_bwrap_sandbox_mount_target_dir_options(repo_path)
     command += ["--bind", str(repo_path), str(repo_path)]
     command += ["--dev", "/dev"]
 
     command += _build_bwrap_agent_home_mount_options(backend_config.agent_state_dir)
-    command += _build_bwrap_dir_options_for_bind_mount_target(WORKER_HOME_PATH)
-    command += _build_bwrap_dir_options_for_bind_mount_target(WORKER_TEMP_PATH)
+    command += _build_bwrap_sandbox_mount_target_dir_options(WORKER_HOME_PATH)
+    command += _build_bwrap_sandbox_mount_target_dir_options(WORKER_TEMP_PATH)
 
     if python_venv_path is not None:
-        command += _build_bwrap_dir_options_for_bind_mount_target(python_venv_path)
+        command += _build_bwrap_sandbox_mount_target_dir_options(python_venv_path)
         command += ["--ro-bind", str(python_venv_path), str(python_venv_path)]
 
     command += ["--clearenv"]
-    command += _build_bwrap_setenv_options(
-        _build_bwrap_worker_environment_variables(
-            agent_home_environment_variable=backend_config.agent_home_environment_variable,
-            agent_state_dir=backend_config.agent_state_dir,
-            python_venv_path=python_venv_path,
-        )
+    command += _build_bwrap_worker_environment_options(
+        agent_home_environment_variable=backend_config.agent_home_environment_variable,
+        agent_state_dir=backend_config.agent_state_dir,
+        python_venv_path=python_venv_path,
     )
 
     command += [str(WORKER_AGENT_BINARY_PATH)]
@@ -1446,11 +1444,11 @@ def _extract_text_from_claude_assistant_event(event: dict[str, Any]) -> str:
     )
 
 
-def _build_bwrap_worker_environment_variables(
+def _build_bwrap_worker_environment_options(
     agent_home_environment_variable: str,
     agent_state_dir: Path,
     python_venv_path: Path | None,
-) -> list[tuple[str, str]]:
+) -> list[str]:
     environment_variables = [
         ("HOME", str(WORKER_HOME_PATH)),
         ("TMPDIR", str(WORKER_TEMP_PATH)),
@@ -1467,14 +1465,8 @@ def _build_bwrap_worker_environment_variables(
     ]
 
     if python_venv_path is not None:
-        environment_variables += [
-            ("VIRTUAL_ENV", str(python_venv_path)),
-        ]
+        environment_variables.append(("VIRTUAL_ENV", str(python_venv_path)))
 
-    return environment_variables
-
-
-def _build_bwrap_setenv_options(environment_variables: list[tuple[str, str]]) -> list[str]:
     options: list[str] = []
     for variable_name, value in environment_variables:
         options += ["--setenv", variable_name, value]
@@ -1484,6 +1476,12 @@ def _build_bwrap_setenv_options(environment_variables: list[tuple[str, str]]) ->
 def _build_bwrap_runtime_mount_options() -> list[str]:
     options = ["--proc", "/proc"]
     options += _build_bwrap_host_os_runtime_mount_options()
+    options += _build_bwrap_minimal_host_etc_file_mount_options()
+    return options
+
+
+def _build_bwrap_minimal_host_etc_file_mount_options() -> list[str]:
+    options: list[str] = []
     options += _build_bwrap_read_only_file_mount_options(
         host_path=Path("/etc/hosts"),
         sandbox_path=Path("/etc/hosts"),
@@ -1527,7 +1525,7 @@ def _build_bwrap_host_os_compatibility_mount_options(compatibility_path: Path) -
 
 
 def _build_bwrap_agent_home_mount_options(agent_state_dir: Path) -> list[str]:
-    options = _build_bwrap_dir_options_for_bind_mount_target(agent_state_dir)
+    options = _build_bwrap_sandbox_mount_target_dir_options(agent_state_dir)
     options += ["--bind", str(agent_state_dir), str(agent_state_dir)]
     if (agent_state_dir / ".tmp").is_dir():
         options += ["--tmpfs", str(agent_state_dir / ".tmp")]
@@ -1538,7 +1536,7 @@ def _build_bwrap_read_only_file_mount_options(host_path: Path, sandbox_path: Pat
     if not host_path.is_file():
         return []
 
-    options = _build_bwrap_dir_options_for_bind_mount_target(sandbox_path, create_target_dir=False)
+    options = _build_bwrap_sandbox_mount_target_dir_options(sandbox_path, create_target_dir=False)
     options += ["--ro-bind", str(host_path), str(sandbox_path)]
     return options
 
@@ -1547,7 +1545,7 @@ def _build_bwrap_read_only_dir_mount_options(host_path: Path, sandbox_path: Path
     if not host_path.is_dir():
         return []
 
-    options = _build_bwrap_dir_options_for_bind_mount_target(sandbox_path)
+    options = _build_bwrap_sandbox_mount_target_dir_options(sandbox_path)
     options += ["--ro-bind", str(host_path), str(sandbox_path)]
     return options
 
@@ -1609,16 +1607,7 @@ def _reject_worker_visible_path_that_overlaps_hidden_state(path: Path, role: str
             )
 
 
-def _build_bwrap_dir_options_for_bind_mount_target(path: Path, *, create_target_dir: bool = True) -> list[str]:
-    """
-    bwrap --dir creates an empty directory inside the sandbox before bind mounting.
-
-    For directory target /workspace/repo, this returns:
-    --dir /workspace --dir /workspace/repo
-
-    For file target /home/alovyachowdhury/.local/bin/codex with create_target_dir false, this returns:
-    --dir /home --dir /home/alovyachowdhury --dir /home/alovyachowdhury/.local --dir /home/alovyachowdhury/.local/bin
-    """
+def _build_bwrap_sandbox_mount_target_dir_options(path: Path, *, create_target_dir: bool = True) -> list[str]:
     path_parts = path.resolve().parts[1:]
     if not create_target_dir:
         path_parts = path_parts[:-1]
