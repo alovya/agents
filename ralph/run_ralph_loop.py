@@ -139,7 +139,7 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
         _write_text(task_path / "promise.txt", agent_result.promise)
 
         if agent_result.promise != "DONE":
-            worklog = _validate_and_log_worker_worklog(
+            _validate_and_log_worker_worklog(
                 repo_path=repo_path,
                 selection=selection,
                 task_path=task_path,
@@ -149,12 +149,10 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
                 task_path=task_path,
                 promise=agent_result.promise,
             )
-            if worklog is not None:
-                delete_worker_worklog_file(repo_path)
             print(f"Agent stopped with {agent_result.promise}. See {task_path}")
             return
 
-        worklog = _validate_and_log_worker_worklog(
+        _validate_and_log_worker_worklog(
             repo_path=repo_path,
             selection=selection,
             task_path=task_path,
@@ -177,8 +175,6 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
             changed_files=_read_committed_files(repo_path=repo_path, commit_hash=commit_hash),
             commit_hash=commit_hash,
         )
-        if worklog is not None:
-            delete_worker_worklog_file(repo_path)
         print(f"Completed {selection.task['id']}: {commit_hash}")
 
     raise SystemExit(f"Reached max iterations: {arguments.max_iterations}")
@@ -200,6 +196,7 @@ def _validate_and_log_worker_worklog(
         task_path=task_path,
         worklog=worklog,
     )
+    delete_worker_worklog_file(repo_path)
     return worklog
 
 

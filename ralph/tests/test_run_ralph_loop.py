@@ -404,6 +404,7 @@ def test_validate_and_log_worker_worklog_sends_worklog_to_notion(
     assert worklog["subheading"] == "Task done"
     assert observed_content["subheading"] == "Task done"
     assert observed_content["blocks"][0]["text"] == "Work summary"
+    assert not worklog_path.exists()
 
 
 def test_validate_and_log_worker_worklog_skips_when_no_notion_task(
@@ -465,5 +466,4 @@ def test_validate_and_log_worker_worklog_raises_on_malformed_worklog(
             selection=select_first_task(ledger),
             task_path=task_path,
         )
-
 
