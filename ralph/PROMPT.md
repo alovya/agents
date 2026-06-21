@@ -24,6 +24,7 @@ Active task plan slice:
 Rules:
 - Work only on the active task.
 - Touch only paths listed in the active task unless you must make a directly required adjacent change.
+- Run only bash commands listed in the active task allowed_bash_commands, verification_commands, or Ralph's always-allowed worker commands.
 - Do not try to find or read Ralph controller state.
 - Do not edit task ledgers, plan files, or Ralph task logs.
 - Run every verification command listed in the active task before returning DONE.

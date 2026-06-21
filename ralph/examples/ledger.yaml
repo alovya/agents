@@ -8,8 +8,6 @@ tasks:
     touchable_paths:
       - src/parser.py
       - tests/test_parser.py
-    verification_commands:
-      - python -m pytest tests/test_parser.py
   - id: R2
     title: Add command line entrypoint
     status: pending
@@ -18,5 +16,3 @@ tasks:
     touchable_paths:
       - src/cli.py
       - tests/test_cli.py
-    verification_commands:
-      - python -m pytest tests/test_cli.py

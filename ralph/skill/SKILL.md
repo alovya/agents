@@ -134,14 +134,25 @@ Context every task may see.
 
 <!-- ralph-task:start R1 -->
 Only task R1 context.
+
+<!-- ralph-allowed-bash:start -->
+- rg *
+- sed -n *
+<!-- ralph-allowed-bash:end -->
+
+<!-- ralph-verification:start -->
+- python -m pytest tests/test_parser.py
+<!-- ralph-verification:end -->
 <!-- ralph-task:end R1 -->
 ```
 
 Each task id in `ledger.yaml` must have exactly one matching `ralph-task` block.
+Each `ralph-task` block must include exactly one `ralph-allowed-bash` block and
+exactly one `ralph-verification` block.
 
 ## Ledger Format
 
-Keep `ledger.yaml` minimal. It may contain ids, titles, statuses, dependencies, touchable paths, and verification commands:
+Keep `ledger.yaml` minimal. It may contain ids, titles, statuses, dependencies, and touchable paths. Keep command policy in `PLAN.md`:
 
 ```yaml
 version: 1
@@ -162,8 +173,6 @@ tasks:
     touchable_paths:
       - src/parser.py
       - tests/test_parser.py
-    verification_commands:
-      - python -m pytest tests/test_parser.py
 ```
 
 Do not copy task prose or full implementation notes into the ledger.

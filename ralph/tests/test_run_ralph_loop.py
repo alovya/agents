@@ -22,6 +22,7 @@ from ralph.run_ralph_loop import (
     _build_agent_visibility_smoke_test_prompt,
     _build_bwrap_agent_command,
     _build_notion_task_creation_command,
+    _build_worker_allowed_bash_commands,
     _create_task_directory,
     _extract_created_notion_task_id,
     _find_ralph_job,
@@ -51,25 +52,15 @@ from ralph.run_ralph_loop import (
 
 def test_extracts_only_active_plan_slice() -> None:
     ledger = _build_example_ledger()
-    plan_text = """
-<!-- ralph-shared:start -->
-Shared context.
-<!-- ralph-shared:end -->
-
-<!-- ralph-task:start R1 -->
-First task context.
-<!-- ralph-task:end R1 -->
-
-<!-- ralph-task:start R2 -->
-Second task context.
-<!-- ralph-task:end R2 -->
-"""
+    plan_text = _build_example_plan()
 
     selection = _select_next_task_from_plan_and_ledger(ledger, plan_text)
 
     assert selection.task["id"] == "R1"
     assert "First task context." in selection.active_task_plan_context
     assert "Second task context." not in selection.active_task_plan_context
+    assert selection.task["allowed_bash_commands"] == ["rg *", "sed -n *"]
+    assert selection.task["verification_commands"] == ["test -f src/parser.py"]
 
 
 def test_rejects_missing_plan_slice() -> None:
@@ -83,10 +74,7 @@ Shared context.
         _select_next_task_from_plan_and_ledger(_build_example_ledger(), plan_text)
 
 
-def test_selects_dependency_ready_task() -> None:
-    ledger = _build_example_ledger()
-    ledger["tasks"][0]["status"] = "done"
-
+def test_rejects_task_plan_without_allowed_bash_block() -> None:
     plan_text = """
 <!-- ralph-shared:start -->
 Shared context.
@@ -94,16 +82,68 @@ Shared context.
 
 <!-- ralph-task:start R1 -->
 First task context.
+
+<!-- ralph-verification:start -->
+- test -f src/parser.py
+<!-- ralph-verification:end -->
 <!-- ralph-task:end R1 -->
 
 <!-- ralph-task:start R2 -->
 Second task context.
+
+<!-- ralph-allowed-bash:start -->
+- rg *
+<!-- ralph-allowed-bash:end -->
+
+<!-- ralph-verification:start -->
+- python -m pytest tests/test_cli.py
+<!-- ralph-verification:end -->
 <!-- ralph-task:end R2 -->
 """
 
-    selection = _select_next_task_from_plan_and_ledger(ledger, plan_text)
+    with pytest.raises(ValueError, match="exactly one ralph-allowed-bash block"):
+        _select_next_task_from_plan_and_ledger(_build_example_ledger(), plan_text)
+
+
+def test_rejects_task_plan_without_verification_block() -> None:
+    plan_text = """
+<!-- ralph-shared:start -->
+Shared context.
+<!-- ralph-shared:end -->
+
+<!-- ralph-task:start R1 -->
+First task context.
+
+<!-- ralph-allowed-bash:start -->
+- rg *
+<!-- ralph-allowed-bash:end -->
+<!-- ralph-task:end R1 -->
+
+<!-- ralph-task:start R2 -->
+Second task context.
+
+<!-- ralph-allowed-bash:start -->
+- rg *
+<!-- ralph-allowed-bash:end -->
+
+<!-- ralph-verification:start -->
+- python -m pytest tests/test_cli.py
+<!-- ralph-verification:end -->
+<!-- ralph-task:end R2 -->
+"""
+
+    with pytest.raises(ValueError, match="exactly one ralph-verification block"):
+        _select_next_task_from_plan_and_ledger(_build_example_ledger(), plan_text)
+
+
+def test_selects_dependency_ready_task() -> None:
+    ledger = _build_example_ledger()
+    ledger["tasks"][0]["status"] = "done"
+
+    selection = _select_next_task_from_plan_and_ledger(ledger, _build_example_plan())
 
     assert selection.task["id"] == "R2"
+    assert selection.task["verification_commands"] == ["python -m pytest tests/test_cli.py"]
 
 
 def test_parses_exactly_one_promise() -> None:
@@ -681,6 +721,29 @@ def test_build_bwrap_agent_command_uses_claude_command_tail(
     ]
     assert "bypassPermissions" not in command
     assert "--dangerously-skip-permissions" not in command
+
+
+def test_build_worker_allowed_bash_commands_combines_controller_and_plan_commands() -> None:
+    task = {
+        "allowed_bash_commands": ["rg *", "sed -n *"],
+        "verification_commands": ["python -m pytest ralph/tests/test_run_ralph_loop.py"],
+    }
+
+    allowed_bash_commands = _build_worker_allowed_bash_commands(task)
+
+    assert allowed_bash_commands == [
+        "git status",
+        "git status --short",
+        "git diff",
+        "git diff --staged",
+        "git ls-files",
+        "git add .",
+        "git commit --no-verify -m *",
+        "git rev-parse HEAD",
+        "rg *",
+        "sed -n *",
+        "python -m pytest ralph/tests/test_run_ralph_loop.py",
+    ]
 
 
 def test_build_agent_visibility_smoke_test_prompt_checks_sandbox_contract(tmp_path: Path) -> None:
@@ -1338,6 +1401,15 @@ def test_accepts_example_ledger() -> None:
     assert _read_tasks_from_ledger(ledger)
 
 
+@pytest.mark.parametrize("command_policy_key", ["allowed_bash_commands", "verification_commands"])
+def test_read_tasks_rejects_command_policy_in_ledger(command_policy_key: str) -> None:
+    ledger = _build_example_ledger()
+    ledger["tasks"][0][command_policy_key] = ["rg *"]
+
+    with pytest.raises(ValueError, match=f"must keep {command_policy_key} in PLAN.md"):
+        _read_tasks_from_ledger(ledger)
+
+
 def _build_example_ledger() -> dict[str, object]:
     return {
         "version": 1,
@@ -1349,7 +1421,6 @@ def _build_example_ledger() -> dict[str, object]:
                 "status": "pending",
                 "depends_on": [],
                 "touchable_paths": ["src/parser.py"],
-                "verification_commands": ["test -f src/parser.py"],
             },
             {
                 "id": "R2",
@@ -1357,10 +1428,43 @@ def _build_example_ledger() -> dict[str, object]:
                 "status": "pending",
                 "depends_on": ["R1"],
                 "touchable_paths": ["src/cli.py"],
-                "verification_commands": ["python -m pytest tests/test_cli.py"],
             },
         ],
     }
+
+
+def _build_example_plan() -> str:
+    return """
+<!-- ralph-shared:start -->
+Shared context.
+<!-- ralph-shared:end -->
+
+<!-- ralph-task:start R1 -->
+First task context.
+
+<!-- ralph-allowed-bash:start -->
+- rg *
+- sed -n *
+<!-- ralph-allowed-bash:end -->
+
+<!-- ralph-verification:start -->
+- test -f src/parser.py
+<!-- ralph-verification:end -->
+<!-- ralph-task:end R1 -->
+
+<!-- ralph-task:start R2 -->
+Second task context.
+
+<!-- ralph-allowed-bash:start -->
+- rg *
+- sed -n *
+<!-- ralph-allowed-bash:end -->
+
+<!-- ralph-verification:start -->
+- python -m pytest tests/test_cli.py
+<!-- ralph-verification:end -->
+<!-- ralph-task:end R2 -->
+"""
 
 
 def _build_ledger_with_planned_notion_task(related_to: str, task_id: str = "R1") -> dict[str, object]:
@@ -1374,7 +1478,6 @@ def _build_ledger_with_planned_notion_task(related_to: str, task_id: str = "R1")
                 "status": "pending",
                 "depends_on": [],
                 "touchable_paths": ["src/parser.py"],
-                "verification_commands": ["test -f src/parser.py"],
                 "notion_task": {
                     "planned": True,
                     "relationship": "child",
@@ -1436,7 +1539,11 @@ def _command_windows(command: list[str], size: int) -> list[list[str]]:
 
 def _select_first_task(ledger: dict[str, object]) -> TaskSelection:
     return TaskSelection(
-        task=ledger["tasks"][0],
+        task={
+            **ledger["tasks"][0],
+            "allowed_bash_commands": ["rg *", "sed -n *"],
+            "verification_commands": ["test -f src/parser.py"],
+        },
         shared_plan_context="Shared context.",
         active_task_plan_context="First task context.",
     )
