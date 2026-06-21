@@ -53,6 +53,7 @@ ALWAYS_ALLOWED_WORKER_BASH_COMMANDS = [
     "git commit --no-verify -m *",
     "git rev-parse HEAD",
 ]
+CODEX_RULES_BACKUP_MARKER_FILENAME = "codex-rules-backup.marker"
 
 
 @dataclass(frozen=True)
@@ -107,6 +108,7 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
     job = _find_ralph_job(arguments.job_name)
     _prepare_job_directories(job)
     _refuse_unsafe_starting_state(repo_path, job)
+    _recover_stale_codex_rules_backup_marker(job)
     _run_agent_visibility_smoke_test(
         repo_path=repo_path,
         agent_backend=arguments.agent_backend,
@@ -145,6 +147,7 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
             python_venv_path=python_venv_path,
             output_path=task_path / "agent-output.txt",
             tee_output=arguments.tee_agent_output,
+            task_path=task_path,
         )
         _write_text(task_path / "promise.txt", agent_result.promise)
 
@@ -561,18 +564,48 @@ def _run_agent(
     python_venv_path: Path | None,
     output_path: Path,
     tee_output: bool,
+    task_path: Path | None = None,
 ) -> AgentResult:
     _write_text(output_path, "")
     backend_config = _select_agent_backend_config(
         agent_backend=agent_backend,
         agent_command=agent_command,
     )
+    allowed_bash_commands = _build_worker_allowed_bash_commands(task)
     command = _build_bwrap_agent_command(
         repo_path=repo_path,
         backend_config=backend_config,
         python_venv_path=python_venv_path,
-        allowed_bash_commands=_build_worker_allowed_bash_commands(task),
+        allowed_bash_commands=allowed_bash_commands,
     )
+
+    if backend_config.backend_name == "codex" and task_path is not None:
+        return _run_codex_agent_with_rules_management(
+            command=command,
+            prompt=prompt,
+            output_path=output_path,
+            tee_output=tee_output,
+            backend_config=backend_config,
+            allowed_bash_commands=allowed_bash_commands,
+            task_path=task_path,
+        )
+
+    return _run_agent_command(
+        command=command,
+        prompt=prompt,
+        output_path=output_path,
+        tee_output=tee_output,
+        backend_config=backend_config,
+    )
+
+
+def _run_agent_command(
+    command: list[str],
+    prompt: str,
+    output_path: Path,
+    tee_output: bool,
+    backend_config: AgentBackendConfig,
+) -> AgentResult:
     if tee_output:
         completed_process = _run_command_and_tee_output(
             command=command,
@@ -598,6 +631,38 @@ def _run_agent(
         raise RuntimeError(f"Agent failed with exit code {completed_process.returncode}. See {output_path}")
     promise = _parse_agent_promise(output)
     return AgentResult(promise=promise, output=output)
+
+
+def _run_codex_agent_with_rules_management(
+    command: list[str],
+    prompt: str,
+    output_path: Path,
+    tee_output: bool,
+    backend_config: AgentBackendConfig,
+    allowed_bash_commands: list[str],
+    task_path: Path,
+) -> AgentResult:
+    codex_home_path = backend_config.agent_home_path
+    rules_path = _codex_rules_path(codex_home_path)
+    backup_marker_path = task_path / CODEX_RULES_BACKUP_MARKER_FILENAME
+
+    original_rules_snapshot = _snapshot_codex_rules(rules_path)
+    _write_codex_rules_backup_marker(backup_marker_path, original_rules_snapshot)
+
+    try:
+        generated_rules = _generate_codex_execpolicy_rules(allowed_bash_commands)
+        _write_codex_rules_atomically(rules_path, generated_rules)
+
+        return _run_agent_command(
+            command=command,
+            prompt=prompt,
+            output_path=output_path,
+            tee_output=tee_output,
+            backend_config=backend_config,
+        )
+    finally:
+        _restore_codex_rules(rules_path, original_rules_snapshot)
+        backup_marker_path.unlink(missing_ok=True)
 
 
 def _run_command_and_tee_output(
@@ -1281,14 +1346,13 @@ def _build_agent_command_tail(
 def _build_codex_command_tail(repo_path: Path) -> list[str]:
     return [
         "--ask-for-approval",
-        "never",
+        "untrusted",
         "exec",
         "-C",
         str(repo_path),
         "--sandbox",
         "danger-full-access",
         "--ephemeral",
-        "--ignore-rules",
         "-",
     ]
 
@@ -1897,6 +1961,124 @@ def _build_agent_path_value(python_venv_path: Path | None) -> str:
     return ":".join(
         path_entries
     )
+
+
+def _recover_stale_codex_rules_backup_marker(job: RalphJob) -> None:
+    stale_marker_path = _find_stale_codex_rules_backup_marker(job)
+    if stale_marker_path is None:
+        return
+
+    backup_marker = _read_codex_rules_backup_marker(stale_marker_path)
+    codex_home_path = _read_codex_home_path_from_environment()
+    if codex_home_path is None:
+        stale_marker_path.unlink()
+        return
+
+    rules_path = _codex_rules_path(codex_home_path)
+    _restore_codex_rules(rules_path, backup_marker)
+    stale_marker_path.unlink()
+    raise RuntimeError(
+        f"Recovered stale Codex rules from backup marker at {stale_marker_path}. "
+        "Please restart Ralph to continue."
+    )
+
+
+def _find_stale_codex_rules_backup_marker(job: RalphJob) -> Path | None:
+    if not job.tasks_path.is_dir():
+        return None
+    for task_dir in job.tasks_path.iterdir():
+        if not task_dir.is_dir():
+            continue
+        marker_path = task_dir / CODEX_RULES_BACKUP_MARKER_FILENAME
+        if marker_path.is_file():
+            return marker_path
+    return None
+
+
+def _read_codex_home_path_from_environment() -> Path | None:
+    configured_path = os.environ.get("CODEX_HOME")
+    if not configured_path:
+        return None
+    codex_home_path = Path(configured_path).expanduser().resolve()
+    if not codex_home_path.is_dir():
+        return None
+    return codex_home_path
+
+
+def _codex_rules_path(codex_home_path: Path) -> Path:
+    return codex_home_path / "rules" / "default.rules"
+
+
+@dataclass(frozen=True)
+class CodexRulesSnapshot:
+    existed: bool
+    content: str | None
+
+
+def _snapshot_codex_rules(rules_path: Path) -> CodexRulesSnapshot:
+    if not rules_path.is_file():
+        return CodexRulesSnapshot(existed=False, content=None)
+    return CodexRulesSnapshot(existed=True, content=rules_path.read_text(encoding="utf-8"))
+
+
+def _write_codex_rules_backup_marker(marker_path: Path, snapshot: CodexRulesSnapshot) -> None:
+    marker_content = {
+        "existed": snapshot.existed,
+        "content": snapshot.content,
+    }
+    marker_path.parent.mkdir(parents=True, exist_ok=True)
+    marker_path.write_text(json.dumps(marker_content, indent=2), encoding="utf-8")
+
+
+def _read_codex_rules_backup_marker(marker_path: Path) -> CodexRulesSnapshot:
+    marker_content = json.loads(marker_path.read_text(encoding="utf-8"))
+    return CodexRulesSnapshot(
+        existed=marker_content["existed"],
+        content=marker_content["content"],
+    )
+
+
+def _restore_codex_rules(rules_path: Path, snapshot: CodexRulesSnapshot) -> None:
+    if not snapshot.existed:
+        rules_path.unlink(missing_ok=True)
+        return
+    rules_path.parent.mkdir(parents=True, exist_ok=True)
+    rules_path.write_text(snapshot.content, encoding="utf-8")
+
+
+def _generate_codex_execpolicy_rules(allowed_bash_commands: list[str]) -> str:
+    rules_lines: list[str] = []
+    for command in allowed_bash_commands:
+        pattern = _parse_command_to_execpolicy_pattern(command)
+        rules_lines.append(f'prefix_rule(pattern={pattern!r}, decision="allow")')
+    return "\n".join(rules_lines) + "\n"
+
+
+def _parse_command_to_execpolicy_pattern(command: str) -> list[str]:
+    tokens = shlex.split(command)
+    if not tokens:
+        raise ValueError(f"Empty command cannot be converted to execpolicy pattern: {command!r}")
+    if tokens == ["*"]:
+        raise ValueError(f"Command cannot be only a wildcard: {command!r}")
+    for i, token in enumerate(tokens[:-1]):
+        if token == "*":
+            raise ValueError(
+                f"Wildcard '*' is only allowed as the final token in command: {command!r}"
+            )
+    if tokens[-1] == "*":
+        tokens = tokens[:-1]
+    return tokens
+
+
+def _write_codex_rules_atomically(rules_path: Path, content: str) -> None:
+    rules_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = rules_path.with_suffix(".rules.tmp")
+    try:
+        temp_path.write_text(content, encoding="utf-8")
+        temp_path.replace(rules_path)
+    except Exception:
+        temp_path.unlink(missing_ok=True)
+        raise
 
 
 if __name__ == "__main__":

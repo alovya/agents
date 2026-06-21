@@ -214,3 +214,39 @@ Do not pass Notion access through the worker venv. The controller owns Notion
 materialisation and logging outside the worker sandbox.
 
 The runner owns task selection, verification, ledger advancement, and commits.
+
+## Codex Worker Command Enforcement
+
+When running Codex workers, Ralph enforces command restrictions through Codex
+execpolicy rules rather than relying on `--ignore-rules`:
+
+1. Before launching a Codex worker, Ralph snapshots the real
+   `CODEX_HOME/rules/default.rules` file.
+2. Ralph writes a backup marker under the active task directory containing
+   enough information to restore the original rules if Ralph crashes.
+3. Ralph generates a per-task execpolicy rules file from the allowed bash
+   commands and atomically replaces the real rules file.
+4. Codex launches with `--ask-for-approval untrusted` instead of
+   `--ask-for-approval never --ignore-rules`.
+5. After Codex finishes (success, error, or exception), Ralph restores the
+   original rules file from the snapshot and deletes the backup marker.
+
+If Ralph crashes after writing generated rules, the next Ralph run detects the
+stale backup marker, restores the original rules, deletes the marker, and
+refuses to continue with a clear message asking the operator to restart.
+
+Generated rules use Codex execpolicy syntax:
+
+```text
+prefix_rule(pattern=['rg'], decision="allow")
+prefix_rule(pattern=['sed', '-n'], decision="allow")
+prefix_rule(pattern=['git', 'commit', '--no-verify', '-m'], decision="allow")
+```
+
+A trailing `*` in the allowed command list means extra trailing arguments are
+permitted. Ralph strips that final `*` before building the prefix rule pattern:
+
+- `rg *` becomes `prefix_rule(pattern=['rg'], decision="allow")`
+- `sed -n *` becomes `prefix_rule(pattern=['sed', '-n'], decision="allow")`
+
+Commands without a trailing `*` must match exactly.

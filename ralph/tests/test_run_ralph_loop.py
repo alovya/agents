@@ -11,6 +11,8 @@ import yaml
 
 from ralph.run_ralph_loop import (
     AgentBackendConfig,
+    CODEX_RULES_BACKUP_MARKER_FILENAME,
+    CodexRulesSnapshot,
     DEFAULT_NOTION_TRACKER_STATE_PATH,
     DEFAULT_RALPH_HOME_PATH,
     RalphJob,
@@ -23,10 +25,13 @@ from ralph.run_ralph_loop import (
     _build_bwrap_agent_command,
     _build_notion_task_creation_command,
     _build_worker_allowed_bash_commands,
+    _codex_rules_path,
     _create_task_directory,
     _extract_created_notion_task_id,
     _extract_claude_stream_result_text,
     _find_ralph_job,
+    _find_stale_codex_rules_backup_marker,
+    _generate_codex_execpolicy_rules,
     _log_completed_worker_to_notion,
     _log_failed_verification_to_notion,
     _log_slice_start_to_notion,
@@ -34,19 +39,26 @@ from ralph.run_ralph_loop import (
     main,
     _materialise_planned_notion_task_before_worker_launch,
     _mark_task_done,
+    _parse_command_to_execpolicy_pattern,
     _prepare_notion_task_for_worker_launch,
     _parse_arguments,
     _parse_agent_promise,
+    _read_codex_rules_backup_marker,
     _read_tasks_from_ledger,
+    _recover_stale_codex_rules_backup_marker,
     _refuse_unsafe_starting_state,
     _render_agent_prompt,
     _resolve_ralph_home_path,
     _resolve_python_venv_path,
     _require_codex_home_path,
+    _restore_codex_rules,
     _run_agent_visibility_smoke_test,
     _run_command_and_tee_output,
     _select_next_task_from_plan_and_ledger,
     _select_agent_backend_config,
+    _snapshot_codex_rules,
+    _write_codex_rules_atomically,
+    _write_codex_rules_backup_marker,
     _write_yaml_file,
 )
 
@@ -625,7 +637,7 @@ def test_build_bwrap_command_uses_claude_worker_environment(
     assert "CODEX_HOME" not in command
 
 
-def test_build_bwrap_agent_command_keeps_codex_command_tail(
+def test_build_bwrap_agent_command_mounts_codex_binary(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -650,20 +662,6 @@ def test_build_bwrap_agent_command_keeps_codex_command_tail(
     )
 
     assert _contains_subsequence(command, ["--ro-bind", str(codex_path), str(WORKER_AGENT_BINARY_PATH)])
-    codex_index = len(command) - 1 - list(reversed(command)).index(str(WORKER_AGENT_BINARY_PATH))
-    assert command[codex_index:] == [
-        str(WORKER_AGENT_BINARY_PATH),
-        "--ask-for-approval",
-        "never",
-        "exec",
-        "-C",
-        str(repo_path),
-        "--sandbox",
-        "danger-full-access",
-        "--ephemeral",
-        "--ignore-rules",
-        "-",
-    ]
 
 
 def test_build_bwrap_agent_command_uses_claude_command_tail(
@@ -1438,6 +1436,242 @@ def test_read_tasks_rejects_malformed_notion_task_entries(mutate_ledger, expecte
 
     with pytest.raises(ValueError, match=expected_message):
         _read_tasks_from_ledger(ledger)
+
+
+def test_generate_codex_execpolicy_rules_renders_prefix_rule_syntax() -> None:
+    allowed_bash_commands = ["rg pattern", "sed -n 1p"]
+
+    rules = _generate_codex_execpolicy_rules(allowed_bash_commands)
+
+    assert rules == (
+        "prefix_rule(pattern=['rg', 'pattern'], decision=\"allow\")\n"
+        "prefix_rule(pattern=['sed', '-n', '1p'], decision=\"allow\")\n"
+    )
+
+
+def test_parse_command_to_execpolicy_pattern_strips_final_wildcard() -> None:
+    assert _parse_command_to_execpolicy_pattern("rg *") == ["rg"]
+    assert _parse_command_to_execpolicy_pattern("sed -n *") == ["sed", "-n"]
+    assert _parse_command_to_execpolicy_pattern("git commit --no-verify -m *") == [
+        "git", "commit", "--no-verify", "-m"
+    ]
+
+
+def test_parse_command_to_execpolicy_pattern_preserves_literal_arguments() -> None:
+    assert _parse_command_to_execpolicy_pattern("python -m pytest tests/test_run.py") == [
+        "python", "-m", "pytest", "tests/test_run.py"
+    ]
+
+
+def test_parse_command_to_execpolicy_pattern_rejects_non_final_wildcard() -> None:
+    with pytest.raises(ValueError, match="only allowed as the final token"):
+        _parse_command_to_execpolicy_pattern("git * commit")
+
+
+def test_parse_command_to_execpolicy_pattern_rejects_command_only_wildcard() -> None:
+    with pytest.raises(ValueError, match="cannot be only a wildcard"):
+        _parse_command_to_execpolicy_pattern("*")
+
+
+def test_write_codex_rules_atomically_creates_rules_directory(tmp_path: Path) -> None:
+    rules_path = tmp_path / "rules" / "default.rules"
+
+    _write_codex_rules_atomically(rules_path, "prefix_rule(pattern=['rg'], decision=\"allow\")\n")
+
+    assert rules_path.is_file()
+    assert rules_path.read_text() == "prefix_rule(pattern=['rg'], decision=\"allow\")\n"
+
+
+def test_write_codex_rules_atomically_replaces_existing_rules(tmp_path: Path) -> None:
+    rules_path = tmp_path / "rules" / "default.rules"
+    rules_path.parent.mkdir(parents=True)
+    rules_path.write_text("old rules content")
+
+    _write_codex_rules_atomically(rules_path, "new rules content")
+
+    assert rules_path.read_text() == "new rules content"
+
+
+def test_write_codex_rules_atomically_leaves_no_temp_file_after_success(tmp_path: Path) -> None:
+    rules_path = tmp_path / "rules" / "default.rules"
+
+    _write_codex_rules_atomically(rules_path, "content")
+
+    temp_path = rules_path.with_suffix(".rules.tmp")
+    assert not temp_path.exists()
+
+
+def test_snapshot_codex_rules_captures_existing_content(tmp_path: Path) -> None:
+    rules_path = tmp_path / "rules" / "default.rules"
+    rules_path.parent.mkdir(parents=True)
+    rules_path.write_text("original rules")
+
+    snapshot = _snapshot_codex_rules(rules_path)
+
+    assert snapshot.existed is True
+    assert snapshot.content == "original rules"
+
+
+def test_snapshot_codex_rules_records_absence(tmp_path: Path) -> None:
+    rules_path = tmp_path / "rules" / "default.rules"
+
+    snapshot = _snapshot_codex_rules(rules_path)
+
+    assert snapshot.existed is False
+    assert snapshot.content is None
+
+
+def test_restore_codex_rules_recreates_original_content(tmp_path: Path) -> None:
+    rules_path = tmp_path / "rules" / "default.rules"
+    rules_path.parent.mkdir(parents=True)
+    rules_path.write_text("modified rules")
+
+    _restore_codex_rules(rules_path, CodexRulesSnapshot(existed=True, content="original rules"))
+
+    assert rules_path.read_text() == "original rules"
+
+
+def test_restore_codex_rules_removes_rules_when_originally_absent(tmp_path: Path) -> None:
+    rules_path = tmp_path / "rules" / "default.rules"
+    rules_path.parent.mkdir(parents=True)
+    rules_path.write_text("generated rules")
+
+    _restore_codex_rules(rules_path, CodexRulesSnapshot(existed=False, content=None))
+
+    assert not rules_path.exists()
+
+
+def test_write_and_read_codex_rules_backup_marker(tmp_path: Path) -> None:
+    marker_path = tmp_path / "task" / CODEX_RULES_BACKUP_MARKER_FILENAME
+    original_snapshot = CodexRulesSnapshot(existed=True, content="original rules")
+
+    _write_codex_rules_backup_marker(marker_path, original_snapshot)
+    recovered_snapshot = _read_codex_rules_backup_marker(marker_path)
+
+    assert recovered_snapshot.existed is True
+    assert recovered_snapshot.content == "original rules"
+
+
+def test_backup_marker_location_under_ralph_task_directory(tmp_path: Path) -> None:
+    task_path = tmp_path / "tasks" / "R1_20260621T120000Z"
+    task_path.mkdir(parents=True)
+    marker_path = task_path / CODEX_RULES_BACKUP_MARKER_FILENAME
+
+    _write_codex_rules_backup_marker(marker_path, CodexRulesSnapshot(existed=False, content=None))
+
+    assert marker_path.is_file()
+    assert marker_path.parent == task_path
+
+
+def test_find_stale_codex_rules_backup_marker_returns_marker_path(tmp_path: Path) -> None:
+    job = _create_job_with_ledger(tmp_path, _build_example_ledger())
+    task_path = job.tasks_path / "R1_20260621T120000Z"
+    task_path.mkdir(parents=True)
+    marker_path = task_path / CODEX_RULES_BACKUP_MARKER_FILENAME
+    marker_path.write_text('{"existed": true, "content": "original"}')
+
+    found_marker = _find_stale_codex_rules_backup_marker(job)
+
+    assert found_marker == marker_path
+
+
+def test_find_stale_codex_rules_backup_marker_returns_none_when_absent(tmp_path: Path) -> None:
+    job = _create_job_with_ledger(tmp_path, _build_example_ledger())
+    job.tasks_path.mkdir(parents=True, exist_ok=True)
+
+    found_marker = _find_stale_codex_rules_backup_marker(job)
+
+    assert found_marker is None
+
+
+def test_recover_stale_codex_rules_backup_marker_restores_and_raises(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home_path = tmp_path / "codex-home"
+    codex_home_path.mkdir()
+    rules_path = _codex_rules_path(codex_home_path)
+    rules_path.parent.mkdir(parents=True)
+    rules_path.write_text("generated rules")
+
+    job = _create_job_with_ledger(tmp_path, _build_example_ledger())
+    task_path = job.tasks_path / "R1_20260621T120000Z"
+    task_path.mkdir(parents=True)
+    marker_path = task_path / CODEX_RULES_BACKUP_MARKER_FILENAME
+    marker_path.write_text('{"existed": true, "content": "original rules"}')
+
+    monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
+
+    with pytest.raises(RuntimeError, match="Recovered stale Codex rules"):
+        _recover_stale_codex_rules_backup_marker(job)
+
+    assert rules_path.read_text() == "original rules"
+    assert not marker_path.exists()
+
+
+def test_recover_stale_codex_rules_backup_marker_removes_rules_when_originally_absent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home_path = tmp_path / "codex-home"
+    codex_home_path.mkdir()
+    rules_path = _codex_rules_path(codex_home_path)
+    rules_path.parent.mkdir(parents=True)
+    rules_path.write_text("generated rules")
+
+    job = _create_job_with_ledger(tmp_path, _build_example_ledger())
+    task_path = job.tasks_path / "R1_20260621T120000Z"
+    task_path.mkdir(parents=True)
+    marker_path = task_path / CODEX_RULES_BACKUP_MARKER_FILENAME
+    marker_path.write_text('{"existed": false, "content": null}')
+
+    monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
+
+    with pytest.raises(RuntimeError, match="Recovered stale Codex rules"):
+        _recover_stale_codex_rules_backup_marker(job)
+
+    assert not rules_path.exists()
+    assert not marker_path.exists()
+
+
+def test_build_bwrap_agent_command_keeps_codex_command_tail_with_ask_for_approval_untrusted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bin_path = tmp_path / "bin"
+    bwrap_path = bin_path / "bwrap"
+    codex_path = bin_path / "codex"
+    repo_path = tmp_path / "target-repo"
+    codex_home_path = tmp_path / "codex-home"
+    bin_path.mkdir()
+    repo_path.mkdir()
+    codex_home_path.mkdir()
+    _write_executable_shim(bwrap_path)
+    _write_executable_shim(codex_path)
+    monkeypatch.setenv("PATH", str(bin_path))
+    monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
+
+    backend_config = _select_agent_backend_config(agent_backend="codex", agent_command=None)
+    command = _build_bwrap_agent_command(
+        repo_path=repo_path,
+        backend_config=backend_config,
+        python_venv_path=None,
+    )
+
+    codex_index = len(command) - 1 - list(reversed(command)).index(str(WORKER_AGENT_BINARY_PATH))
+    assert command[codex_index:] == [
+        str(WORKER_AGENT_BINARY_PATH),
+        "--ask-for-approval",
+        "untrusted",
+        "exec",
+        "-C",
+        str(repo_path),
+        "--sandbox",
+        "danger-full-access",
+        "--ephemeral",
+        "-",
+    ]
+    assert "--ignore-rules" not in command
 
 
 def test_accepts_example_ledger() -> None:
