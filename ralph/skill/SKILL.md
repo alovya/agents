@@ -97,3 +97,6 @@ Run the loop only after validation passes:
 CODEX_HOME=/workspace/.codex python -m ralph.run_ralph_loop run --repo-path <repo-path> --job-name <job-name> --agent-backend codex
 CLAUDE_CONFIG_DIR=/workspace/.claude python -m ralph.run_ralph_loop run --repo-path <repo-path> --job-name <job-name> --agent-backend claude
 ```
+
+Add `--ask-for-review` when the user wants to review each completed Ralph task
+before Ralph commits it and moves on to the next task.

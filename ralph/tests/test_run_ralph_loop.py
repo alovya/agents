@@ -26,6 +26,7 @@ from ralph.run_ralph_loop import (
     _mark_task_done,
     _parse_arguments,
     _parse_agent_promise,
+    _pause_for_human_review_after_accepting_worker_completed_task,
     _refuse_unsafe_starting_state,
     _run_agent_command,
     _save_worker_prompt_before_launch,
@@ -115,6 +116,19 @@ def test_parse_args_can_disable_agent_output_teeing() -> None:
     ])
 
     assert arguments.tee_agent_output is False
+
+
+def test_parse_args_can_pause_for_review_between_tasks() -> None:
+    arguments = _parse_arguments([
+        "run",
+        "--repo-path",
+        "/tmp/repo",
+        "--job-name",
+        "example",
+        "--ask-for-review",
+    ])
+
+    assert arguments.ask_for_review is True
 
 
 def test_parse_args_accepts_python_venv() -> None:
@@ -547,6 +561,61 @@ def test_accepts_worker_completed_task_after_worker_verifies_and_commits(
     assert yaml.safe_load(job.ledger_path.read_text())["tasks"][0]["status"] == "done"
     assert "$ test -f src/parser.py" in task_path.joinpath("verification-output.txt").read_text()
     assert task_path.joinpath("commit.txt").read_text() == worker_commit_hash
+
+
+def test_review_pause_exposes_accepted_worker_commit_as_uncommitted_diff(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_path = initialise_git_repo(tmp_path / "target-repo")
+    ledger = build_example_ledger()
+    job = create_job_with_ledger(tmp_path, ledger)
+    task_path = tmp_path / "task"
+    parser_path = repo_path / "src" / "parser.py"
+    parser_path.parent.mkdir()
+    parser_path.write_text("def parse_value(value):\n    return value\n")
+    run_git(repo_path, "add", ".")
+    run_git(repo_path, "commit", "--no-verify", "-m", "Ralph: R1 Add parser")
+    worker_commit_hash = run_git(repo_path, "rev-parse", "HEAD").strip()
+    agent_output = "\n".join(
+        [
+            "RALPH_VERIFICATION_BEGIN",
+            "$ test -f src/parser.py",
+            "RALPH_VERIFICATION_END",
+            f"RALPH_COMMIT {worker_commit_hash}",
+            "<promise>DONE</promise>",
+        ]
+    )
+    accepted_commit_hash = _accept_worker_completed_task(
+        repo_path=repo_path,
+        job=job,
+        ledger=ledger,
+        selection=select_first_task(ledger),
+        task_path=task_path,
+        agent_output=agent_output,
+    )
+    observed_review_status: list[str] = []
+
+    def input_mock(prompt: str) -> str:
+        observed_review_status.append(run_git(repo_path, "status", "--short"))
+        parser_path.write_text("def parse_value(value):\n    return value.strip()\n")
+        return ""
+
+    monkeypatch.setattr("builtins.input", input_mock)
+
+    reviewed_commit_hash = _pause_for_human_review_after_accepting_worker_completed_task(
+        repo_path=repo_path,
+        task=select_first_task(ledger).task,
+        task_path=task_path,
+        accepted_commit_hash=accepted_commit_hash,
+    )
+
+    assert observed_review_status == ["?? src/\n"]
+    assert reviewed_commit_hash != worker_commit_hash
+    assert run_git(repo_path, "status", "--short") == ""
+    assert run_git(repo_path, "log", "--format=%s", "-1").strip() == "Ralph: R1 Add parser"
+    assert parser_path.read_text() == "def parse_value(value):\n    return value.strip()\n"
+    assert task_path.joinpath("commit.txt").read_text() == reviewed_commit_hash
 
 
 def test_accepts_worker_completed_task_after_prompt_examples_and_final_worker_markers(

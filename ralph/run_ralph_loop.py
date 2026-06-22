@@ -171,6 +171,13 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
                 task_path=task_path,
                 agent_output=agent_result.output,
             )
+            if arguments.ask_for_review:
+                commit_hash = _pause_for_human_review_after_accepting_worker_completed_task(
+                    repo_path=repo_path,
+                    task=selection.task,
+                    task_path=task_path,
+                    accepted_commit_hash=commit_hash,
+                )
         except Exception:
             log_failed_verification_to_notion(
                 selection=selection,
@@ -229,6 +236,35 @@ def _validate_and_log_worker_worklog(
 
 def _save_worker_prompt_before_launch(task_path: Path, prompt: str) -> None:
     _write_text(task_path / "PROMPT.md", prompt)
+
+
+def _pause_for_human_review_after_accepting_worker_completed_task(
+    repo_path: Path,
+    task: dict[str, Any],
+    task_path: Path,
+    accepted_commit_hash: str,
+) -> str:
+    _run_git(repo_path, "reset", "--mixed", "HEAD^")
+    input(
+        "\n".join([
+            f"Review uncommitted Ralph task {task['id']}: {task['title']}",
+            f"Task artefacts: {task_path}",
+            "Review the worktree diff now.",
+            "Press Enter to commit this task and continue, or interrupt to stop.",
+            "",
+        ])
+    )
+    _run_git(repo_path, "add", "--all")
+    _run_git(repo_path, "commit", "--no-verify", "-m", f"Ralph: {task['id']} {task['title']}")
+    reviewed_commit_hash = _run_git(repo_path, "rev-parse", "HEAD").strip()
+    _write_text(task_path / "commit.txt", reviewed_commit_hash)
+    _validate_worker_commit_matches_repo_state(
+        repo_path=repo_path,
+        task=task,
+        commit_hash=reviewed_commit_hash,
+    )
+    print(f"Reviewed {accepted_commit_hash}; recommitted as {reviewed_commit_hash}")
+    return reviewed_commit_hash
 
 
 def _accept_worker_completed_task(
@@ -334,6 +370,11 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
         action="store_false",
         dest="tee_agent_output",
         help="Stream the agent transcript to this terminal while also saving agent-output.txt.",
+    )
+    run_parser.add_argument(
+        "--ask-for-review",
+        action="store_true",
+        help="Pause after each completed task so a human can review before Ralph selects the next task.",
     )
     run_parser.set_defaults(tee_agent_output=True)
 
