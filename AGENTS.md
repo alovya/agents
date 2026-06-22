@@ -208,6 +208,7 @@ Do not explain docs or docstrings through old behaviour, previous mistakes, migr
 ## Hyperspecific stupid and annoying behaviours to always avoid
 
 - Never use American spelling; always use British spelling
+- Never add backwards-compatibility shims by default. Remove or update old call sites instead, unless the user explicitly asks to preserve compatibility.
 - Never write shebang lines at the top of Python files.
 - Never write redundant comments - only comment code that does not explain itself.
 - Never use abbreviations or acronyms except for obvious ones, e.g. i/j for loops, err for errors, ctx for contexts, config for configuration, etc.
