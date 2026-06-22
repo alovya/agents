@@ -78,6 +78,9 @@ def main(argv: list[str] | None = None) -> None:
     if arguments.command == "run":
         _run_ralph_loop(arguments)
         return
+    if arguments.command == "validate":
+        _validate_ralph_job(arguments)
+        return
     if arguments.command == "smoke-test":
         run_agent_visibility_smoke_test(
             repo_path=_resolve_repo_path(arguments.repo_path),
@@ -185,6 +188,23 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
         print(f"Completed {selection.task['id']}: {commit_hash}")
 
     raise SystemExit(f"Reached max iterations: {arguments.max_iterations}")
+
+
+def _validate_ralph_job(arguments: argparse.Namespace) -> None:
+    job = _find_ralph_job(arguments.job_name)
+    _require_ralph_job_files(job)
+
+    ledger = _read_yaml_file(job.ledger_path)
+    plan_text = job.plan_path.read_text()
+    selection = select_next_task_from_plan_and_ledger(ledger, plan_text)
+
+    if arguments.repo_path is not None:
+        _refuse_unsafe_starting_state(_resolve_repo_path(arguments.repo_path), job)
+
+    if selection is None:
+        print(f"Ralph job {job.job_name} is valid. No runnable tasks remain.")
+        return
+    print(f"Ralph job {job.job_name} is valid. Next runnable task: {selection.task['id']}")
 
 
 def _validate_and_log_worker_worklog(
@@ -317,6 +337,10 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
     )
     run_parser.set_defaults(tee_agent_output=True)
 
+    validate_parser = subparsers.add_parser("validate", help="Validate one Ralph job without launching workers.")
+    validate_parser.add_argument("--job-name", required=True)
+    validate_parser.add_argument("--repo-path")
+
     smoke_parser = subparsers.add_parser("smoke-test", help="Verify the agent sandbox contract.")
     smoke_parser.add_argument("--repo-path", required=True)
     smoke_parser.add_argument("--agent-backend", choices=["codex", "claude"], default="codex")
@@ -343,6 +367,10 @@ def _find_ralph_job(job_name: str) -> RalphJob:
 
 def _prepare_job_directories(job: RalphJob) -> None:
     job.tasks_path.mkdir(parents=True, exist_ok=True)
+    _require_ralph_job_files(job)
+
+
+def _require_ralph_job_files(job: RalphJob) -> None:
     if not job.plan_path.is_file():
         raise FileNotFoundError(f"Missing Ralph plan: {job.plan_path}")
     if not job.ledger_path.is_file():

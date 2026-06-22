@@ -64,6 +64,8 @@ def read_tasks_from_ledger(ledger: dict[str, Any]) -> list[dict[str, Any]]:
         raise ValueError("ledger.yaml must contain a tasks list.")
     for task in tasks:
         _validate_task_shape(task)
+    _validate_task_ids_are_unique(tasks)
+    _validate_task_dependencies(tasks)
     _validate_planned_notion_task_relationships(tasks)
     return tasks
 
@@ -117,6 +119,24 @@ def _validate_task_shape(task: Any) -> None:
     if _contains_forbidden_plan_field(task):
         raise ValueError(f"Ledger task {task['id']} contains plan-like prose fields.")
     _validate_notion_task_shape(task)
+
+
+def _validate_task_ids_are_unique(tasks: list[dict[str, Any]]) -> None:
+    task_ids = [task["id"] for task in tasks]
+    duplicate_task_ids = sorted({task_id for task_id in task_ids if task_ids.count(task_id) > 1})
+    if duplicate_task_ids:
+        raise ValueError(f"ledger.yaml contains duplicate Ralph task ids: {duplicate_task_ids}")
+
+
+def _validate_task_dependencies(tasks: list[dict[str, Any]]) -> None:
+    task_ids = {task["id"] for task in tasks}
+    for task in tasks:
+        depends_on = task.get("depends_on") or []
+        if not isinstance(depends_on, list) or not all(isinstance(task_id, str) for task_id in depends_on):
+            raise ValueError(f"depends_on for {task['id']} must be a list of Ralph task ids.")
+        unknown_dependency_ids = sorted(set(depends_on) - task_ids)
+        if unknown_dependency_ids:
+            raise ValueError(f"Task {task['id']} depends on unknown Ralph tasks: {unknown_dependency_ids}")
 
 
 def _validate_notion_task_shape(task: dict[str, Any]) -> None:

@@ -8,6 +8,7 @@ import yaml
 from ralph.agent_backends import AgentBackend
 from ralph.tests.conftest import (
     build_example_ledger,
+    build_example_plan,
     build_ledger_with_materialised_notion_task,
     capture_notion_log_content,
     create_job_with_ledger,
@@ -49,6 +50,7 @@ def test_direct_script_help_remains_runnable_from_repo_root() -> None:
     assert completed_process.returncode == 0
     assert "Run Ralph task loops with sliced plan context." in completed_process.stdout
     assert "run" in completed_process.stdout
+    assert "validate" in completed_process.stdout
     assert "smoke-test" in completed_process.stdout
 
 
@@ -69,6 +71,7 @@ def test_package_invocation_help_remains_runnable() -> None:
     assert completed_process.returncode == 0
     assert "Run Ralph task loops with sliced plan context." in completed_process.stdout
     assert "run" in completed_process.stdout
+    assert "validate" in completed_process.stdout
     assert "smoke-test" in completed_process.stdout
 
 
@@ -146,6 +149,20 @@ def test_parse_args_defaults_to_codex_backend_without_eager_command_resolution(
     assert arguments.agent_command is None
 
 
+def test_parse_args_accepts_validate_command() -> None:
+    arguments = _parse_arguments([
+        "validate",
+        "--job-name",
+        "example",
+        "--repo-path",
+        "/tmp/repo",
+    ])
+
+    assert arguments.command == "validate"
+    assert arguments.job_name == "example"
+    assert arguments.repo_path == "/tmp/repo"
+
+
 def test_parse_args_accepts_agent_backend_for_run_and_smoke_test() -> None:
     run_arguments = _parse_arguments([
         "run",
@@ -217,6 +234,179 @@ def test_find_ralph_job_uses_explicit_ralph_home(
     job = _find_ralph_job("example")
 
     assert job.job_path == ralph_home_path / "jobs" / "example"
+
+
+def test_validate_accepts_example_job(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ralph_home_path = _create_ralph_home_with_example_job(tmp_path, monkeypatch)
+
+    main(["validate", "--job-name", "example"])
+
+    output = capsys.readouterr().out
+
+    assert "Ralph job example is valid" in output
+    assert "Next runnable task: R1" in output
+    assert not ralph_home_path.joinpath("jobs", "example", "tasks").exists()
+
+
+def test_validate_with_repo_path_runs_starting_state_checks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ralph_home_path = _create_ralph_home_with_example_job(tmp_path, monkeypatch)
+    repo_path = initialise_git_repo(tmp_path / "target-repo")
+
+    main(["validate", "--job-name", "example", "--repo-path", str(repo_path)])
+
+    assert not ralph_home_path.joinpath("jobs", "example", "tasks").exists()
+
+
+@pytest.mark.parametrize(
+    ("missing_filename", "expected_message"),
+    [
+        ("PLAN.md", "Missing Ralph plan"),
+        ("ledger.yaml", "Missing Ralph ledger"),
+    ],
+)
+def test_validate_rejects_missing_job_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    missing_filename: str,
+    expected_message: str,
+) -> None:
+    _create_ralph_home_with_example_job(tmp_path, monkeypatch)
+    job_path = tmp_path / "ralph-home" / "jobs" / "example"
+    job_path.joinpath(missing_filename).unlink()
+
+    with pytest.raises(FileNotFoundError, match=expected_message):
+        main(["validate", "--job-name", "example"])
+
+
+@pytest.mark.parametrize(
+    ("plan_text", "expected_message"),
+    [
+        (
+            "<!-- ralph-task:start R1 -->\n"
+            "Task context.\n"
+            "<!-- ralph-allowed-bash:start -->\n"
+            "- rg *\n"
+            "<!-- ralph-allowed-bash:end -->\n"
+            "<!-- ralph-verification:start -->\n"
+            "- test -f src/parser.py\n"
+            "<!-- ralph-verification:end -->\n"
+            "<!-- ralph-task:end R1 -->\n",
+            "ralph-shared block",
+        ),
+        (
+            "<!-- ralph-shared:start -->\n"
+            "Shared context.\n"
+            "<!-- ralph-shared:end -->\n",
+            "missing Ralph task blocks",
+        ),
+        (
+            "<!-- ralph-shared:start -->\n"
+            "Shared context.\n"
+            "<!-- ralph-shared:end -->\n\n"
+            "<!-- ralph-task:start R1 -->\n"
+            "Task context.\n"
+            "<!-- ralph-verification:start -->\n"
+            "- test -f src/parser.py\n"
+            "<!-- ralph-verification:end -->\n"
+            "<!-- ralph-task:end R1 -->\n",
+            "ralph-allowed-bash block",
+        ),
+        (
+            "<!-- ralph-shared:start -->\n"
+            "Shared context.\n"
+            "<!-- ralph-shared:end -->\n\n"
+            "<!-- ralph-task:start R1 -->\n"
+            "Task context.\n"
+            "<!-- ralph-allowed-bash:start -->\n"
+            "- rg *\n"
+            "<!-- ralph-allowed-bash:end -->\n"
+            "<!-- ralph-task:end R1 -->\n",
+            "ralph-verification block",
+        ),
+    ],
+)
+def test_validate_rejects_malformed_plan(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    plan_text: str,
+    expected_message: str,
+) -> None:
+    _create_ralph_home_with_job(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        plan_text=plan_text,
+        ledger=build_example_ledger(),
+    )
+
+    with pytest.raises(ValueError, match=expected_message):
+        main(["validate", "--job-name", "example"])
+
+
+@pytest.mark.parametrize("command_policy_key", ["allowed_bash_commands", "verification_commands"])
+def test_validate_rejects_command_policy_copied_into_ledger(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    command_policy_key: str,
+) -> None:
+    ledger = build_example_ledger()
+    ledger["tasks"][0][command_policy_key] = ["rg *"]
+    _create_ralph_home_with_job(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        plan_text=build_example_plan(),
+        ledger=ledger,
+    )
+
+    with pytest.raises(ValueError, match=f"must keep {command_policy_key} in PLAN.md"):
+        main(["validate", "--job-name", "example"])
+
+
+def test_validate_rejects_unknown_task_dependencies(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ledger = build_example_ledger()
+    ledger["tasks"][1]["depends_on"] = ["R404"]
+    _create_ralph_home_with_job(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        plan_text=build_example_plan(),
+        ledger=ledger,
+    )
+
+    with pytest.raises(ValueError, match="depends on unknown Ralph tasks"):
+        main(["validate", "--job-name", "example"])
+
+
+def test_validate_rejects_invalid_notion_task_relationships(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ledger = build_example_ledger()
+    ledger["tasks"][1]["notion_task"] = {
+        "planned": True,
+        "relationship": "child",
+        "related_to": "R1",
+        "title": "Add command line entrypoint",
+        "materialized_task_id": None,
+    }
+    ledger["tasks"][1]["depends_on"] = []
+    _create_ralph_home_with_job(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        plan_text=build_example_plan(),
+        ledger=ledger,
+    )
+
+    with pytest.raises(ValueError, match="must depend on related Ralph task"):
+        main(["validate", "--job-name", "example"])
 
 
 def test_smoke_test_resolves_repo_path_before_running_sandbox_check(
@@ -557,3 +747,32 @@ def test_validate_and_log_worker_worklog_raises_on_malformed_worklog(
             selection=select_first_task(ledger),
             task_path=task_path,
         )
+
+
+def _create_ralph_home_with_example_job(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Path:
+    examples_path = Path(__file__).resolve().parents[1] / "examples"
+    ledger = yaml.safe_load(examples_path.joinpath("ledger.yaml").read_text())
+    return _create_ralph_home_with_job(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        plan_text=examples_path.joinpath("PLAN.md").read_text(),
+        ledger=ledger,
+    )
+
+
+def _create_ralph_home_with_job(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    plan_text: str,
+    ledger: dict[str, object],
+) -> Path:
+    ralph_home_path = tmp_path / "ralph-home"
+    job_path = ralph_home_path / "jobs" / "example"
+    job_path.mkdir(parents=True)
+    job_path.joinpath("PLAN.md").write_text(plan_text)
+    job_path.joinpath("ledger.yaml").write_text(yaml.safe_dump(ledger, sort_keys=False))
+    monkeypatch.setenv("RALPH_HOME", str(ralph_home_path))
+    return ralph_home_path
