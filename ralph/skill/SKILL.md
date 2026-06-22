@@ -19,15 +19,16 @@ Decide which role the current agent is playing before acting:
    Stop after writing or presenting those artefacts. Do not implement target
    repository changes and do not launch workers.
 2. Controller: run `ralph/run_ralph_loop.py`, prepare branches or worktrees,
-   materialise and log Notion tasks, inspect Ralph outputs, handle verification
-   failures, and run controller-only stack commands such as `stax restack`.
+   materialise and log Notion tasks, inspect Ralph outputs, and handle
+   verification failures.
    Do not manually implement worker tasks in the main session.
 3. Worker: only an agent launched by the Ralph runner implements one selected
-   task. Workers must not read Ralph controller state, run `ntt`, or run
-   controller-only stack commands.
+   task. Workers must not read Ralph controller state or run Ralph commands.
+   Workers should use `ntt` to log detailed work on the materialised Notion task
+   when the active task has Notion pairing.
 
-Keep controller-only commands out of task `ralph-allowed-bash` blocks. Those blocks
-belong to the isolated worker and should contain only commands needed for one task.
+Task `ralph-allowed-bash` blocks belong to the isolated worker. Include only the
+commands needed to complete, log, and verify that one task.
 
 ## Files
 

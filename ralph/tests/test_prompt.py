@@ -113,11 +113,9 @@ def test_render_agent_prompt_includes_worklog_instructions_when_materialised(tmp
     assert "decisions made" in prompt
     assert "unresolved risks" in prompt
     assert "BLOCKED or ABORT" in prompt
-    assert "Do NOT run `ntt`" in prompt
+    assert "ntt --log --ticket-number 90 --content-path .ralph-worklog.json" in prompt
     assert "Do NOT put the worklog JSON in your final answer" in prompt
     assert "Do NOT delete the worklog file" in prompt
-    assert "controller sends the worklog to Notion" in prompt
-    assert "ntt --log" not in prompt
 
 
 def test_render_agent_prompt_notion_log_not_applicable_without_task(tmp_path: Path) -> None:

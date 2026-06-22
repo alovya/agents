@@ -130,7 +130,7 @@ def _build_notion_log_instructions(task: dict[str, Any]) -> str:
         "- Each block must have `type` (either `paragraph` or `code`) and `text` (non-empty string).",
         "- Code blocks must also have `language` (non-empty string, e.g. `text`, `python`, `yaml`).",
         "- Include blocks for: commands run (with key outputs or errors), files changed and why, decisions made, and unresolved risks (if any).",
-        "- Do NOT run `ntt` or any Notion commands. The controller sends the worklog to Notion after validating it.",
+        f"- Run `ntt --log --ticket-number {materialised_task_id.removeprefix('ALOVYA-')} --content-path {WORKER_NOTION_WORKLOG_FILENAME}` before returning.",
         "- Do NOT put the worklog JSON in your final answer. The controller reads it from the file.",
         "- Do NOT delete the worklog file. The controller deletes it after successful logging.",
         "- For BLOCKED or ABORT, include the blocker or abort reason in the worklog before returning.",
