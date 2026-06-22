@@ -199,7 +199,7 @@ When explaining code, use rendered Markdown with nested numbered lists that read
 
 ### 9. Document behaviour before software
 
-When writing design docs, READMEs, handovers, or other explanatory docs, put concrete examples, expected behaviour, workflows, and page or data shapes before explaining modules, classes, or implementation structure. Readers need cognitive anchor points before software architecture is meaningful. Start with what the user or system does and what output appears, then explain which code owns each part.
+When writing design docs, READMEs, handovers, or other explanatory docs, put concrete examples, expected behaviour, workflows, and page or data shapes before explaining modules, classes, or implementation structure; guidance in skills or READMEs should always be tailored towards desired behaviour rather than implementation details, which should only be detailed in docstrings to reveal non-obvious behaviour or footguns. Readers need cognitive anchor points before software architecture is meaningful. Start with what the user or system does and what output appears, then explain which code owns each part.
 
 ### 10. Avoid historical context by default
 
