@@ -38,6 +38,12 @@ def build_bwrap_agent_command(
         raise RuntimeError("Ralph requires bubblewrap installed as `bwrap`.")
 
     host_agent_binary_path = _resolve_agent_binary_path(backend_config.command_name)
+    worker_visible_command_dirs = _find_allowed_command_dirs_already_visible_to_worker(
+        allowed_bash_commands=allowed_bash_commands or [],
+        repo_path=repo_path,
+        agent_state_dir=backend_config.agent_state_dir,
+        python_venv_path=python_venv_path,
+    )
 
     command = [bwrap_path]
     command += ["--tmpfs", "/"]
@@ -62,6 +68,7 @@ def build_bwrap_agent_command(
         agent_home_environment_variable=backend_config.agent_home_environment_variable,
         agent_state_dir=backend_config.agent_state_dir,
         python_venv_path=python_venv_path,
+        worker_visible_command_dirs=worker_visible_command_dirs,
     )
 
     command += [str(WORKER_AGENT_BINARY_PATH)]
@@ -370,6 +377,7 @@ def _build_bwrap_worker_environment_options(
     agent_home_environment_variable: str,
     agent_state_dir: Path,
     python_venv_path: Path | None,
+    worker_visible_command_dirs: list[Path],
 ) -> list[str]:
     environment_variables = [
         ("HOME", str(WORKER_HOME_PATH)),
@@ -383,7 +391,10 @@ def _build_bwrap_worker_environment_options(
         ("GNUPGHOME", str(WORKER_HOME_PATH / ".gnupg")),
         ("KUBECONFIG", str(WORKER_HOME_PATH / ".kube" / "config")),
         ("SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt"),
-        ("PATH", _build_agent_path_value(python_venv_path)),
+        ("PATH", _build_agent_path_value(
+            python_venv_path=python_venv_path,
+            worker_visible_command_dirs=worker_visible_command_dirs,
+        )),
     ]
 
     if python_venv_path is not None:
@@ -496,10 +507,65 @@ def _resolve_agent_binary_path(agent_command: str) -> Path:
     return Path(resolved_command).resolve()
 
 
-def _build_agent_path_value(python_venv_path: Path | None) -> str:
+def _find_allowed_command_dirs_already_visible_to_worker(
+    allowed_bash_commands: list[str],
+    repo_path: Path,
+    agent_state_dir: Path,
+    python_venv_path: Path | None,
+) -> list[Path]:
+    command_dirs: list[Path] = []
+    visible_paths = build_explicit_worker_mount_paths(
+        repo_path=repo_path,
+        agent_state_dir=agent_state_dir,
+        python_venv_path=python_venv_path,
+    )
+    for executable_name in _parse_allowed_shell_command_executable_names(allowed_bash_commands):
+        executable_path = shutil.which(executable_name)
+        if executable_path is None:
+            continue
+        executable_dir_path = Path(executable_path).resolve().parent
+        if _can_worker_see_path(executable_dir_path, visible_paths):
+            command_dirs.append(executable_dir_path)
+    return _deduplicate_paths(command_dirs)
+
+
+def _parse_allowed_shell_command_executable_names(allowed_bash_commands: list[str]) -> list[str]:
+    executable_names: list[str] = []
+    for allowed_bash_command in allowed_bash_commands:
+        tokens = shlex.split(allowed_bash_command)
+        if tokens and tokens[0] != "*":
+            executable_names.append(tokens[0])
+    return _deduplicate_strings(executable_names)
+
+
+def _can_worker_see_path(path: Path, visible_paths: list[Path]) -> bool:
+    return any(path.resolve().is_relative_to(visible_path.resolve()) for visible_path in visible_paths)
+
+
+def _deduplicate_paths(paths: list[Path]) -> list[Path]:
+    deduplicated_paths: list[Path] = []
+    for path in paths:
+        if path not in deduplicated_paths:
+            deduplicated_paths.append(path)
+    return deduplicated_paths
+
+
+def _deduplicate_strings(values: list[str]) -> list[str]:
+    deduplicated_values: list[str] = []
+    for value in values:
+        if value not in deduplicated_values:
+            deduplicated_values.append(value)
+    return deduplicated_values
+
+
+def _build_agent_path_value(
+    python_venv_path: Path | None,
+    worker_visible_command_dirs: list[Path],
+) -> str:
     path_entries = []
     if python_venv_path is not None:
         path_entries.append(str(python_venv_path / "bin"))
+    path_entries.extend(str(command_dir_path) for command_dir_path in worker_visible_command_dirs)
     path_entries.extend(
         [
             "/usr/local/sbin",

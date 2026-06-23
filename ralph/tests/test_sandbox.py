@@ -99,6 +99,68 @@ def test_build_bwrap_command_mounts_python_venv_from_path(
     assert str(python_venv_path / "bin") in command[command.index("PATH") + 1].split(":")[0]
 
 
+def test_build_bwrap_command_adds_visible_allowed_command_dirs_to_worker_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bin_path = tmp_path / "bin"
+    bwrap_path = bin_path / "bwrap"
+    agent_path = bin_path / "agent-cli"
+    codex_home_path = tmp_path / "codex-home"
+    repo_path = tmp_path / "target-repo"
+    rg_path = repo_path / "tools" / "rg"
+    bin_path.mkdir()
+    repo_path.mkdir()
+    rg_path.parent.mkdir()
+    codex_home_path.mkdir()
+    write_executable_shim(bwrap_path)
+    write_executable_shim(agent_path)
+    write_executable_shim(rg_path)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(bin_path), str(rg_path.parent)]))
+    monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
+
+    backend_config = select_agent_backend_config(agent_backend="codex", agent_command="agent-cli")
+    command = build_bwrap_agent_command(
+        repo_path=repo_path,
+        backend_config=backend_config,
+        python_venv_path=None,
+        allowed_bash_commands=["rg *"],
+    )
+
+    assert str(rg_path.parent) in command[command.index("PATH") + 1].split(":")
+
+
+def test_build_bwrap_command_ignores_allowed_command_dirs_hidden_from_worker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bin_path = tmp_path / "bin"
+    bwrap_path = bin_path / "bwrap"
+    agent_path = bin_path / "agent-cli"
+    hidden_tool_path = tmp_path / "outside-repo" / "rg"
+    codex_home_path = tmp_path / "codex-home"
+    repo_path = tmp_path / "target-repo"
+    bin_path.mkdir()
+    repo_path.mkdir()
+    hidden_tool_path.parent.mkdir()
+    codex_home_path.mkdir()
+    write_executable_shim(bwrap_path)
+    write_executable_shim(agent_path)
+    write_executable_shim(hidden_tool_path)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(bin_path), str(hidden_tool_path.parent)]))
+    monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
+
+    backend_config = select_agent_backend_config(agent_backend="codex", agent_command="agent-cli")
+    command = build_bwrap_agent_command(
+        repo_path=repo_path,
+        backend_config=backend_config,
+        python_venv_path=None,
+        allowed_bash_commands=["rg *"],
+    )
+
+    assert str(hidden_tool_path.parent) not in command[command.index("PATH") + 1].split(":")
+
+
 def test_build_bwrap_command_uses_allowlisted_worker_environment(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
