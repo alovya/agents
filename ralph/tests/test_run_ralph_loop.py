@@ -499,6 +499,32 @@ def test_refuse_unsafe_starting_state_accepts_public_ralph_examples(tmp_path: Pa
     _refuse_unsafe_starting_state(repo_path, job)
 
 
+def test_refuse_unsafe_starting_state_accepts_ordinary_repo_plan_docs(tmp_path: Path) -> None:
+    repo_path = initialise_git_repo(tmp_path / "target-repo")
+    job = create_job_with_ledger(tmp_path, build_example_ledger())
+    plan_doc_path = repo_path / "product" / "PLAN.md"
+    plan_doc_path.parent.mkdir(parents=True)
+    plan_doc_path.write_text("Public product plan.")
+    run_git(repo_path, "add", ".")
+    run_git(repo_path, "commit", "-m", "Add public plan doc")
+
+    _refuse_unsafe_starting_state(repo_path, job)
+
+
+def test_refuse_unsafe_starting_state_still_rejects_private_ralph_ledgers(tmp_path: Path) -> None:
+    repo_path = initialise_git_repo(tmp_path / "target-repo")
+    job = create_job_with_ledger(tmp_path, build_example_ledger())
+    private_job_path = repo_path / "private-job"
+    private_job_path.mkdir()
+    private_job_path.joinpath("PLAN.md").write_text("Private Ralph plan.")
+    private_job_path.joinpath("ledger.yaml").write_text("tasks: []")
+    run_git(repo_path, "add", ".")
+    run_git(repo_path, "commit", "-m", "Add private Ralph files")
+
+    with pytest.raises(RuntimeError, match="ledger.yaml exists under the target repo"):
+        _refuse_unsafe_starting_state(repo_path, job)
+
+
 def test_marks_task_done_without_mutating_input() -> None:
     ledger = build_example_ledger()
 

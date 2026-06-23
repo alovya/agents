@@ -61,7 +61,7 @@ WORKER_VERIFICATION_BLOCK_PATTERN = re.compile(
 )
 WORKER_COMMIT_LINE_PATTERN = re.compile(r"^RALPH_COMMIT (?P<commit_hash>[0-9a-f]{40})$", re.MULTILINE)
 
-PRIVATE_CONTROL_PATH_NAMES = frozenset({"PLAN.md", "ledger.yaml", ".ralph"})
+PRIVATE_CONTROL_PATH_NAMES = frozenset({"ledger.yaml", ".ralph"})
 
 
 @dataclass(frozen=True)
@@ -430,6 +430,8 @@ def _refuse_unsafe_starting_state(repo_path: Path, job: RalphJob) -> None:
     for control_path_name in PRIVATE_CONTROL_PATH_NAMES:
         if _repo_contains_private_control_path(repo_path, control_path_name):
             raise RuntimeError(f"Refusing to run because {control_path_name} exists under the target repo.")
+    if _repo_contains_private_plan_path(repo_path):
+        raise RuntimeError("Refusing to run because Ralph PLAN.md and ledger.yaml exist under the target repo.")
     if _read_git_status(repo_path):
         raise RuntimeError("Refusing to run because the target repo is dirty.")
 
@@ -571,6 +573,15 @@ def _repo_contains_private_control_path(repo_path: Path, name: str) -> bool:
     return any(
         path.name == name and not _is_public_ralph_example_path(repo_path=repo_path, path=path)
         for path in repo_path.rglob(name)
+    )
+
+
+def _repo_contains_private_plan_path(repo_path: Path) -> bool:
+    return any(
+        path.name == "PLAN.md"
+        and path.with_name("ledger.yaml").exists()
+        and not _is_public_ralph_example_path(repo_path=repo_path, path=path)
+        for path in repo_path.rglob("PLAN.md")
     )
 
 
