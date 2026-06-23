@@ -417,6 +417,10 @@ def _build_bwrap_minimal_host_etc_file_mount_options() -> list[str]:
         sandbox_path=Path("/etc/nsswitch.conf"),
     )
     options += _build_bwrap_read_only_file_mount_options(
+        host_path=Path("/etc/os-release"),
+        sandbox_path=Path("/etc/os-release"),
+    )
+    options += _build_bwrap_read_only_file_mount_options(
         host_path=Path("/etc/ld.so.cache"),
         sandbox_path=Path("/etc/ld.so.cache"),
     )

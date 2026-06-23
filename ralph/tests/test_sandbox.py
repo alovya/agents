@@ -85,6 +85,7 @@ def test_build_bwrap_command_mounts_python_venv_from_path(
         ["--ro-bind", str(Path("/etc/resolv.conf").resolve()), "/etc/resolv.conf"],
     )
     assert contains_subsequence(command, ["--ro-bind", "/etc/nsswitch.conf", "/etc/nsswitch.conf"])
+    assert contains_subsequence(command, ["--ro-bind", "/etc/os-release", "/etc/os-release"])
     assert contains_subsequence(command, ["--ro-bind", "/etc/ld.so.cache", "/etc/ld.so.cache"])
     assert contains_subsequence(
         command,
