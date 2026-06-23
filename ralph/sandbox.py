@@ -41,7 +41,7 @@ def build_bwrap_agent_command(
 
     command = [bwrap_path]
     command += ["--tmpfs", "/"]
-    command += ["--tmpfs", "/tmp"]
+    command += ["--dir", "/tmp"]
     command += _build_bwrap_runtime_mount_options()
     command += _build_bwrap_sandbox_mount_target_dir_options(WORKER_AGENT_BINARY_PATH, create_target_dir=False)
     command += ["--ro-bind", str(host_agent_binary_path), str(WORKER_AGENT_BINARY_PATH)]
