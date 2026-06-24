@@ -26,7 +26,6 @@ from ralph.agent_backends import (
     run_command_and_save_agent_transcripts,
     select_agent_backend,
 )
-from ralph.codex_backend import recover_interrupted_codex_rules
 from ralph.notion import (
     WorklogValidationError,
     delete_worker_worklog_file,
@@ -99,7 +98,6 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
     job = _find_ralph_job(arguments.job_name)
     _prepare_job_directories(job)
     _refuse_unsafe_starting_state(repo_path, job)
-    recover_interrupted_codex_rules(job)
     run_agent_visibility_smoke_test(
         repo_path=repo_path,
         agent_backend_name=arguments.agent_backend,

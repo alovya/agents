@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import contextlib
-import json
 import os
 import shlex
 import shutil
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterator
 
@@ -14,7 +12,6 @@ if TYPE_CHECKING:
     from ralph.agent_backends import AgentBackend
 
 
-CODEX_RULES_BACKUP_FILENAME = "codex-rules-backup.marker"
 CODEX_WORKER_HOME_SEED_FILENAMES = (
     "auth.json",
     ".credentials.json",
@@ -23,12 +20,6 @@ CODEX_WORKER_HOME_SEED_FILENAMES = (
     "installation_id",
     "version.json",
 )
-
-
-@dataclass(frozen=True)
-class CodexRulesSnapshot:
-    existed: bool
-    content: str | None
 
 
 def build_codex_agent_backend(agent_command: str | None) -> "AgentBackend":
@@ -218,97 +209,17 @@ def codex_permission_setup(
 ) -> Iterator[None]:
     codex_home_path = agent_backend.agent_config_dir
     rules_path = codex_rules_path(codex_home_path)
-    backup_path = task_path / CODEX_RULES_BACKUP_FILENAME
-
-    original_rules_snapshot = snapshot_codex_rules(rules_path)
-    write_codex_rules_backup(backup_path, original_rules_snapshot)
 
     try:
         generated_rules = generate_codex_execpolicy_rules(allowed_bash_commands)
         write_codex_rules_atomically(rules_path, generated_rules)
         yield
     finally:
-        restore_codex_rules(rules_path, original_rules_snapshot)
-        backup_path.unlink(missing_ok=True)
-
-
-def recover_interrupted_codex_rules(job: "RalphJob") -> None:
-    from ralph.run_ralph_loop import RalphJob
-
-    backup_path = find_interrupted_codex_rules_backup(job)
-    if backup_path is None:
-        return
-
-    backup_snapshot = read_codex_rules_backup(backup_path)
-    codex_home_path = read_codex_home_path_from_environment()
-    if codex_home_path is None:
-        backup_path.unlink()
-        return
-
-    rules_path = codex_rules_path(codex_home_path)
-    restore_codex_rules(rules_path, backup_snapshot)
-    backup_path.unlink()
-    raise RuntimeError(
-        f"Recovered Codex rules left by interrupted worker from {backup_path}. "
-        "Please restart Ralph to continue."
-    )
-
-
-def find_interrupted_codex_rules_backup(job: "RalphJob") -> Path | None:
-    if not job.tasks_path.is_dir():
-        return None
-    for task_dir in job.tasks_path.iterdir():
-        if not task_dir.is_dir():
-            continue
-        backup_path = task_dir / CODEX_RULES_BACKUP_FILENAME
-        if backup_path.is_file():
-            return backup_path
-    return None
-
-
-def read_codex_home_path_from_environment() -> Path | None:
-    configured_path = os.environ.get("CODEX_HOME")
-    if not configured_path:
-        return None
-    codex_home_path = Path(configured_path).expanduser().resolve()
-    if not codex_home_path.is_dir():
-        return None
-    return codex_home_path
+        rules_path.unlink(missing_ok=True)
 
 
 def codex_rules_path(codex_home_path: Path) -> Path:
     return codex_home_path / "rules" / "default.rules"
-
-
-def snapshot_codex_rules(rules_path: Path) -> CodexRulesSnapshot:
-    if not rules_path.is_file():
-        return CodexRulesSnapshot(existed=False, content=None)
-    return CodexRulesSnapshot(existed=True, content=rules_path.read_text(encoding="utf-8"))
-
-
-def write_codex_rules_backup(backup_path: Path, snapshot: CodexRulesSnapshot) -> None:
-    backup_content = {
-        "existed": snapshot.existed,
-        "content": snapshot.content,
-    }
-    backup_path.parent.mkdir(parents=True, exist_ok=True)
-    backup_path.write_text(json.dumps(backup_content, indent=2), encoding="utf-8")
-
-
-def read_codex_rules_backup(backup_path: Path) -> CodexRulesSnapshot:
-    backup_content = json.loads(backup_path.read_text(encoding="utf-8"))
-    return CodexRulesSnapshot(
-        existed=backup_content["existed"],
-        content=backup_content["content"],
-    )
-
-
-def restore_codex_rules(rules_path: Path, snapshot: CodexRulesSnapshot) -> None:
-    if not snapshot.existed:
-        rules_path.unlink(missing_ok=True)
-        return
-    rules_path.parent.mkdir(parents=True, exist_ok=True)
-    rules_path.write_text(snapshot.content, encoding="utf-8")
 
 
 def generate_codex_execpolicy_rules(allowed_bash_commands: list[str]) -> str:

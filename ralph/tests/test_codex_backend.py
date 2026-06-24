@@ -6,24 +6,15 @@ import pytest
 
 from ralph.agent_backends import AgentBackend
 from ralph.codex_backend import (
-    CODEX_RULES_BACKUP_FILENAME,
     CODEX_WORKER_HOME_SEED_FILENAMES,
-    CodexRulesSnapshot,
     codex_permission_setup,
     codex_rules_path,
-    find_interrupted_codex_rules_backup,
     generate_codex_execpolicy_rules,
     parse_command_to_execpolicy_pattern,
     prepare_codex_worker_home,
-    read_codex_rules_backup,
-    recover_interrupted_codex_rules,
     require_codex_home_path,
-    restore_codex_rules,
-    snapshot_codex_rules,
     write_codex_rules_atomically,
-    write_codex_rules_backup,
 )
-from ralph.tests.conftest import build_example_ledger, create_job_with_ledger
 
 
 def test_require_codex_home_path_rejects_missing_environment(
@@ -237,140 +228,7 @@ def test_write_codex_rules_atomically_leaves_no_temp_file_after_success(tmp_path
     assert not temp_path.exists()
 
 
-def test_snapshot_codex_rules_captures_existing_content(tmp_path: Path) -> None:
-    rules_path = tmp_path / "rules" / "default.rules"
-    rules_path.parent.mkdir(parents=True)
-    rules_path.write_text("original rules")
-
-    snapshot = snapshot_codex_rules(rules_path)
-
-    assert snapshot.existed is True
-    assert snapshot.content == "original rules"
-
-
-def test_snapshot_codex_rules_records_absence(tmp_path: Path) -> None:
-    rules_path = tmp_path / "rules" / "default.rules"
-
-    snapshot = snapshot_codex_rules(rules_path)
-
-    assert snapshot.existed is False
-    assert snapshot.content is None
-
-
-def test_restore_codex_rules_recreates_original_content(tmp_path: Path) -> None:
-    rules_path = tmp_path / "rules" / "default.rules"
-    rules_path.parent.mkdir(parents=True)
-    rules_path.write_text("modified rules")
-
-    restore_codex_rules(rules_path, CodexRulesSnapshot(existed=True, content="original rules"))
-
-    assert rules_path.read_text() == "original rules"
-
-
-def test_restore_codex_rules_removes_rules_when_originally_absent(tmp_path: Path) -> None:
-    rules_path = tmp_path / "rules" / "default.rules"
-    rules_path.parent.mkdir(parents=True)
-    rules_path.write_text("generated rules")
-
-    restore_codex_rules(rules_path, CodexRulesSnapshot(existed=False, content=None))
-
-    assert not rules_path.exists()
-
-
-def test_write_and_read_codex_rules_backup(tmp_path: Path) -> None:
-    marker_path = tmp_path / "task" / CODEX_RULES_BACKUP_FILENAME
-    original_snapshot = CodexRulesSnapshot(existed=True, content="original rules")
-
-    write_codex_rules_backup(marker_path, original_snapshot)
-    recovered_snapshot = read_codex_rules_backup(marker_path)
-
-    assert recovered_snapshot.existed is True
-    assert recovered_snapshot.content == "original rules"
-
-
-def test_codex_rules_backup_location_under_ralph_task_directory(tmp_path: Path) -> None:
-    task_path = tmp_path / "tasks" / "R1_20260621T120000Z"
-    task_path.mkdir(parents=True)
-    marker_path = task_path / CODEX_RULES_BACKUP_FILENAME
-
-    write_codex_rules_backup(marker_path, CodexRulesSnapshot(existed=False, content=None))
-
-    assert marker_path.is_file()
-    assert marker_path.parent == task_path
-
-
-def test_find_interrupted_codex_rules_backup_returns_backup_path(tmp_path: Path) -> None:
-    job = create_job_with_ledger(tmp_path, build_example_ledger())
-    task_path = job.tasks_path / "R1_20260621T120000Z"
-    task_path.mkdir(parents=True)
-    marker_path = task_path / CODEX_RULES_BACKUP_FILENAME
-    marker_path.write_text('{"existed": true, "content": "original"}')
-
-    found_marker = find_interrupted_codex_rules_backup(job)
-
-    assert found_marker == marker_path
-
-
-def test_find_interrupted_codex_rules_backup_returns_none_when_absent(tmp_path: Path) -> None:
-    job = create_job_with_ledger(tmp_path, build_example_ledger())
-    job.tasks_path.mkdir(parents=True, exist_ok=True)
-
-    found_marker = find_interrupted_codex_rules_backup(job)
-
-    assert found_marker is None
-
-
-def test_recover_interrupted_codex_rules_restores_and_raises(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    codex_home_path = tmp_path / "codex-home"
-    codex_home_path.mkdir()
-    rules_path = codex_rules_path(codex_home_path)
-    rules_path.parent.mkdir(parents=True)
-    rules_path.write_text("generated rules")
-
-    job = create_job_with_ledger(tmp_path, build_example_ledger())
-    task_path = job.tasks_path / "R1_20260621T120000Z"
-    task_path.mkdir(parents=True)
-    marker_path = task_path / CODEX_RULES_BACKUP_FILENAME
-    marker_path.write_text('{"existed": true, "content": "original rules"}')
-
-    monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
-
-    with pytest.raises(RuntimeError, match="Recovered Codex rules left by interrupted worker"):
-        recover_interrupted_codex_rules(job)
-
-    assert rules_path.read_text() == "original rules"
-    assert not marker_path.exists()
-
-
-def test_recover_interrupted_codex_rules_removes_rules_when_originally_absent(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    codex_home_path = tmp_path / "codex-home"
-    codex_home_path.mkdir()
-    rules_path = codex_rules_path(codex_home_path)
-    rules_path.parent.mkdir(parents=True)
-    rules_path.write_text("generated rules")
-
-    job = create_job_with_ledger(tmp_path, build_example_ledger())
-    task_path = job.tasks_path / "R1_20260621T120000Z"
-    task_path.mkdir(parents=True)
-    marker_path = task_path / CODEX_RULES_BACKUP_FILENAME
-    marker_path.write_text('{"existed": false, "content": null}')
-
-    monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
-
-    with pytest.raises(RuntimeError, match="Recovered Codex rules left by interrupted worker"):
-        recover_interrupted_codex_rules(job)
-
-    assert not rules_path.exists()
-    assert not marker_path.exists()
-
-
-def test_codex_permission_setup_writes_temporary_rules_then_restores_original_rules(
+def test_codex_permission_setup_writes_temporary_rules_then_removes_them(
     tmp_path: Path,
 ) -> None:
     codex_home_path = tmp_path / "codex-home"
@@ -379,9 +237,8 @@ def test_codex_permission_setup_writes_temporary_rules_then_restores_original_ru
     codex_home_path.mkdir()
     task_path.mkdir()
     rules_path.parent.mkdir(parents=True)
-    rules_path.write_text("original rules", encoding="utf-8")
     observed_rules_inside_context: list[str] = []
-    observed_backup_inside_context: list[bool] = []
+    observed_task_files_inside_context: list[list[str]] = []
 
     agent_backend = AgentBackend(
         backend_name="codex",
@@ -396,14 +253,14 @@ def test_codex_permission_setup_writes_temporary_rules_then_restores_original_ru
         task_path=task_path,
     ):
         observed_rules_inside_context.append(rules_path.read_text(encoding="utf-8"))
-        observed_backup_inside_context.append(
-            (task_path / CODEX_RULES_BACKUP_FILENAME).is_file()
+        observed_task_files_inside_context.append(
+            sorted(path.name for path in task_path.iterdir())
         )
 
-    assert observed_backup_inside_context == [True]
+    assert observed_task_files_inside_context == [[]]
     assert observed_rules_inside_context == ["prefix_rule(pattern=['rg'], decision=\"allow\")\n"]
-    assert rules_path.read_text(encoding="utf-8") == "original rules"
-    assert not (task_path / CODEX_RULES_BACKUP_FILENAME).exists()
+    assert not rules_path.exists()
+    assert list(task_path.iterdir()) == []
 
 
 def _write_codex_seed_files(codex_home_path: Path) -> None:
