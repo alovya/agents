@@ -23,7 +23,7 @@ from ralph.agent_backends import (
     build_worker_allowed_bash_commands,
     extract_agent_result_text,
     run_command_and_save_agent_transcripts,
-    select_agent_backend_config,
+    select_agent_backend,
 )
 from ralph.codex_backend import recover_interrupted_codex_rules
 from ralph.notion import (
@@ -43,7 +43,7 @@ from ralph.plan_selection import (
 )
 from ralph.prompt import render_agent_prompt
 from ralph.sandbox import (
-    backend_permission_setup,
+    agent_permission_setup,
     build_bwrap_agent_command,
     reject_worker_visible_path_that_overlaps_hidden_state,
     resolve_python_venv_path,
@@ -84,7 +84,7 @@ def main(argv: list[str] | None = None) -> None:
     if arguments.command == "smoke-test":
         run_agent_visibility_smoke_test(
             repo_path=_resolve_repo_path(arguments.repo_path),
-            agent_backend=arguments.agent_backend,
+            agent_backend_name=arguments.agent_backend,
             agent_command=arguments.agent_command,
             python_venv_path=resolve_python_venv_path(arguments.python_venv),
         )
@@ -101,7 +101,7 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
     recover_interrupted_codex_rules(job)
     run_agent_visibility_smoke_test(
         repo_path=repo_path,
-        agent_backend=arguments.agent_backend,
+        agent_backend_name=arguments.agent_backend,
         agent_command=arguments.agent_command,
         python_venv_path=python_venv_path,
     )
@@ -133,7 +133,7 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
             repo_path=repo_path,
             task=selection.task,
             prompt=prompt,
-            agent_backend=arguments.agent_backend,
+            agent_backend_name=arguments.agent_backend,
             agent_command=arguments.agent_command,
             python_venv_path=python_venv_path,
             output_path=task_path / "agent-output.txt",
@@ -152,7 +152,7 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
                 selection=selection,
                 task_path=task_path,
                 promise=agent_result.promise,
-                agent_backend=arguments.agent_backend,
+                agent_backend_name=arguments.agent_backend,
             )
             print(f"Agent stopped with {agent_result.promise}. See {task_path}")
             return
@@ -182,7 +182,7 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
             log_failed_verification_to_notion(
                 selection=selection,
                 task_path=task_path,
-                agent_backend=arguments.agent_backend,
+                agent_backend_name=arguments.agent_backend,
             )
             raise
         log_completed_worker_to_notion(
@@ -190,7 +190,7 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
             task_path=task_path,
             changed_files=_read_committed_files(repo_path=repo_path, commit_hash=commit_hash),
             commit_hash=commit_hash,
-            agent_backend=arguments.agent_backend,
+            agent_backend_name=arguments.agent_backend,
         )
         print(f"Completed {selection.task['id']}: {commit_hash}")
 
@@ -440,7 +440,7 @@ def _run_agent(
     repo_path: Path,
     task: dict[str, Any],
     prompt: str,
-    agent_backend: str,
+    agent_backend_name: str,
     agent_command: str | None,
     python_venv_path: Path | None,
     output_path: Path,
@@ -448,20 +448,20 @@ def _run_agent(
     task_path: Path | None = None,
 ) -> AgentResult:
     _write_text(output_path, "")
-    backend_config = select_agent_backend_config(
-        agent_backend=agent_backend,
+    agent_backend = select_agent_backend(
+        agent_backend_name=agent_backend_name,
         agent_command=agent_command,
     )
     allowed_bash_commands = build_worker_allowed_bash_commands(task)
     command = build_bwrap_agent_command(
         repo_path=repo_path,
-        backend_config=backend_config,
+        agent_backend=agent_backend,
         python_venv_path=python_venv_path,
         allowed_bash_commands=allowed_bash_commands,
     )
 
-    with backend_permission_setup(
-        backend_config=backend_config,
+    with agent_permission_setup(
+        agent_backend=agent_backend,
         allowed_bash_commands=allowed_bash_commands,
         task_path=task_path,
     ):
@@ -470,7 +470,7 @@ def _run_agent(
             prompt=prompt,
             output_path=output_path,
             tee_output=tee_output,
-            backend_config=backend_config,
+            agent_backend=agent_backend,
         )
 
 
@@ -479,13 +479,13 @@ def _run_agent_command(
     prompt: str,
     output_path: Path,
     tee_output: bool,
-    backend_config: AgentBackend,
+    agent_backend: AgentBackend,
 ) -> AgentResult:
     completed_process = run_command_and_save_agent_transcripts(
         command=command,
         input_text=prompt,
         output_path=output_path,
-        backend_config=backend_config,
+        agent_backend=agent_backend,
         tee_output=tee_output,
     )
 
@@ -493,19 +493,19 @@ def _run_agent_command(
         raise RuntimeError(_build_agent_failure_message(
             exit_code=completed_process.returncode,
             output_path=output_path,
-            agent_backend=backend_config.backend_name,
+            agent_backend_name=agent_backend.backend_name,
         ))
     output = extract_agent_result_text(
-        backend_config=backend_config,
+        agent_backend=agent_backend,
         raw_output=completed_process.stdout or "",
     )
     promise = _parse_agent_promise(output)
     return AgentResult(promise=promise, output=output)
 
 
-def _build_agent_failure_message(exit_code: int, output_path: Path, agent_backend: str) -> str:
+def _build_agent_failure_message(exit_code: int, output_path: Path, agent_backend_name: str) -> str:
     message = f"Agent failed with exit code {exit_code}. See readable transcript: {output_path}"
-    if agent_backend == "claude":
+    if agent_backend_name == "claude":
         message += f"\nRaw Claude stream: {output_path.with_suffix('.raw.jsonl')}"
     return message
 

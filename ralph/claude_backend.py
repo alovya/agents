@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from ralph.agent_backends import AgentBackend
 
 
-def build_claude_backend_config(agent_command: str | None) -> "AgentBackend":
+def build_claude_agent_backend(agent_command: str | None) -> "AgentBackend":
     from ralph.agent_backends import AgentBackend, read_default_claude_agent_command
     from ralph.codex_backend import require_agent_state_dir_from_environment_variable
 

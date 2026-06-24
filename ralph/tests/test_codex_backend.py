@@ -105,22 +105,22 @@ def test_prepare_codex_worker_home_seeds_only_worker_required_files(tmp_path: Pa
         "locked",
         encoding="utf-8",
     )
-    source_backend_config = AgentBackend(
+    source_agent_backend = AgentBackend(
         backend_name="codex",
         command_name="codex",
         agent_state_dir=source_codex_home_path,
         agent_home_environment_variable="CODEX_HOME",
     )
 
-    with prepare_codex_worker_home(source_backend_config) as worker_backend_config:
-        worker_codex_home_path = worker_backend_config.agent_state_dir
+    with prepare_codex_worker_home(source_agent_backend) as worker_agent_backend:
+        worker_codex_home_path = worker_agent_backend.agent_state_dir
         worker_skill_path = worker_codex_home_path / "skills" / "ralph"
         worker_current_path = worker_codex_home_path / "packages" / "standalone" / "current"
         worker_releases_path = worker_codex_home_path / "packages" / "standalone" / "releases"
 
-        assert worker_backend_config.backend_name == "codex"
-        assert worker_backend_config.command_name == "codex"
-        assert worker_backend_config.agent_home_environment_variable == "CODEX_HOME"
+        assert worker_agent_backend.backend_name == "codex"
+        assert worker_agent_backend.command_name == "codex"
+        assert worker_agent_backend.agent_home_environment_variable == "CODEX_HOME"
         assert worker_codex_home_path != source_codex_home_path
         assert _read_codex_seed_files(worker_codex_home_path) == _read_codex_seed_files(
             source_codex_home_path
@@ -137,8 +137,8 @@ def test_prepare_codex_worker_home_seeds_only_worker_required_files(tmp_path: Pa
         assert worker_current_path.is_symlink()
         assert worker_current_path.resolve() == worker_releases_path / "codex-v1"
         assert worker_current_path.resolve().is_relative_to(worker_codex_home_path)
-        assert worker_backend_config.read_only_home_mounts[0].host_path == source_releases_path
-        assert worker_backend_config.read_only_home_mounts[0].worker_path == worker_releases_path
+        assert worker_agent_backend.read_only_home_mounts[0].host_path == source_releases_path
+        assert worker_agent_backend.read_only_home_mounts[0].worker_path == worker_releases_path
 
     assert not worker_codex_home_path.exists()
 
@@ -148,19 +148,19 @@ def test_codex_permission_setup_writes_rules_inside_prepared_worker_home(tmp_pat
     task_path = tmp_path / "task"
     source_codex_home_path.mkdir()
     task_path.mkdir()
-    source_backend_config = AgentBackend(
+    source_agent_backend = AgentBackend(
         backend_name="codex",
         command_name="codex",
         agent_state_dir=source_codex_home_path,
         agent_home_environment_variable="CODEX_HOME",
     )
 
-    with prepare_codex_worker_home(source_backend_config) as worker_backend_config:
+    with prepare_codex_worker_home(source_agent_backend) as worker_agent_backend:
         source_rules_path = codex_rules_path(source_codex_home_path)
-        worker_rules_path = codex_rules_path(worker_backend_config.agent_state_dir)
+        worker_rules_path = codex_rules_path(worker_agent_backend.agent_state_dir)
 
         with codex_permission_setup(
-            backend_config=worker_backend_config,
+            agent_backend=worker_agent_backend,
             allowed_bash_commands=["rg *"],
             task_path=task_path,
         ):
@@ -383,7 +383,7 @@ def test_codex_permission_setup_writes_temporary_rules_then_restores_original_ru
     observed_rules_inside_context: list[str] = []
     observed_backup_inside_context: list[bool] = []
 
-    backend_config = AgentBackend(
+    agent_backend = AgentBackend(
         backend_name="codex",
         command_name="codex",
         agent_state_dir=codex_home_path,
@@ -391,7 +391,7 @@ def test_codex_permission_setup_writes_temporary_rules_then_restores_original_ru
     )
 
     with codex_permission_setup(
-        backend_config=backend_config,
+        agent_backend=agent_backend,
         allowed_bash_commands=["rg *"],
         task_path=task_path,
     ):

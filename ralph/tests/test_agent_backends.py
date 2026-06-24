@@ -10,7 +10,7 @@ from ralph.agent_backends import (
     build_worker_allowed_bash_commands,
     run_command_and_save_agent_transcripts,
     run_command_and_tee_output,
-    select_agent_backend_config,
+    select_agent_backend,
 )
 
 
@@ -24,9 +24,9 @@ def test_codex_backend_uses_ralph_agent_command_before_codex_specific_default(
     monkeypatch.setenv("RALPH_AGENT_COMMAND", "custom-agent")
     monkeypatch.setenv("RALPH_CODEX_COMMAND", "custom-codex")
 
-    backend_config = select_agent_backend_config(agent_backend="codex", agent_command=None)
+    agent_backend = select_agent_backend(agent_backend_name="codex", agent_command=None)
 
-    assert backend_config.command_name == "custom-agent"
+    assert agent_backend.command_name == "custom-agent"
 
 
 def test_codex_backend_uses_codex_specific_default_before_binary_name(
@@ -39,9 +39,9 @@ def test_codex_backend_uses_codex_specific_default_before_binary_name(
     monkeypatch.delenv("RALPH_AGENT_COMMAND", raising=False)
     monkeypatch.setenv("RALPH_CODEX_COMMAND", "custom-codex")
 
-    backend_config = select_agent_backend_config(agent_backend="codex", agent_command=None)
+    agent_backend = select_agent_backend(agent_backend_name="codex", agent_command=None)
 
-    assert backend_config.command_name == "custom-codex"
+    assert agent_backend.command_name == "custom-codex"
 
 
 def test_agent_command_override_wins_after_backend_selection(
@@ -54,9 +54,9 @@ def test_agent_command_override_wins_after_backend_selection(
     monkeypatch.setenv("RALPH_AGENT_COMMAND", "custom-agent")
     monkeypatch.setenv("RALPH_CODEX_COMMAND", "custom-codex")
 
-    backend_config = select_agent_backend_config(agent_backend="codex", agent_command="override-agent")
+    agent_backend = select_agent_backend(agent_backend_name="codex", agent_command="override-agent")
 
-    assert backend_config.command_name == "override-agent"
+    assert agent_backend.command_name == "override-agent"
 
 
 def test_codex_backend_falls_back_to_codex_binary_name(
@@ -69,9 +69,9 @@ def test_codex_backend_falls_back_to_codex_binary_name(
     monkeypatch.delenv("RALPH_AGENT_COMMAND", raising=False)
     monkeypatch.delenv("RALPH_CODEX_COMMAND", raising=False)
 
-    backend_config = select_agent_backend_config(agent_backend="codex", agent_command=None)
+    agent_backend = select_agent_backend(agent_backend_name="codex", agent_command=None)
 
-    assert backend_config.command_name == "codex"
+    assert agent_backend.command_name == "codex"
 
 
 def test_claude_backend_uses_ralph_agent_command_before_claude_specific_default(
@@ -84,9 +84,9 @@ def test_claude_backend_uses_ralph_agent_command_before_claude_specific_default(
     monkeypatch.setenv("RALPH_AGENT_COMMAND", "custom-agent")
     monkeypatch.setenv("RALPH_CLAUDE_COMMAND", "custom-claude")
 
-    backend_config = select_agent_backend_config(agent_backend="claude", agent_command=None)
+    agent_backend = select_agent_backend(agent_backend_name="claude", agent_command=None)
 
-    assert backend_config.command_name == "custom-agent"
+    assert agent_backend.command_name == "custom-agent"
 
 
 def test_claude_backend_uses_claude_specific_default_before_binary_name(
@@ -99,9 +99,9 @@ def test_claude_backend_uses_claude_specific_default_before_binary_name(
     monkeypatch.delenv("RALPH_AGENT_COMMAND", raising=False)
     monkeypatch.setenv("RALPH_CLAUDE_COMMAND", "custom-claude")
 
-    backend_config = select_agent_backend_config(agent_backend="claude", agent_command=None)
+    agent_backend = select_agent_backend(agent_backend_name="claude", agent_command=None)
 
-    assert backend_config.command_name == "custom-claude"
+    assert agent_backend.command_name == "custom-claude"
 
 
 def test_claude_backend_falls_back_to_claude_binary_name(
@@ -114,9 +114,9 @@ def test_claude_backend_falls_back_to_claude_binary_name(
     monkeypatch.delenv("RALPH_AGENT_COMMAND", raising=False)
     monkeypatch.delenv("RALPH_CLAUDE_COMMAND", raising=False)
 
-    backend_config = select_agent_backend_config(agent_backend="claude", agent_command=None)
+    agent_backend = select_agent_backend(agent_backend_name="claude", agent_command=None)
 
-    assert backend_config.command_name == "claude"
+    assert agent_backend.command_name == "claude"
 
 
 def test_build_worker_allowed_bash_commands_combines_controller_and_plan_commands() -> None:
@@ -165,7 +165,7 @@ def test_run_command_and_save_agent_transcripts_keeps_codex_transcript_plain(
     capsys,
 ) -> None:
     output_path = tmp_path / "agent-output.txt"
-    backend_config = AgentBackend(
+    agent_backend = AgentBackend(
         backend_name="codex",
         command_name="bash",
         agent_state_dir=tmp_path / "codex-home",
@@ -176,7 +176,7 @@ def test_run_command_and_save_agent_transcripts_keeps_codex_transcript_plain(
         command=["bash", "-lc", "printf 'before\\n'; cat; printf 'after\\n'"],
         input_text="middle\n",
         output_path=output_path,
-        backend_config=backend_config,
+        agent_backend=agent_backend,
         tee_output=True,
     )
 
@@ -193,7 +193,7 @@ def test_run_command_and_save_agent_transcripts_keeps_claude_raw_stream_and_read
 ) -> None:
     output_path = tmp_path / "agent-output.txt"
     raw_output_path = tmp_path / "agent-output.raw.jsonl"
-    backend_config = AgentBackend(
+    agent_backend = AgentBackend(
         backend_name="claude",
         command_name="/workspace/venv/bin/python",
         agent_state_dir=tmp_path / "claude-config",
@@ -231,7 +231,7 @@ def test_run_command_and_save_agent_transcripts_keeps_claude_raw_stream_and_read
         command=["/workspace/venv/bin/python", "-c", python_code],
         input_text="prompt ignored by this fake agent\n",
         output_path=output_path,
-        backend_config=backend_config,
+        agent_backend=agent_backend,
         tee_output=True,
     )
 

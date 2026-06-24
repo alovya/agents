@@ -232,7 +232,7 @@ def test_controller_logs_claude_worker_promise_with_readable_transcript_first(
         selection=selection,
         task_path=tmp_path,
         promise="BLOCKED",
-        agent_backend="claude",
+        agent_backend_name="claude",
     )
 
     assert observed_content["blocks"][1]["text"] == f"Transcript path: {tmp_path / 'agent-output.txt'}"
@@ -267,7 +267,7 @@ def test_controller_logs_claude_failed_verification_with_raw_stream_path(
     log_failed_verification_to_notion(
         selection=selection,
         task_path=tmp_path,
-        agent_backend="claude",
+        agent_backend_name="claude",
     )
 
     assert observed_content["blocks"][2]["text"] == f"Transcript path: {tmp_path / 'agent-output.txt'}"
@@ -309,7 +309,7 @@ def test_controller_logs_claude_completion_with_raw_stream_path(
         task_path=tmp_path,
         changed_files=["M src/parser.py"],
         commit_hash="abc123",
-        agent_backend="claude",
+        agent_backend_name="claude",
     )
 
     assert observed_content["blocks"][3]["text"] == f"Transcript path: {tmp_path / 'agent-output.txt'}"

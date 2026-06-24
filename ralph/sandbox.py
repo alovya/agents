@@ -27,7 +27,7 @@ def resolve_ralph_home_path() -> Path:
 
 def build_bwrap_agent_command(
     repo_path: Path,
-    backend_config: "AgentBackend",
+    agent_backend: "AgentBackend",
     python_venv_path: Path | None,
     allowed_bash_commands: list[str] | None = None,
 ) -> list[str]:
@@ -37,11 +37,11 @@ def build_bwrap_agent_command(
     if bwrap_path is None:
         raise RuntimeError("Ralph requires bubblewrap installed as `bwrap`.")
 
-    host_agent_binary_path = _resolve_agent_binary_path(backend_config.command_name)
+    host_agent_binary_path = _resolve_agent_binary_path(agent_backend.command_name)
     worker_visible_command_dirs = _find_allowed_command_dirs_already_visible_to_worker(
         allowed_bash_commands=allowed_bash_commands or [],
         repo_path=repo_path,
-        agent_state_dir=backend_config.agent_state_dir,
+        agent_state_dir=agent_backend.agent_state_dir,
         python_venv_path=python_venv_path,
     )
 
@@ -55,8 +55,8 @@ def build_bwrap_agent_command(
     command += ["--bind", str(repo_path), str(repo_path)]
     command += ["--dev", "/dev"]
 
-    command += _build_bwrap_agent_home_mount_options(backend_config.agent_state_dir)
-    command += _build_bwrap_read_only_agent_home_mount_options(backend_config.read_only_home_mounts)
+    command += _build_bwrap_agent_home_mount_options(agent_backend.agent_state_dir)
+    command += _build_bwrap_read_only_agent_home_mount_options(agent_backend.read_only_home_mounts)
     command += _build_bwrap_sandbox_mount_target_dir_options(WORKER_HOME_PATH)
     command += _build_bwrap_sandbox_mount_target_dir_options(WORKER_TEMP_PATH)
 
@@ -66,15 +66,15 @@ def build_bwrap_agent_command(
 
     command += ["--clearenv"]
     command += _build_bwrap_worker_environment_options(
-        agent_home_environment_variable=backend_config.agent_home_environment_variable,
-        agent_state_dir=backend_config.agent_state_dir,
+        agent_home_environment_variable=agent_backend.agent_home_environment_variable,
+        agent_state_dir=agent_backend.agent_state_dir,
         python_venv_path=python_venv_path,
         worker_visible_command_dirs=worker_visible_command_dirs,
     )
 
     command += [str(WORKER_AGENT_BINARY_PATH)]
     command += build_agent_command_tail(
-        backend_config=backend_config,
+        agent_backend=agent_backend,
         repo_path=repo_path,
         allowed_bash_commands=allowed_bash_commands or [],
     )
@@ -83,11 +83,11 @@ def build_bwrap_agent_command(
 
 def run_agent_visibility_smoke_test(
     repo_path: Path,
-    agent_backend: str,
+    agent_backend_name: str,
     agent_command: str | None,
     python_venv_path: Path | None,
 ) -> None:
-    from ralph.agent_backends import extract_agent_result_text, select_agent_backend_config
+    from ralph.agent_backends import extract_agent_result_text, select_agent_backend
 
     if not repo_path.is_dir():
         raise FileNotFoundError(f"Target repo does not exist: {repo_path}")
@@ -95,23 +95,23 @@ def run_agent_visibility_smoke_test(
         path=repo_path,
         role="Target repo",
     )
-    backend_config = select_agent_backend_config(
-        agent_backend=agent_backend,
+    agent_backend = select_agent_backend(
+        agent_backend_name=agent_backend_name,
         agent_command=agent_command,
     )
     prompt = build_agent_visibility_smoke_test_prompt(
         repo_path=repo_path,
-        backend_config=backend_config,
+        agent_backend=agent_backend,
         python_venv_path=python_venv_path,
     )
     allowed_bash_commands = [_build_agent_visibility_smoke_test_agent_command(
         repo_path=repo_path,
-        backend_config=backend_config,
+        agent_backend=agent_backend,
         python_venv_path=python_venv_path,
     )]
     command = build_bwrap_agent_command(
         repo_path=repo_path,
-        backend_config=backend_config,
+        agent_backend=agent_backend,
         python_venv_path=python_venv_path,
         allowed_bash_commands=allowed_bash_commands,
     )
@@ -126,7 +126,7 @@ def run_agent_visibility_smoke_test(
     if completed_process.returncode != 0:
         raise RuntimeError(f"Ralph agent sandbox smoke test failed:\n{completed_process.stdout}")
     output = extract_agent_result_text(
-        backend_config=backend_config,
+        agent_backend=agent_backend,
         raw_output=completed_process.stdout or "",
     )
     if _find_last_non_empty_line(output) != "RALPH_SANDBOX_OK":
@@ -135,12 +135,12 @@ def run_agent_visibility_smoke_test(
 
 def build_agent_visibility_smoke_test_prompt(
     repo_path: Path,
-    backend_config: "AgentBackend",
+    agent_backend: "AgentBackend",
     python_venv_path: Path | None,
 ) -> str:
     shell_command = _build_agent_visibility_smoke_test_agent_command(
         repo_path=repo_path,
-        backend_config=backend_config,
+        agent_backend=agent_backend,
         python_venv_path=python_venv_path,
     )
     return "\n".join(
@@ -154,12 +154,12 @@ def build_agent_visibility_smoke_test_prompt(
 
 def _build_agent_visibility_smoke_test_agent_command(
     repo_path: Path,
-    backend_config: "AgentBackend",
+    agent_backend: "AgentBackend",
     python_venv_path: Path | None,
 ) -> str:
     shell_command = _build_agent_visibility_smoke_test_shell_command(
         repo_path=repo_path,
-        backend_config=backend_config,
+        agent_backend=agent_backend,
         python_venv_path=python_venv_path,
     )
     return f"bash -lc {quote_shell_value(shell_command)}"
@@ -167,14 +167,14 @@ def _build_agent_visibility_smoke_test_agent_command(
 
 def _build_agent_visibility_smoke_test_shell_command(
     repo_path: Path,
-    backend_config: "AgentBackend",
+    agent_backend: "AgentBackend",
     python_venv_path: Path | None,
 ) -> str:
     hidden_paths = _remove_paths_that_overlap_explicit_mounts(
         hidden_paths=build_sensitive_paths_that_workers_must_not_see(),
         explicitly_visible_paths=build_explicit_worker_mount_paths(
             repo_path=repo_path,
-            agent_state_dir=backend_config.agent_state_dir,
+            agent_state_dir=agent_backend.agent_state_dir,
             python_venv_path=python_venv_path,
         ),
     )
@@ -184,12 +184,12 @@ def _build_agent_visibility_smoke_test_shell_command(
         build_credential_environment_variables_that_workers_must_not_receive()
     )
     command_parts += _build_shell_assertions_that_unselected_backend_environment_variables_are_absent(
-        selected_agent_home_environment_variable=backend_config.agent_home_environment_variable,
+        selected_agent_home_environment_variable=agent_backend.agent_home_environment_variable,
     )
     command_parts += _build_shell_assertions_that_worker_environment_matches_bwrap_setenv_options(
         _build_backend_state_environment_variables_to_verify_exactly(
-            agent_home_environment_variable=backend_config.agent_home_environment_variable,
-            agent_state_dir=backend_config.agent_state_dir,
+            agent_home_environment_variable=agent_backend.agent_home_environment_variable,
+            agent_state_dir=agent_backend.agent_state_dir,
             python_venv_path=python_venv_path,
         )
     )
@@ -627,16 +627,16 @@ def reject_worker_visible_path_that_overlaps_hidden_state(path: Path, role: str)
 
 
 @contextlib.contextmanager
-def backend_permission_setup(
-    backend_config: "AgentBackend",
+def agent_permission_setup(
+    agent_backend: "AgentBackend",
     allowed_bash_commands: list[str],
     task_path: Path | None,
 ) -> Iterator[None]:
     from ralph.codex_backend import codex_permission_setup
 
-    if backend_config.backend_name == "codex" and task_path is not None:
+    if agent_backend.backend_name == "codex" and task_path is not None:
         with codex_permission_setup(
-            backend_config=backend_config,
+            agent_backend=agent_backend,
             allowed_bash_commands=allowed_bash_commands,
             task_path=task_path,
         ):

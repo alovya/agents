@@ -7,13 +7,13 @@ from pathlib import Path
 from typing import Any
 
 from ralph.claude_backend import (
-    build_claude_backend_config,
+    build_claude_agent_backend,
     build_claude_command_tail,
     extract_claude_stream_result_text,
     format_claude_stream_event_for_human,
 )
 from ralph.codex_backend import (
-    build_codex_backend_config,
+    build_codex_agent_backend,
     build_codex_command_tail,
 )
 
@@ -58,31 +58,31 @@ ALWAYS_ALLOWED_WORKER_BASH_COMMANDS = [
 ]
 
 
-def select_agent_backend_config(
-    agent_backend: str,
+def select_agent_backend(
+    agent_backend_name: str,
     agent_command: str | None,
 ) -> AgentBackend:
-    if agent_backend == "codex":
-        return build_codex_backend_config(agent_command)
-    if agent_backend == "claude":
-        return build_claude_backend_config(agent_command)
-    raise ValueError(f"Unsupported agent backend: {agent_backend}")
+    if agent_backend_name == "codex":
+        return build_codex_agent_backend(agent_command)
+    if agent_backend_name == "claude":
+        return build_claude_agent_backend(agent_command)
+    raise ValueError(f"Unsupported agent backend: {agent_backend_name}")
 
 
 def build_agent_command_tail(
-    backend_config: AgentBackend,
+    agent_backend: AgentBackend,
     repo_path: Path,
     allowed_bash_commands: list[str],
 ) -> list[str]:
-    if backend_config.backend_name == "codex":
+    if agent_backend.backend_name == "codex":
         return build_codex_command_tail(repo_path)
-    if backend_config.backend_name == "claude":
+    if agent_backend.backend_name == "claude":
         return build_claude_command_tail(allowed_bash_commands)
-    raise ValueError(f"Unsupported agent backend: {backend_config.backend_name}")
+    raise ValueError(f"Unsupported agent backend: {agent_backend.backend_name}")
 
 
-def extract_agent_result_text(backend_config: AgentBackend, raw_output: str) -> str:
-    if backend_config.backend_name != "claude":
+def extract_agent_result_text(agent_backend: AgentBackend, raw_output: str) -> str:
+    if agent_backend.backend_name != "claude":
         return raw_output
     return extract_claude_stream_result_text(raw_output)
 
@@ -111,7 +111,7 @@ def run_command_and_tee_output(
         command=command,
         input_text=input_text,
         output_path=output_path,
-        backend_config=AgentBackend(
+        agent_backend=AgentBackend(
             backend_name="codex",
             command_name=command[0],
             agent_state_dir=Path(),
@@ -125,11 +125,11 @@ def run_command_and_save_agent_transcripts(
     command: list[str],
     input_text: str,
     output_path: Path,
-    backend_config: AgentBackend,
+    agent_backend: AgentBackend,
     tee_output: bool,
 ) -> subprocess.CompletedProcess[str]:
     transcript_strategy = _choose_agent_transcript_strategy(
-        backend_name=backend_config.backend_name,
+        backend_name=agent_backend.backend_name,
         output_path=output_path,
     )
 

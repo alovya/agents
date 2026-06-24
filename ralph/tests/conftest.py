@@ -213,7 +213,7 @@ def contains_subsequence(command: list[str], expected: list[str]) -> bool:
     )
 
 
-def build_test_backend_config(
+def build_test_agent_backend(
     backend_name: str,
     agent_state_dir: Path,
     agent_home_environment_variable: str,

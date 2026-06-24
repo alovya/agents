@@ -203,7 +203,7 @@ def test_claude_runtime_error_points_at_readable_transcript_then_raw_stream(
     tmp_path: Path,
 ) -> None:
     output_path = tmp_path / "agent-output.txt"
-    backend_config = AgentBackend(
+    agent_backend = AgentBackend(
         backend_name="claude",
         command_name="/workspace/venv/bin/python",
         agent_state_dir=tmp_path / "claude-config",
@@ -220,7 +220,7 @@ def test_claude_runtime_error_points_at_readable_transcript_then_raw_stream(
             prompt="prompt ignored by failing agent\n",
             output_path=output_path,
             tee_output=False,
-            backend_config=backend_config,
+            agent_backend=agent_backend,
         )
 
     assert str(error.value).splitlines() == [
@@ -433,7 +433,7 @@ def test_smoke_test_resolves_repo_path_before_running_sandbox_check(
 
     def run_agent_visibility_smoke_test_mock(
         repo_path: Path,
-        agent_backend: str,
+        agent_backend_name: str,
         agent_command: str | None,
         python_venv_path: Path | None,
     ) -> None:

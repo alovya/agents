@@ -108,7 +108,7 @@ def log_worker_promise_to_notion(
     selection: TaskSelection,
     task_path: Path,
     promise: str,
-    agent_backend: str = "codex",
+    agent_backend_name: str = "codex",
 ) -> None:
     notion_task_id = materialised_notion_task_id_from_task(selection.task)
     if notion_task_id is None:
@@ -124,7 +124,7 @@ def log_worker_promise_to_notion(
                 {"type": "paragraph", "text": f"Ralph task {selection.task['id']} stopped before verification."},
                 *_build_agent_transcript_reference_blocks(
                     task_path=task_path,
-                    agent_backend=agent_backend,
+                    agent_backend_name=agent_backend_name,
                 ),
             ],
         },
@@ -134,7 +134,7 @@ def log_worker_promise_to_notion(
 def log_failed_verification_to_notion(
     selection: TaskSelection,
     task_path: Path,
-    agent_backend: str = "codex",
+    agent_backend_name: str = "codex",
 ) -> None:
     notion_task_id = materialised_notion_task_id_from_task(selection.task)
     if notion_task_id is None:
@@ -155,7 +155,7 @@ def log_failed_verification_to_notion(
                 },
                 *_build_agent_transcript_reference_blocks(
                     task_path=task_path,
-                    agent_backend=agent_backend,
+                    agent_backend_name=agent_backend_name,
                 ),
             ],
         },
@@ -167,7 +167,7 @@ def log_completed_worker_to_notion(
     task_path: Path,
     changed_files: list[str],
     commit_hash: str,
-    agent_backend: str = "codex",
+    agent_backend_name: str = "codex",
 ) -> None:
     notion_task_id = materialised_notion_task_id_from_task(selection.task)
     if notion_task_id is None:
@@ -189,7 +189,7 @@ def log_completed_worker_to_notion(
                 {"type": "paragraph", "text": f"Commit hash: {commit_hash}"},
                 *_build_agent_transcript_reference_blocks(
                     task_path=task_path,
-                    agent_backend=agent_backend,
+                    agent_backend_name=agent_backend_name,
                 ),
             ],
         },
@@ -514,11 +514,11 @@ def _worker_launch_constraints() -> list[str]:
     ]
 
 
-def _build_agent_transcript_reference_blocks(task_path: Path, agent_backend: str) -> list[dict[str, str]]:
+def _build_agent_transcript_reference_blocks(task_path: Path, agent_backend_name: str) -> list[dict[str, str]]:
     transcript_blocks = [
         {"type": "paragraph", "text": f"Transcript path: {task_path / 'agent-output.txt'}"},
     ]
-    if agent_backend == "claude":
+    if agent_backend_name == "claude":
         transcript_blocks.append({
             "type": "paragraph",
             "text": f"Raw Claude stream path: {task_path / 'agent-output.raw.jsonl'}",

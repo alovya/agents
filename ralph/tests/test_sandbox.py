@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ralph.agent_backends import AgentBackend, AgentHomeMount, select_agent_backend_config
+from ralph.agent_backends import AgentBackend, AgentHomeMount, select_agent_backend
 from ralph.sandbox import (
     DEFAULT_RALPH_HOME_PATH,
     WORKER_AGENT_BINARY_PATH,
@@ -20,7 +20,7 @@ from ralph.sandbox import (
     run_agent_visibility_smoke_test,
 )
 from ralph.tests.conftest import (
-    build_test_backend_config,
+    build_test_agent_backend,
     command_windows,
     contains_subsequence,
     create_python_venv_shape,
@@ -62,10 +62,10 @@ def test_build_bwrap_command_mounts_python_venv_from_path(
     monkeypatch.setenv("PATH", str(bin_path))
     monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
 
-    backend_config = select_agent_backend_config(agent_backend="codex", agent_command="agent-cli")
+    agent_backend = select_agent_backend(agent_backend_name="codex", agent_command="agent-cli")
     command = build_bwrap_agent_command(
         repo_path=tmp_path,
-        backend_config=backend_config,
+        agent_backend=agent_backend,
         python_venv_path=python_venv_path,
     )
 
@@ -119,10 +119,10 @@ def test_build_bwrap_command_adds_visible_allowed_command_dirs_to_worker_path(
     monkeypatch.setenv("PATH", os.pathsep.join([str(bin_path), str(rg_path.parent)]))
     monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
 
-    backend_config = select_agent_backend_config(agent_backend="codex", agent_command="agent-cli")
+    agent_backend = select_agent_backend(agent_backend_name="codex", agent_command="agent-cli")
     command = build_bwrap_agent_command(
         repo_path=repo_path,
-        backend_config=backend_config,
+        agent_backend=agent_backend,
         python_venv_path=None,
         allowed_bash_commands=["rg *"],
     )
@@ -150,10 +150,10 @@ def test_build_bwrap_command_ignores_allowed_command_dirs_hidden_from_worker(
     monkeypatch.setenv("PATH", os.pathsep.join([str(bin_path), str(hidden_tool_path.parent)]))
     monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
 
-    backend_config = select_agent_backend_config(agent_backend="codex", agent_command="agent-cli")
+    agent_backend = select_agent_backend(agent_backend_name="codex", agent_command="agent-cli")
     command = build_bwrap_agent_command(
         repo_path=repo_path,
-        backend_config=backend_config,
+        agent_backend=agent_backend,
         python_venv_path=None,
         allowed_bash_commands=["rg *"],
     )
@@ -181,10 +181,10 @@ def test_build_bwrap_command_uses_allowlisted_worker_environment(
     monkeypatch.setenv("OPENAI_API_KEY", "secret-openai-token")
     monkeypatch.setenv("SSH_AUTH_SOCK", "/tmp/ssh-agent.sock")
 
-    backend_config = select_agent_backend_config(agent_backend="codex", agent_command="agent-cli")
+    agent_backend = select_agent_backend(agent_backend_name="codex", agent_command="agent-cli")
     command = build_bwrap_agent_command(
         repo_path=repo_path,
-        backend_config=backend_config,
+        agent_backend=agent_backend,
         python_venv_path=None,
     )
 
@@ -226,7 +226,7 @@ def test_build_bwrap_command_mounts_read_only_worker_home_paths_after_writable_h
     write_executable_shim(agent_path)
     monkeypatch.setenv("PATH", str(bin_path))
 
-    backend_config = AgentBackend(
+    agent_backend = AgentBackend(
         backend_name="codex",
         command_name="agent-cli",
         agent_state_dir=worker_codex_home_path,
@@ -241,7 +241,7 @@ def test_build_bwrap_command_mounts_read_only_worker_home_paths_after_writable_h
 
     command = build_bwrap_agent_command(
         repo_path=repo_path,
-        backend_config=backend_config,
+        agent_backend=agent_backend,
         python_venv_path=None,
     )
 
@@ -288,10 +288,10 @@ def test_build_bwrap_command_uses_claude_worker_environment(
     monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_config_dir_path))
 
-    backend_config = select_agent_backend_config(agent_backend="claude", agent_command=None)
+    agent_backend = select_agent_backend(agent_backend_name="claude", agent_command=None)
     command = build_bwrap_agent_command(
         repo_path=repo_path,
-        backend_config=backend_config,
+        agent_backend=agent_backend,
         python_venv_path=None,
     )
 
@@ -318,10 +318,10 @@ def test_build_bwrap_agent_command_mounts_codex_binary(
     monkeypatch.setenv("PATH", str(bin_path))
     monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
 
-    backend_config = select_agent_backend_config(agent_backend="codex", agent_command=None)
+    agent_backend = select_agent_backend(agent_backend_name="codex", agent_command=None)
     command = build_bwrap_agent_command(
         repo_path=repo_path,
-        backend_config=backend_config,
+        agent_backend=agent_backend,
         python_venv_path=None,
     )
 
@@ -345,10 +345,10 @@ def test_build_bwrap_agent_command_uses_claude_command_tail(
     monkeypatch.setenv("PATH", str(bin_path))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_config_dir_path))
 
-    backend_config = select_agent_backend_config(agent_backend="claude", agent_command=None)
+    agent_backend = select_agent_backend(agent_backend_name="claude", agent_command=None)
     command = build_bwrap_agent_command(
         repo_path=repo_path,
-        backend_config=backend_config,
+        agent_backend=agent_backend,
         python_venv_path=None,
         allowed_bash_commands=[
             "python -m pytest ralph/tests/test_run_ralph_loop.py",
@@ -406,10 +406,10 @@ def test_build_bwrap_agent_command_keeps_codex_command_tail_with_ask_for_approva
     monkeypatch.setenv("PATH", str(bin_path))
     monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
 
-    backend_config = select_agent_backend_config(agent_backend="codex", agent_command=None)
+    agent_backend = select_agent_backend(agent_backend_name="codex", agent_command=None)
     command = build_bwrap_agent_command(
         repo_path=repo_path,
-        backend_config=backend_config,
+        agent_backend=agent_backend,
         python_venv_path=None,
     )
 
@@ -436,7 +436,7 @@ def test_build_agent_visibility_smoke_test_prompt_checks_sandbox_contract(tmp_pa
 
     prompt = build_agent_visibility_smoke_test_prompt(
         repo_path=repo_path,
-        backend_config=build_test_backend_config(
+        agent_backend=build_test_agent_backend(
             backend_name="codex",
             agent_state_dir=agent_state_dir,
             agent_home_environment_variable="CODEX_HOME",
@@ -474,7 +474,7 @@ def test_build_agent_visibility_smoke_test_prompt_checks_sandbox_contract(tmp_pa
 def test_build_agent_visibility_smoke_test_prompt_skips_venv_checks_when_absent(tmp_path: Path) -> None:
     prompt = build_agent_visibility_smoke_test_prompt(
         repo_path=tmp_path / "target-repo",
-        backend_config=build_test_backend_config(
+        agent_backend=build_test_agent_backend(
             backend_name="codex",
             agent_state_dir=tmp_path / "codex-home",
             agent_home_environment_variable="CODEX_HOME",
@@ -489,7 +489,7 @@ def test_build_agent_visibility_smoke_test_prompt_skips_venv_checks_when_absent(
 def test_build_agent_visibility_smoke_test_prompt_does_not_reject_explicit_mounts(tmp_path: Path) -> None:
     prompt = build_agent_visibility_smoke_test_prompt(
         repo_path=tmp_path / "target-repo",
-        backend_config=build_test_backend_config(
+        agent_backend=build_test_agent_backend(
             backend_name="codex",
             agent_state_dir=Path("/workspace/.codex"),
             agent_home_environment_variable="CODEX_HOME",
@@ -504,7 +504,7 @@ def test_build_agent_visibility_smoke_test_prompt_does_not_reject_explicit_mount
 def test_build_agent_visibility_smoke_test_prompt_hides_unselected_backend_state(tmp_path: Path) -> None:
     prompt = build_agent_visibility_smoke_test_prompt(
         repo_path=tmp_path / "target-repo",
-        backend_config=build_test_backend_config(
+        agent_backend=build_test_agent_backend(
             backend_name="claude",
             agent_state_dir=Path("/workspace/.claude"),
             agent_home_environment_variable="CLAUDE_CONFIG_DIR",
@@ -524,7 +524,7 @@ def test_run_agent_visibility_smoke_test_rejects_missing_repo(tmp_path: Path) ->
     with pytest.raises(FileNotFoundError, match="Target repo does not exist"):
         run_agent_visibility_smoke_test(
             repo_path=missing_repo_path,
-            agent_backend="codex",
+            agent_backend_name="codex",
             agent_command="agent-cli",
             python_venv_path=None,
         )
@@ -545,7 +545,7 @@ def test_run_agent_visibility_smoke_test_rejects_sensitive_repo_mount(
     with pytest.raises(ValueError, match="Target repo must not overlap"):
         run_agent_visibility_smoke_test(
             repo_path=repo_path,
-            agent_backend="codex",
+            agent_backend_name="codex",
             agent_command="agent-cli",
             python_venv_path=None,
         )
