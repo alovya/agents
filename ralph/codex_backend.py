@@ -4,6 +4,8 @@ import contextlib
 import json
 import os
 import shlex
+import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterator
@@ -13,6 +15,14 @@ if TYPE_CHECKING:
 
 
 CODEX_RULES_BACKUP_FILENAME = "codex-rules-backup.marker"
+CODEX_WORKER_HOME_SEED_FILENAMES = (
+    "auth.json",
+    ".credentials.json",
+    "config.toml",
+    "AGENTS.md",
+    "installation_id",
+    "version.json",
+)
 
 
 @dataclass(frozen=True)
@@ -45,6 +55,35 @@ def build_codex_command_tail(repo_path: Path) -> list[str]:
         "--ephemeral",
         "-",
     ]
+
+
+@contextlib.contextmanager
+def prepare_codex_worker_home(source_backend_config: "AgentBackend") -> Iterator["AgentBackend"]:
+    from ralph.agent_backends import AgentBackend
+
+    source_codex_home_path = source_backend_config.agent_state_dir
+    with tempfile.TemporaryDirectory(prefix="ralph-codex-home-") as worker_home_dir:
+        worker_codex_home_path = Path(worker_home_dir).resolve()
+        _copy_codex_worker_seed_files(
+            source_codex_home_path=source_codex_home_path,
+            worker_codex_home_path=worker_codex_home_path,
+        )
+        _copy_codex_worker_skills(
+            source_codex_home_path=source_codex_home_path,
+            worker_codex_home_path=worker_codex_home_path,
+        )
+        _create_codex_worker_runtime_dirs(worker_codex_home_path)
+        read_only_home_mounts = _prepare_codex_worker_packages(
+            source_codex_home_path=source_codex_home_path,
+            worker_codex_home_path=worker_codex_home_path,
+        )
+        yield AgentBackend(
+            backend_name=source_backend_config.backend_name,
+            command_name=source_backend_config.command_name,
+            agent_state_dir=worker_codex_home_path,
+            agent_home_environment_variable=source_backend_config.agent_home_environment_variable,
+            read_only_home_mounts=read_only_home_mounts,
+        )
 
 
 def require_codex_home_path() -> Path:
@@ -87,6 +126,88 @@ def _refuse_agent_state_dir_that_exposes_other_sensitive_state(agent_state_dir: 
                 f"{variable_name} must not overlap other worker-hidden sensitive state: "
                 f"{agent_state_dir} overlaps {sensitive_path}"
             )
+
+
+def _copy_codex_worker_seed_files(source_codex_home_path: Path, worker_codex_home_path: Path) -> None:
+    for seed_filename in CODEX_WORKER_HOME_SEED_FILENAMES:
+        source_seed_path = source_codex_home_path / seed_filename
+        worker_seed_path = worker_codex_home_path / seed_filename
+        if source_seed_path.is_file():
+            shutil.copy2(source_seed_path, worker_seed_path)
+
+
+def _copy_codex_worker_skills(source_codex_home_path: Path, worker_codex_home_path: Path) -> None:
+    source_skills_path = source_codex_home_path / "skills"
+    worker_skills_path = worker_codex_home_path / "skills"
+    if source_skills_path.is_dir():
+        shutil.copytree(source_skills_path, worker_skills_path, symlinks=False)
+
+
+def _create_codex_worker_runtime_dirs(worker_codex_home_path: Path) -> None:
+    (worker_codex_home_path / ".tmp").mkdir(parents=True, exist_ok=True)
+    (worker_codex_home_path / "rules").mkdir(parents=True, exist_ok=True)
+
+
+def _prepare_codex_worker_packages(
+    source_codex_home_path: Path,
+    worker_codex_home_path: Path,
+) -> tuple["AgentHomeMount", ...]:
+    from ralph.agent_backends import AgentHomeMount
+
+    source_standalone_path = source_codex_home_path / "packages" / "standalone"
+    worker_standalone_path = worker_codex_home_path / "packages" / "standalone"
+    source_releases_path = source_standalone_path / "releases"
+    worker_releases_path = worker_standalone_path / "releases"
+
+    if not source_standalone_path.exists():
+        return ()
+
+    worker_standalone_path.mkdir(parents=True, exist_ok=True)
+    _copy_codex_standalone_install_lock(
+        source_standalone_path=source_standalone_path,
+        worker_standalone_path=worker_standalone_path,
+    )
+    if not source_releases_path.is_dir():
+        return ()
+
+    _link_codex_worker_current_release(
+        source_standalone_path=source_standalone_path,
+        source_releases_path=source_releases_path,
+        worker_standalone_path=worker_standalone_path,
+        worker_releases_path=worker_releases_path,
+    )
+    return (
+        AgentHomeMount(
+            host_path=source_releases_path,
+            worker_path=worker_releases_path,
+        ),
+    )
+
+
+def _copy_codex_standalone_install_lock(source_standalone_path: Path, worker_standalone_path: Path) -> None:
+    source_install_lock_path = source_standalone_path / "install.lock"
+    worker_install_lock_path = worker_standalone_path / "install.lock"
+    if source_install_lock_path.is_file():
+        shutil.copy2(source_install_lock_path, worker_install_lock_path)
+
+
+def _link_codex_worker_current_release(
+    source_standalone_path: Path,
+    source_releases_path: Path,
+    worker_standalone_path: Path,
+    worker_releases_path: Path,
+) -> None:
+    source_current_path = source_standalone_path / "current"
+    if not source_current_path.exists():
+        return
+
+    source_current_release_path = source_current_path.resolve()
+    if not source_current_release_path.is_relative_to(source_releases_path):
+        return
+
+    worker_current_release_path = worker_releases_path / source_current_release_path.relative_to(source_releases_path)
+    worker_current_path = worker_standalone_path / "current"
+    worker_current_path.symlink_to(worker_current_release_path)
 
 
 @contextlib.contextmanager
