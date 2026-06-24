@@ -85,34 +85,34 @@ def test_require_codex_home_path_rejects_broad_sensitive_parent(
 
 
 def test_prepare_codex_worker_home_seeds_only_worker_required_files(tmp_path: Path) -> None:
-    source_codex_home_path = tmp_path / "source-codex-home"
+    master_codex_home_path = tmp_path / "master-codex-home"
     external_skill_path = tmp_path / "external-ralph-skill"
-    source_releases_path = source_codex_home_path / "packages" / "standalone" / "releases"
-    source_current_release_path = source_releases_path / "codex-v1"
-    source_codex_home_path.mkdir()
+    master_releases_path = master_codex_home_path / "packages" / "standalone" / "releases"
+    master_current_release_path = master_releases_path / "codex-v1"
+    master_codex_home_path.mkdir()
     external_skill_path.mkdir()
-    source_current_release_path.mkdir(parents=True)
-    _write_codex_seed_files(source_codex_home_path)
-    (source_codex_home_path / "plugins").mkdir()
-    (source_codex_home_path / "cache").mkdir()
-    (source_codex_home_path / "skills").mkdir()
-    (source_codex_home_path / "skills" / "ralph").symlink_to(external_skill_path)
+    master_current_release_path.mkdir(parents=True)
+    _write_codex_seed_files(master_codex_home_path)
+    (master_codex_home_path / "plugins").mkdir()
+    (master_codex_home_path / "cache").mkdir()
+    (master_codex_home_path / "skills").mkdir()
+    (master_codex_home_path / "skills" / "ralph").symlink_to(external_skill_path)
     (external_skill_path / "SKILL.md").write_text("Ralph skill", encoding="utf-8")
-    (source_codex_home_path / "packages" / "standalone" / "current").symlink_to(
-        source_current_release_path
+    (master_codex_home_path / "packages" / "standalone" / "current").symlink_to(
+        master_current_release_path
     )
-    (source_codex_home_path / "packages" / "standalone" / "install.lock").write_text(
+    (master_codex_home_path / "packages" / "standalone" / "install.lock").write_text(
         "locked",
         encoding="utf-8",
     )
-    source_agent_backend = AgentBackend(
+    master_agent_backend = AgentBackend(
         backend_name="codex",
         command_name="codex",
-        agent_config_dir=source_codex_home_path,
+        agent_config_dir=master_codex_home_path,
         agent_home_environment_variable="CODEX_HOME",
     )
 
-    with prepare_codex_worker_home(source_agent_backend) as worker_agent_backend:
+    with prepare_codex_worker_home(master_agent_backend) as worker_agent_backend:
         worker_codex_home_path = worker_agent_backend.agent_config_dir
         worker_skill_path = worker_codex_home_path / "skills" / "ralph"
         worker_current_path = worker_codex_home_path / "packages" / "standalone" / "current"
@@ -121,9 +121,9 @@ def test_prepare_codex_worker_home_seeds_only_worker_required_files(tmp_path: Pa
         assert worker_agent_backend.backend_name == "codex"
         assert worker_agent_backend.command_name == "codex"
         assert worker_agent_backend.agent_home_environment_variable == "CODEX_HOME"
-        assert worker_codex_home_path != source_codex_home_path
+        assert worker_codex_home_path != master_codex_home_path
         assert _read_codex_seed_files(worker_codex_home_path) == _read_codex_seed_files(
-            source_codex_home_path
+            master_codex_home_path
         )
         assert worker_skill_path.is_dir()
         assert not worker_skill_path.is_symlink()
@@ -137,26 +137,26 @@ def test_prepare_codex_worker_home_seeds_only_worker_required_files(tmp_path: Pa
         assert worker_current_path.is_symlink()
         assert worker_current_path.resolve() == worker_releases_path / "codex-v1"
         assert worker_current_path.resolve().is_relative_to(worker_codex_home_path)
-        assert worker_agent_backend.read_only_home_mounts[0].host_path == source_releases_path
+        assert worker_agent_backend.read_only_home_mounts[0].host_path == master_releases_path
         assert worker_agent_backend.read_only_home_mounts[0].worker_path == worker_releases_path
 
     assert not worker_codex_home_path.exists()
 
 
 def test_codex_permission_setup_writes_rules_inside_prepared_worker_home(tmp_path: Path) -> None:
-    source_codex_home_path = tmp_path / "source-codex-home"
+    master_codex_home_path = tmp_path / "master-codex-home"
     task_path = tmp_path / "task"
-    source_codex_home_path.mkdir()
+    master_codex_home_path.mkdir()
     task_path.mkdir()
-    source_agent_backend = AgentBackend(
+    master_agent_backend = AgentBackend(
         backend_name="codex",
         command_name="codex",
-        agent_config_dir=source_codex_home_path,
+        agent_config_dir=master_codex_home_path,
         agent_home_environment_variable="CODEX_HOME",
     )
 
-    with prepare_codex_worker_home(source_agent_backend) as worker_agent_backend:
-        source_rules_path = codex_rules_path(source_codex_home_path)
+    with prepare_codex_worker_home(master_agent_backend) as worker_agent_backend:
+        master_rules_path = codex_rules_path(master_codex_home_path)
         worker_rules_path = codex_rules_path(worker_agent_backend.agent_config_dir)
 
         with codex_permission_setup(
@@ -168,10 +168,10 @@ def test_codex_permission_setup_writes_rules_inside_prepared_worker_home(tmp_pat
                 worker_rules_path.read_text(encoding="utf-8")
                 == "prefix_rule(pattern=['rg'], decision=\"allow\")\n"
             )
-            assert not source_rules_path.exists()
+            assert not master_rules_path.exists()
 
         assert not worker_rules_path.exists()
-        assert not source_rules_path.exists()
+        assert not master_rules_path.exists()
 
 
 def test_generate_codex_execpolicy_rules_renders_prefix_rule_syntax() -> None:

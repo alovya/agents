@@ -87,7 +87,10 @@ def run_agent_visibility_smoke_test(
     agent_command: str | None,
     python_venv_path: Path | None,
 ) -> None:
-    from ralph.agent_backends import extract_agent_result_text, select_agent_backend
+    from ralph.agent_backends import (
+        prepare_agent_backend_for_worker,
+        select_agent_backend,
+    )
 
     if not repo_path.is_dir():
         raise FileNotFoundError(f"Target repo does not exist: {repo_path}")
@@ -95,10 +98,25 @@ def run_agent_visibility_smoke_test(
         path=repo_path,
         role="Target repo",
     )
-    agent_backend = select_agent_backend(
+    master_agent_backend = select_agent_backend(
         agent_backend_name=agent_backend_name,
         agent_command=agent_command,
     )
+    with prepare_agent_backend_for_worker(master_agent_backend) as worker_agent_backend:
+        _run_agent_visibility_smoke_test_with_worker_agent_backend(
+            repo_path=repo_path,
+            agent_backend=worker_agent_backend,
+            python_venv_path=python_venv_path,
+        )
+
+
+def _run_agent_visibility_smoke_test_with_worker_agent_backend(
+    repo_path: Path,
+    agent_backend: "AgentBackend",
+    python_venv_path: Path | None,
+) -> None:
+    from ralph.agent_backends import extract_agent_result_text
+
     prompt = build_agent_visibility_smoke_test_prompt(
         repo_path=repo_path,
         agent_backend=agent_backend,

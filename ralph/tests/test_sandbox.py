@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import shlex
 from pathlib import Path
 
@@ -213,15 +214,15 @@ def test_build_bwrap_command_mounts_read_only_worker_home_paths_after_writable_h
     bin_path = tmp_path / "bin"
     bwrap_path = bin_path / "bwrap"
     agent_path = bin_path / "agent-cli"
-    source_codex_home_path = tmp_path / "source-codex-home"
+    master_codex_home_path = tmp_path / "master-codex-home"
     worker_codex_home_path = tmp_path / "worker-codex-home"
-    source_package_releases_path = source_codex_home_path / "packages" / "standalone" / "releases"
+    master_package_releases_path = master_codex_home_path / "packages" / "standalone" / "releases"
     worker_package_releases_path = worker_codex_home_path / "packages" / "standalone" / "releases"
     repo_path = tmp_path / "target-repo"
     bin_path.mkdir()
     repo_path.mkdir()
     worker_codex_home_path.mkdir()
-    source_package_releases_path.mkdir(parents=True)
+    master_package_releases_path.mkdir(parents=True)
     write_executable_shim(bwrap_path)
     write_executable_shim(agent_path)
     monkeypatch.setenv("PATH", str(bin_path))
@@ -233,7 +234,7 @@ def test_build_bwrap_command_mounts_read_only_worker_home_paths_after_writable_h
         agent_home_environment_variable="CODEX_HOME",
         read_only_home_mounts=(
             AgentHomeMount(
-                host_path=source_package_releases_path,
+                host_path=master_package_releases_path,
                 worker_path=worker_package_releases_path,
             ),
         ),
@@ -246,7 +247,7 @@ def test_build_bwrap_command_mounts_read_only_worker_home_paths_after_writable_h
     )
 
     writable_home_bind_index = command.index(str(worker_codex_home_path))
-    read_only_releases_mount_index = command.index(str(source_package_releases_path))
+    read_only_releases_mount_index = command.index(str(master_package_releases_path))
     assert writable_home_bind_index < read_only_releases_mount_index
     assert contains_subsequence(
         command,
@@ -254,15 +255,15 @@ def test_build_bwrap_command_mounts_read_only_worker_home_paths_after_writable_h
     )
     assert contains_subsequence(
         command,
-        ["--ro-bind", str(source_package_releases_path), str(worker_package_releases_path)],
+        ["--ro-bind", str(master_package_releases_path), str(worker_package_releases_path)],
     )
     assert not contains_subsequence(
         command,
-        ["--bind", str(source_codex_home_path), str(source_codex_home_path)],
+        ["--bind", str(master_codex_home_path), str(master_codex_home_path)],
     )
     assert not contains_subsequence(
         command,
-        ["--ro-bind", str(source_codex_home_path), str(source_codex_home_path)],
+        ["--ro-bind", str(master_codex_home_path), str(master_codex_home_path)],
     )
     assert "plugins" not in command
     assert "cache" not in command
@@ -549,6 +550,70 @@ def test_run_agent_visibility_smoke_test_rejects_sensitive_repo_mount(
             agent_command="agent-cli",
             python_venv_path=None,
         )
+
+
+def test_run_agent_visibility_smoke_test_uses_prepared_codex_worker_home(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    master_codex_home_path = tmp_path / "master-codex-home"
+    repo_path = tmp_path / "target-repo"
+    master_codex_home_path.mkdir()
+    repo_path.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(master_codex_home_path))
+    monkeypatch.setattr(
+        "ralph.sandbox.build_sensitive_paths_that_workers_must_not_see",
+        lambda: [master_codex_home_path],
+    )
+
+    observed_worker_agent_backend: dict[str, AgentBackend] = {}
+    observed_prompt: list[str] = []
+
+    def build_bwrap_agent_command_mock(
+        repo_path: Path,
+        agent_backend: AgentBackend,
+        python_venv_path: Path | None,
+        allowed_bash_commands: list[str] | None = None,
+    ) -> list[str]:
+        observed_worker_agent_backend["bwrap"] = agent_backend
+        return ["fake-bwrap-command"]
+
+    def subprocess_run_mock(
+        command: list[str],
+        input: str,
+        text: bool,
+        stdout: int,
+        stderr: int,
+        check: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        observed_prompt.append(input)
+        return subprocess.CompletedProcess(
+            args=command,
+            returncode=0,
+            stdout="RALPH_SANDBOX_OK\n",
+        )
+
+    monkeypatch.setattr(
+        "ralph.sandbox.build_bwrap_agent_command",
+        build_bwrap_agent_command_mock,
+    )
+    monkeypatch.setattr("ralph.sandbox.subprocess.run", subprocess_run_mock)
+
+    run_agent_visibility_smoke_test(
+        repo_path=repo_path,
+        agent_backend_name="codex",
+        agent_command="codex",
+        python_venv_path=None,
+    )
+
+    worker_codex_home_path = observed_worker_agent_backend["bwrap"].agent_config_dir
+    assert worker_codex_home_path != master_codex_home_path
+    assert f"test ! -e {shlex.quote(str(master_codex_home_path))}" in observed_prompt[0]
+    assert (
+        f'test "${{CODEX_HOME-}}" = {shlex.quote(str(worker_codex_home_path))}'
+        in observed_prompt[0]
+    )
+    assert not worker_codex_home_path.exists()
 
 
 def test_worker_visible_path_check_rejects_hidden_state_overlap_but_accepts_normal_repo_path(

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from ralph.agent_backends import AgentBackend
+from ralph.agent_backends import AgentBackend, AgentResult
 from ralph.tests.conftest import (
     build_example_ledger,
     build_example_plan,
@@ -28,6 +28,7 @@ from ralph.run_ralph_loop import (
     _parse_agent_promise,
     _pause_for_human_review_after_accepting_worker_completed_task,
     _refuse_unsafe_starting_state,
+    _run_agent,
     _run_agent_command,
     _save_worker_prompt_before_launch,
 )
@@ -227,6 +228,71 @@ def test_claude_runtime_error_points_at_readable_transcript_then_raw_stream(
         f"Agent failed with exit code 7. See readable transcript: {output_path}",
         f"Raw Claude stream: {tmp_path / 'agent-output.raw.jsonl'}",
     ]
+
+
+def test_run_agent_uses_prepared_codex_worker_home(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    master_codex_home_path = tmp_path / "master-codex-home"
+    repo_path = tmp_path / "target-repo"
+    task_path = tmp_path / "task"
+    output_path = tmp_path / "agent-output.txt"
+    master_codex_home_path.mkdir()
+    repo_path.mkdir()
+    task_path.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(master_codex_home_path))
+
+    observed_worker_agent_backend: dict[str, AgentBackend] = {}
+    observed_worker_rules_existed: list[bool] = []
+
+    def build_bwrap_agent_command_mock(
+        repo_path: Path,
+        agent_backend: AgentBackend,
+        python_venv_path: Path | None,
+        allowed_bash_commands: list[str] | None = None,
+    ) -> list[str]:
+        observed_worker_agent_backend["bwrap"] = agent_backend
+        return ["fake-bwrap-command"]
+
+    def _run_agent_command_mock(
+        command: list[str],
+        prompt: str,
+        output_path: Path,
+        tee_output: bool,
+        agent_backend: AgentBackend,
+    ) -> AgentResult:
+        observed_worker_agent_backend["agent"] = agent_backend
+        observed_worker_rules_existed.append(
+            agent_backend.agent_config_dir.joinpath("rules", "default.rules").is_file()
+        )
+        return AgentResult(promise="DONE", output="<promise>DONE</promise>")
+
+    monkeypatch.setattr(
+        "ralph.run_ralph_loop.build_bwrap_agent_command",
+        build_bwrap_agent_command_mock,
+    )
+    monkeypatch.setattr("ralph.run_ralph_loop._run_agent_command", _run_agent_command_mock)
+
+    agent_result = _run_agent(
+        repo_path=repo_path,
+        task={"allowed_bash_commands": ["rg *"]},
+        prompt="Worker prompt",
+        agent_backend_name="codex",
+        agent_command="codex",
+        python_venv_path=None,
+        output_path=output_path,
+        tee_output=False,
+        task_path=task_path,
+    )
+
+    worker_codex_home_path = observed_worker_agent_backend["agent"].agent_config_dir
+    assert agent_result.promise == "DONE"
+    assert observed_worker_agent_backend["bwrap"] == observed_worker_agent_backend["agent"]
+    assert worker_codex_home_path != master_codex_home_path
+    assert observed_worker_rules_existed == [True]
+    assert not master_codex_home_path.joinpath("rules", "default.rules").exists()
+    assert not worker_codex_home_path.exists()
 
 
 def test_find_ralph_job_uses_workspace_home_by_default(monkeypatch: pytest.MonkeyPatch) -> None:

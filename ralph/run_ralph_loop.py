@@ -22,6 +22,7 @@ from ralph.agent_backends import (
     AgentResult,
     build_worker_allowed_bash_commands,
     extract_agent_result_text,
+    prepare_agent_backend_for_worker,
     run_command_and_save_agent_transcripts,
     select_agent_backend,
 )
@@ -448,30 +449,31 @@ def _run_agent(
     task_path: Path | None = None,
 ) -> AgentResult:
     _write_text(output_path, "")
-    agent_backend = select_agent_backend(
+    master_agent_backend = select_agent_backend(
         agent_backend_name=agent_backend_name,
         agent_command=agent_command,
     )
     allowed_bash_commands = build_worker_allowed_bash_commands(task)
-    command = build_bwrap_agent_command(
-        repo_path=repo_path,
-        agent_backend=agent_backend,
-        python_venv_path=python_venv_path,
-        allowed_bash_commands=allowed_bash_commands,
-    )
 
-    with agent_permission_setup(
-        agent_backend=agent_backend,
-        allowed_bash_commands=allowed_bash_commands,
-        task_path=task_path,
-    ):
-        return _run_agent_command(
-            command=command,
-            prompt=prompt,
-            output_path=output_path,
-            tee_output=tee_output,
-            agent_backend=agent_backend,
+    with prepare_agent_backend_for_worker(master_agent_backend) as worker_agent_backend:
+        command = build_bwrap_agent_command(
+            repo_path=repo_path,
+            agent_backend=worker_agent_backend,
+            python_venv_path=python_venv_path,
+            allowed_bash_commands=allowed_bash_commands,
         )
+        with agent_permission_setup(
+            agent_backend=worker_agent_backend,
+            allowed_bash_commands=allowed_bash_commands,
+            task_path=task_path,
+        ):
+            return _run_agent_command(
+                command=command,
+                prompt=prompt,
+                output_path=output_path,
+                tee_output=tee_output,
+                agent_backend=worker_agent_backend,
+            )
 
 
 def _run_agent_command(

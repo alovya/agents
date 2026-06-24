@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import contextlib
 import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from ralph.claude_backend import (
     build_claude_agent_backend,
@@ -15,6 +16,7 @@ from ralph.claude_backend import (
 from ralph.codex_backend import (
     build_codex_agent_backend,
     build_codex_command_tail,
+    prepare_codex_worker_home,
 )
 
 
@@ -67,6 +69,16 @@ def select_agent_backend(
     if agent_backend_name == "claude":
         return build_claude_agent_backend(agent_command)
     raise ValueError(f"Unsupported agent backend: {agent_backend_name}")
+
+
+@contextlib.contextmanager
+def prepare_agent_backend_for_worker(master_agent_backend: AgentBackend) -> Iterator[AgentBackend]:
+    if master_agent_backend.backend_name == "codex":
+        with prepare_codex_worker_home(master_agent_backend) as worker_agent_backend:
+            yield worker_agent_backend
+        return
+
+    yield master_agent_backend
 
 
 def build_agent_command_tail(
