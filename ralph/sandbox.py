@@ -56,6 +56,7 @@ def build_bwrap_agent_command(
     command += ["--dev", "/dev"]
 
     command += _build_bwrap_agent_home_mount_options(backend_config.agent_state_dir)
+    command += _build_bwrap_read_only_agent_home_mount_options(backend_config.read_only_home_mounts)
     command += _build_bwrap_sandbox_mount_target_dir_options(WORKER_HOME_PATH)
     command += _build_bwrap_sandbox_mount_target_dir_options(WORKER_TEMP_PATH)
 
@@ -466,6 +467,16 @@ def _build_bwrap_agent_home_mount_options(agent_state_dir: Path) -> list[str]:
     options += ["--bind", str(agent_state_dir), str(agent_state_dir)]
     if (agent_state_dir / ".tmp").is_dir():
         options += ["--tmpfs", str(agent_state_dir / ".tmp")]
+    return options
+
+
+def _build_bwrap_read_only_agent_home_mount_options(read_only_home_mounts: tuple["AgentHomeMount", ...]) -> list[str]:
+    options: list[str] = []
+    for read_only_home_mount in read_only_home_mounts:
+        options += _build_bwrap_read_only_dir_mount_options(
+            host_path=read_only_home_mount.host_path,
+            sandbox_path=read_only_home_mount.worker_path,
+        )
     return options
 
 

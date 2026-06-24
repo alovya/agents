@@ -25,11 +25,18 @@ class AgentResult:
 
 
 @dataclass(frozen=True)
+class AgentHomeMount:
+    host_path: Path
+    worker_path: Path
+
+
+@dataclass(frozen=True)
 class AgentBackend:
     backend_name: str
     command_name: str
     agent_state_dir: Path
     agent_home_environment_variable: str
+    read_only_home_mounts: tuple[AgentHomeMount, ...] = ()
 
 
 @dataclass(frozen=True)

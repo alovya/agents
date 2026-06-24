@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ralph.agent_backends import select_agent_backend_config
+from ralph.agent_backends import AgentBackend, AgentHomeMount, select_agent_backend_config
 from ralph.sandbox import (
     DEFAULT_RALPH_HOME_PATH,
     WORKER_AGENT_BINARY_PATH,
@@ -204,6 +204,68 @@ def test_build_bwrap_command_uses_allowlisted_worker_environment(
     assert "secret-openai-token" not in command
     assert str(Path.home() / ".local") not in command[command.index("PATH") + 1]
     assert "--ignore-user-config" not in command
+
+
+def test_build_bwrap_command_mounts_read_only_worker_home_paths_after_writable_home(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bin_path = tmp_path / "bin"
+    bwrap_path = bin_path / "bwrap"
+    agent_path = bin_path / "agent-cli"
+    source_codex_home_path = tmp_path / "source-codex-home"
+    worker_codex_home_path = tmp_path / "worker-codex-home"
+    source_package_releases_path = source_codex_home_path / "packages" / "standalone" / "releases"
+    worker_package_releases_path = worker_codex_home_path / "packages" / "standalone" / "releases"
+    repo_path = tmp_path / "target-repo"
+    bin_path.mkdir()
+    repo_path.mkdir()
+    worker_codex_home_path.mkdir()
+    source_package_releases_path.mkdir(parents=True)
+    write_executable_shim(bwrap_path)
+    write_executable_shim(agent_path)
+    monkeypatch.setenv("PATH", str(bin_path))
+
+    backend_config = AgentBackend(
+        backend_name="codex",
+        command_name="agent-cli",
+        agent_state_dir=worker_codex_home_path,
+        agent_home_environment_variable="CODEX_HOME",
+        read_only_home_mounts=(
+            AgentHomeMount(
+                host_path=source_package_releases_path,
+                worker_path=worker_package_releases_path,
+            ),
+        ),
+    )
+
+    command = build_bwrap_agent_command(
+        repo_path=repo_path,
+        backend_config=backend_config,
+        python_venv_path=None,
+    )
+
+    writable_home_bind_index = command.index(str(worker_codex_home_path))
+    read_only_releases_mount_index = command.index(str(source_package_releases_path))
+    assert writable_home_bind_index < read_only_releases_mount_index
+    assert contains_subsequence(
+        command,
+        ["--bind", str(worker_codex_home_path), str(worker_codex_home_path)],
+    )
+    assert contains_subsequence(
+        command,
+        ["--ro-bind", str(source_package_releases_path), str(worker_package_releases_path)],
+    )
+    assert not contains_subsequence(
+        command,
+        ["--bind", str(source_codex_home_path), str(source_codex_home_path)],
+    )
+    assert not contains_subsequence(
+        command,
+        ["--ro-bind", str(source_codex_home_path), str(source_codex_home_path)],
+    )
+    assert "plugins" not in command
+    assert "cache" not in command
 
 
 def test_build_bwrap_command_uses_claude_worker_environment(
