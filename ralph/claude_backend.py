@@ -11,13 +11,13 @@ if TYPE_CHECKING:
 
 def build_claude_agent_backend(agent_command: str | None) -> "AgentBackend":
     from ralph.agent_backends import AgentBackend, read_default_claude_agent_command
-    from ralph.codex_backend import require_agent_state_dir_from_environment_variable
+    from ralph.codex_backend import require_agent_config_dir_from_environment_variable
 
-    agent_state_dir = require_agent_state_dir_from_environment_variable("CLAUDE_CONFIG_DIR")
+    agent_config_dir = require_agent_config_dir_from_environment_variable("CLAUDE_CONFIG_DIR")
     return AgentBackend(
         backend_name="claude",
         command_name=agent_command or read_default_claude_agent_command(),
-        agent_state_dir=agent_state_dir,
+        agent_config_dir=agent_config_dir,
         agent_home_environment_variable="CLAUDE_CONFIG_DIR",
     )
 

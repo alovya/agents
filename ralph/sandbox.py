@@ -41,7 +41,7 @@ def build_bwrap_agent_command(
     worker_visible_command_dirs = _find_allowed_command_dirs_already_visible_to_worker(
         allowed_bash_commands=allowed_bash_commands or [],
         repo_path=repo_path,
-        agent_state_dir=agent_backend.agent_state_dir,
+        agent_config_dir=agent_backend.agent_config_dir,
         python_venv_path=python_venv_path,
     )
 
@@ -55,7 +55,7 @@ def build_bwrap_agent_command(
     command += ["--bind", str(repo_path), str(repo_path)]
     command += ["--dev", "/dev"]
 
-    command += _build_bwrap_agent_home_mount_options(agent_backend.agent_state_dir)
+    command += _build_bwrap_agent_home_mount_options(agent_backend.agent_config_dir)
     command += _build_bwrap_read_only_agent_home_mount_options(agent_backend.read_only_home_mounts)
     command += _build_bwrap_sandbox_mount_target_dir_options(WORKER_HOME_PATH)
     command += _build_bwrap_sandbox_mount_target_dir_options(WORKER_TEMP_PATH)
@@ -67,7 +67,7 @@ def build_bwrap_agent_command(
     command += ["--clearenv"]
     command += _build_bwrap_worker_environment_options(
         agent_home_environment_variable=agent_backend.agent_home_environment_variable,
-        agent_state_dir=agent_backend.agent_state_dir,
+        agent_config_dir=agent_backend.agent_config_dir,
         python_venv_path=python_venv_path,
         worker_visible_command_dirs=worker_visible_command_dirs,
     )
@@ -174,7 +174,7 @@ def _build_agent_visibility_smoke_test_shell_command(
         hidden_paths=build_sensitive_paths_that_workers_must_not_see(),
         explicitly_visible_paths=build_explicit_worker_mount_paths(
             repo_path=repo_path,
-            agent_state_dir=agent_backend.agent_state_dir,
+            agent_config_dir=agent_backend.agent_config_dir,
             python_venv_path=python_venv_path,
         ),
     )
@@ -187,9 +187,9 @@ def _build_agent_visibility_smoke_test_shell_command(
         selected_agent_home_environment_variable=agent_backend.agent_home_environment_variable,
     )
     command_parts += _build_shell_assertions_that_worker_environment_matches_bwrap_setenv_options(
-        _build_backend_state_environment_variables_to_verify_exactly(
+        _build_agent_config_environment_variables_to_verify_exactly(
             agent_home_environment_variable=agent_backend.agent_home_environment_variable,
-            agent_state_dir=agent_backend.agent_state_dir,
+            agent_config_dir=agent_backend.agent_config_dir,
             python_venv_path=python_venv_path,
         )
     )
@@ -202,10 +202,10 @@ def _build_agent_visibility_smoke_test_shell_command(
 
 def build_explicit_worker_mount_paths(
     repo_path: Path,
-    agent_state_dir: Path,
+    agent_config_dir: Path,
     python_venv_path: Path | None,
 ) -> list[Path]:
-    explicitly_visible_paths = [repo_path, agent_state_dir]
+    explicitly_visible_paths = [repo_path, agent_config_dir]
     if python_venv_path is not None:
         explicitly_visible_paths.append(python_venv_path)
     return explicitly_visible_paths
@@ -323,12 +323,12 @@ def _build_shell_assertions_that_worker_environment_matches_bwrap_setenv_options
     ]
 
 
-def _build_backend_state_environment_variables_to_verify_exactly(
+def _build_agent_config_environment_variables_to_verify_exactly(
     agent_home_environment_variable: str,
-    agent_state_dir: Path,
+    agent_config_dir: Path,
     python_venv_path: Path | None,
 ) -> list[tuple[str, str]]:
-    environment_variables = [(agent_home_environment_variable, str(agent_state_dir))]
+    environment_variables = [(agent_home_environment_variable, str(agent_config_dir))]
     if python_venv_path is not None:
         environment_variables.append(("VIRTUAL_ENV", str(python_venv_path)))
     return environment_variables
@@ -376,14 +376,14 @@ def quote_shell_value(value: Path | str) -> str:
 
 def _build_bwrap_worker_environment_options(
     agent_home_environment_variable: str,
-    agent_state_dir: Path,
+    agent_config_dir: Path,
     python_venv_path: Path | None,
     worker_visible_command_dirs: list[Path],
 ) -> list[str]:
     environment_variables = [
         ("HOME", str(WORKER_HOME_PATH)),
         ("TMPDIR", str(WORKER_TEMP_PATH)),
-        (agent_home_environment_variable, str(agent_state_dir)),
+        (agent_home_environment_variable, str(agent_config_dir)),
         ("XDG_CONFIG_HOME", str(WORKER_HOME_PATH / ".config")),
         ("XDG_CACHE_HOME", str(WORKER_HOME_PATH / ".cache")),
         ("XDG_DATA_HOME", str(WORKER_HOME_PATH / ".local" / "share")),
@@ -462,11 +462,11 @@ def _build_bwrap_host_os_compatibility_mount_options(compatibility_path: Path) -
     )
 
 
-def _build_bwrap_agent_home_mount_options(agent_state_dir: Path) -> list[str]:
-    options = _build_bwrap_sandbox_mount_target_dir_options(agent_state_dir)
-    options += ["--bind", str(agent_state_dir), str(agent_state_dir)]
-    if (agent_state_dir / ".tmp").is_dir():
-        options += ["--tmpfs", str(agent_state_dir / ".tmp")]
+def _build_bwrap_agent_home_mount_options(agent_config_dir: Path) -> list[str]:
+    options = _build_bwrap_sandbox_mount_target_dir_options(agent_config_dir)
+    options += ["--bind", str(agent_config_dir), str(agent_config_dir)]
+    if (agent_config_dir / ".tmp").is_dir():
+        options += ["--tmpfs", str(agent_config_dir / ".tmp")]
     return options
 
 
@@ -521,13 +521,13 @@ def _resolve_agent_binary_path(agent_command: str) -> Path:
 def _find_allowed_command_dirs_already_visible_to_worker(
     allowed_bash_commands: list[str],
     repo_path: Path,
-    agent_state_dir: Path,
+    agent_config_dir: Path,
     python_venv_path: Path | None,
 ) -> list[Path]:
     command_dirs: list[Path] = []
     visible_paths = build_explicit_worker_mount_paths(
         repo_path=repo_path,
-        agent_state_dir=agent_state_dir,
+        agent_config_dir=agent_config_dir,
         python_venv_path=python_venv_path,
     )
     for executable_name in _parse_allowed_shell_command_executable_names(allowed_bash_commands):

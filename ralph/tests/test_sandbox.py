@@ -229,7 +229,7 @@ def test_build_bwrap_command_mounts_read_only_worker_home_paths_after_writable_h
     agent_backend = AgentBackend(
         backend_name="codex",
         command_name="agent-cli",
-        agent_state_dir=worker_codex_home_path,
+        agent_config_dir=worker_codex_home_path,
         agent_home_environment_variable="CODEX_HOME",
         read_only_home_mounts=(
             AgentHomeMount(
@@ -431,14 +431,14 @@ def test_build_bwrap_agent_command_keeps_codex_command_tail_with_ask_for_approva
 
 def test_build_agent_visibility_smoke_test_prompt_checks_sandbox_contract(tmp_path: Path) -> None:
     repo_path = tmp_path / "target repo"
-    agent_state_dir = tmp_path / "codex home"
+    agent_config_dir = tmp_path / "codex home"
     python_venv_path = tmp_path / "tool venv"
 
     prompt = build_agent_visibility_smoke_test_prompt(
         repo_path=repo_path,
         agent_backend=build_test_agent_backend(
             backend_name="codex",
-            agent_state_dir=agent_state_dir,
+            agent_config_dir=agent_config_dir,
             agent_home_environment_variable="CODEX_HOME",
         ),
         python_venv_path=python_venv_path,
@@ -458,7 +458,7 @@ def test_build_agent_visibility_smoke_test_prompt_checks_sandbox_contract(tmp_pa
     assert 'test -z "${NOTION_API_KEY:-}"' in prompt
     assert 'test -z "${OPENAI_API_KEY:-}"' in prompt
     assert 'test "${CODEX_HOME-}" =' in prompt
-    assert str(agent_state_dir) in prompt
+    assert str(agent_config_dir) in prompt
     assert 'test -z "${CLAUDE_CONFIG_DIR:-}"' in prompt
     assert "mkdir" in prompt
     assert "rmdir" in prompt
@@ -476,7 +476,7 @@ def test_build_agent_visibility_smoke_test_prompt_skips_venv_checks_when_absent(
         repo_path=tmp_path / "target-repo",
         agent_backend=build_test_agent_backend(
             backend_name="codex",
-            agent_state_dir=tmp_path / "codex-home",
+            agent_config_dir=tmp_path / "codex-home",
             agent_home_environment_variable="CODEX_HOME",
         ),
         python_venv_path=None,
@@ -491,7 +491,7 @@ def test_build_agent_visibility_smoke_test_prompt_does_not_reject_explicit_mount
         repo_path=tmp_path / "target-repo",
         agent_backend=build_test_agent_backend(
             backend_name="codex",
-            agent_state_dir=Path("/workspace/.codex"),
+            agent_config_dir=Path("/workspace/.codex"),
             agent_home_environment_variable="CODEX_HOME",
         ),
         python_venv_path=None,
@@ -506,7 +506,7 @@ def test_build_agent_visibility_smoke_test_prompt_hides_unselected_backend_state
         repo_path=tmp_path / "target-repo",
         agent_backend=build_test_agent_backend(
             backend_name="claude",
-            agent_state_dir=Path("/workspace/.claude"),
+            agent_config_dir=Path("/workspace/.claude"),
             agent_home_environment_variable="CLAUDE_CONFIG_DIR",
         ),
         python_venv_path=None,

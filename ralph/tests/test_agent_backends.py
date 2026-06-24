@@ -168,7 +168,7 @@ def test_run_command_and_save_agent_transcripts_keeps_codex_transcript_plain(
     agent_backend = AgentBackend(
         backend_name="codex",
         command_name="bash",
-        agent_state_dir=tmp_path / "codex-home",
+        agent_config_dir=tmp_path / "codex-home",
         agent_home_environment_variable="CODEX_HOME",
     )
 
@@ -196,7 +196,7 @@ def test_run_command_and_save_agent_transcripts_keeps_claude_raw_stream_and_read
     agent_backend = AgentBackend(
         backend_name="claude",
         command_name="/workspace/venv/bin/python",
-        agent_state_dir=tmp_path / "claude-config",
+        agent_config_dir=tmp_path / "claude-config",
         agent_home_environment_variable="CLAUDE_CONFIG_DIR",
     )
     raw_stream = "\n".join([

@@ -34,11 +34,11 @@ class CodexRulesSnapshot:
 def build_codex_agent_backend(agent_command: str | None) -> "AgentBackend":
     from ralph.agent_backends import AgentBackend, read_default_codex_agent_command
 
-    agent_state_dir = require_agent_state_dir_from_environment_variable("CODEX_HOME")
+    agent_config_dir = require_agent_config_dir_from_environment_variable("CODEX_HOME")
     return AgentBackend(
         backend_name="codex",
         command_name=agent_command or read_default_codex_agent_command(),
-        agent_state_dir=agent_state_dir,
+        agent_config_dir=agent_config_dir,
         agent_home_environment_variable="CODEX_HOME",
     )
 
@@ -61,7 +61,7 @@ def build_codex_command_tail(repo_path: Path) -> list[str]:
 def prepare_codex_worker_home(source_agent_backend: "AgentBackend") -> Iterator["AgentBackend"]:
     from ralph.agent_backends import AgentBackend
 
-    source_codex_home_path = source_agent_backend.agent_state_dir
+    source_codex_home_path = source_agent_backend.agent_config_dir
     with tempfile.TemporaryDirectory(prefix="ralph-codex-home-") as worker_home_dir:
         worker_codex_home_path = Path(worker_home_dir).resolve()
         _copy_codex_worker_seed_files(
@@ -80,17 +80,17 @@ def prepare_codex_worker_home(source_agent_backend: "AgentBackend") -> Iterator[
         yield AgentBackend(
             backend_name=source_agent_backend.backend_name,
             command_name=source_agent_backend.command_name,
-            agent_state_dir=worker_codex_home_path,
+            agent_config_dir=worker_codex_home_path,
             agent_home_environment_variable=source_agent_backend.agent_home_environment_variable,
             read_only_home_mounts=read_only_home_mounts,
         )
 
 
 def require_codex_home_path() -> Path:
-    return require_agent_state_dir_from_environment_variable("CODEX_HOME")
+    return require_agent_config_dir_from_environment_variable("CODEX_HOME")
 
 
-def require_agent_state_dir_from_environment_variable(variable_name: str) -> Path:
+def require_agent_config_dir_from_environment_variable(variable_name: str) -> Path:
     from ralph.sandbox import (
         build_sensitive_paths_that_workers_must_not_see,
         paths_overlap,
@@ -101,17 +101,17 @@ def require_agent_state_dir_from_environment_variable(variable_name: str) -> Pat
     if not configured_path:
         raise RuntimeError(f"{variable_name} must be set before running Ralph agents.")
 
-    agent_state_dir = Path(configured_path).expanduser().resolve()
-    if not agent_state_dir.is_dir():
-        raise RuntimeError(f"{variable_name} does not exist: {agent_state_dir}")
-    _refuse_agent_state_dir_that_exposes_other_sensitive_state(
-        agent_state_dir=agent_state_dir,
+    agent_config_dir = Path(configured_path).expanduser().resolve()
+    if not agent_config_dir.is_dir():
+        raise RuntimeError(f"{variable_name} does not exist: {agent_config_dir}")
+    _refuse_agent_config_dir_that_exposes_other_sensitive_state(
+        agent_config_dir=agent_config_dir,
         variable_name=variable_name,
     )
-    return agent_state_dir
+    return agent_config_dir
 
 
-def _refuse_agent_state_dir_that_exposes_other_sensitive_state(agent_state_dir: Path, variable_name: str) -> None:
+def _refuse_agent_config_dir_that_exposes_other_sensitive_state(agent_config_dir: Path, variable_name: str) -> None:
     from ralph.sandbox import (
         build_sensitive_paths_that_workers_must_not_see,
         paths_overlap,
@@ -119,12 +119,12 @@ def _refuse_agent_state_dir_that_exposes_other_sensitive_state(agent_state_dir: 
     )
 
     for sensitive_path in build_sensitive_paths_that_workers_must_not_see():
-        if paths_resolve_to_same_location(left_path=agent_state_dir, right_path=sensitive_path):
+        if paths_resolve_to_same_location(left_path=agent_config_dir, right_path=sensitive_path):
             continue
-        if paths_overlap(left_path=agent_state_dir, right_path=sensitive_path):
+        if paths_overlap(left_path=agent_config_dir, right_path=sensitive_path):
             raise ValueError(
                 f"{variable_name} must not overlap other worker-hidden sensitive state: "
-                f"{agent_state_dir} overlaps {sensitive_path}"
+                f"{agent_config_dir} overlaps {sensitive_path}"
             )
 
 
@@ -216,7 +216,7 @@ def codex_permission_setup(
     allowed_bash_commands: list[str],
     task_path: Path,
 ) -> Iterator[None]:
-    codex_home_path = agent_backend.agent_state_dir
+    codex_home_path = agent_backend.agent_config_dir
     rules_path = codex_rules_path(codex_home_path)
     backup_path = task_path / CODEX_RULES_BACKUP_FILENAME
 

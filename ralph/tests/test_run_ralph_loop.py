@@ -206,7 +206,7 @@ def test_claude_runtime_error_points_at_readable_transcript_then_raw_stream(
     agent_backend = AgentBackend(
         backend_name="claude",
         command_name="/workspace/venv/bin/python",
-        agent_state_dir=tmp_path / "claude-config",
+        agent_config_dir=tmp_path / "claude-config",
         agent_home_environment_variable="CLAUDE_CONFIG_DIR",
     )
 

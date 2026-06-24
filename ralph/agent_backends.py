@@ -34,7 +34,7 @@ class AgentHomeMount:
 class AgentBackend:
     backend_name: str
     command_name: str
-    agent_state_dir: Path
+    agent_config_dir: Path
     agent_home_environment_variable: str
     read_only_home_mounts: tuple[AgentHomeMount, ...] = ()
 
@@ -114,7 +114,7 @@ def run_command_and_tee_output(
         agent_backend=AgentBackend(
             backend_name="codex",
             command_name=command[0],
-            agent_state_dir=Path(),
+            agent_config_dir=Path(),
             agent_home_environment_variable="",
         ),
         tee_output=True,

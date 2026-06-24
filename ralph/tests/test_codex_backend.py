@@ -108,12 +108,12 @@ def test_prepare_codex_worker_home_seeds_only_worker_required_files(tmp_path: Pa
     source_agent_backend = AgentBackend(
         backend_name="codex",
         command_name="codex",
-        agent_state_dir=source_codex_home_path,
+        agent_config_dir=source_codex_home_path,
         agent_home_environment_variable="CODEX_HOME",
     )
 
     with prepare_codex_worker_home(source_agent_backend) as worker_agent_backend:
-        worker_codex_home_path = worker_agent_backend.agent_state_dir
+        worker_codex_home_path = worker_agent_backend.agent_config_dir
         worker_skill_path = worker_codex_home_path / "skills" / "ralph"
         worker_current_path = worker_codex_home_path / "packages" / "standalone" / "current"
         worker_releases_path = worker_codex_home_path / "packages" / "standalone" / "releases"
@@ -151,13 +151,13 @@ def test_codex_permission_setup_writes_rules_inside_prepared_worker_home(tmp_pat
     source_agent_backend = AgentBackend(
         backend_name="codex",
         command_name="codex",
-        agent_state_dir=source_codex_home_path,
+        agent_config_dir=source_codex_home_path,
         agent_home_environment_variable="CODEX_HOME",
     )
 
     with prepare_codex_worker_home(source_agent_backend) as worker_agent_backend:
         source_rules_path = codex_rules_path(source_codex_home_path)
-        worker_rules_path = codex_rules_path(worker_agent_backend.agent_state_dir)
+        worker_rules_path = codex_rules_path(worker_agent_backend.agent_config_dir)
 
         with codex_permission_setup(
             agent_backend=worker_agent_backend,
@@ -386,7 +386,7 @@ def test_codex_permission_setup_writes_temporary_rules_then_restores_original_ru
     agent_backend = AgentBackend(
         backend_name="codex",
         command_name="codex",
-        agent_state_dir=codex_home_path,
+        agent_config_dir=codex_home_path,
         agent_home_environment_variable="CODEX_HOME",
     )
 
