@@ -24,6 +24,7 @@ def test_prepare_claude_worker_home_seeds_config_files_and_skills(tmp_path: Path
     (master_claude_config_dir / "sessions").mkdir()
     (master_claude_config_dir / "skills").mkdir()
     (master_claude_config_dir / "skills" / "ralph").symlink_to(external_skill_path)
+    (master_claude_config_dir / "skills" / "missing").symlink_to(tmp_path / "missing-skill")
     (external_skill_path / "SKILL.md").write_text("Ralph skill", encoding="utf-8")
     master_agent_backend = AgentBackend(
         backend_name="claude",
@@ -46,6 +47,7 @@ def test_prepare_claude_worker_home_seeds_config_files_and_skills(tmp_path: Path
         assert worker_skill_path.is_dir()
         assert not worker_skill_path.is_symlink()
         assert (worker_skill_path / "SKILL.md").read_text(encoding="utf-8") == "Ralph skill"
+        assert not (worker_claude_config_dir / "skills" / "missing").exists()
         assert not (worker_claude_config_dir / ".claude.json").exists()
         assert not (worker_claude_config_dir / "history.jsonl").exists()
         assert not (worker_claude_config_dir / "projects").exists()

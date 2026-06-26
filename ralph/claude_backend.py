@@ -89,7 +89,7 @@ def _copy_claude_worker_skills(master_claude_config_dir: Path, worker_claude_con
     master_skills_path = master_claude_config_dir / "skills"
     worker_skills_path = worker_claude_config_dir / "skills"
     if master_skills_path.is_dir():
-        shutil.copytree(master_skills_path, worker_skills_path, symlinks=False)
+        shutil.copytree(master_skills_path, worker_skills_path, symlinks=False, ignore_dangling_symlinks=True)
 
 
 def build_claude_allowed_tools(allowed_bash_commands: list[str]) -> list[str]:

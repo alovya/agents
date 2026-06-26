@@ -492,6 +492,7 @@ def test_validate_rejects_invalid_notion_task_relationships(
 def test_smoke_test_resolves_repo_path_before_running_sandbox_check(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     repo_path = tmp_path / "target-repo"
     repo_path.mkdir()
@@ -520,6 +521,7 @@ def test_smoke_test_resolves_repo_path_before_running_sandbox_check(
     ])
 
     assert observed_repo_paths == [repo_path]
+    assert capsys.readouterr().out == "Ralph codex smoke test passed.\n"
 
 
 def test_create_task_directory_prefixes_task_id(tmp_path: Path) -> None:

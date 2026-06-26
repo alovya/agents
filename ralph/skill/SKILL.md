@@ -92,6 +92,9 @@ With `--repo-path`, validation also checks the non-mutating start state that a r
 would require. Validation does not materialise Notion tasks and does not launch
 workers.
 
+Run Ralph commands that launch inner agent sandboxes with network access;
+otherwise the inner sandboxes fail.
+
 Run the loop only after validation passes:
 
 ```bash

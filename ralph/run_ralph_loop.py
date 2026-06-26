@@ -88,6 +88,7 @@ def main(argv: list[str] | None = None) -> None:
             agent_command=arguments.agent_command,
             python_venv_path=resolve_python_venv_path(arguments.python_venv),
         )
+        print(f"Ralph {arguments.agent_backend} smoke test passed.")
         return
     raise SystemExit(f"Unknown command: {arguments.command}")
 
