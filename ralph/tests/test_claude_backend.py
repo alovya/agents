@@ -1,11 +1,57 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
+from ralph.agent_backends import AgentBackend
 from ralph.claude_backend import (
+    CLAUDE_WORKER_CONFIG_SEED_FILENAMES,
     extract_claude_stream_result_text,
     format_claude_stream_event_for_human,
+    prepare_claude_worker_home,
 )
+
+
+def test_prepare_claude_worker_home_seeds_config_files_and_skills(tmp_path: Path) -> None:
+    master_claude_config_dir = tmp_path / "master-claude-config"
+    external_skill_path = tmp_path / "external-ralph-skill"
+    master_claude_config_dir.mkdir()
+    external_skill_path.mkdir()
+    _write_claude_seed_files(master_claude_config_dir)
+    (master_claude_config_dir / ".claude.json").write_text("noisy local state", encoding="utf-8")
+    (master_claude_config_dir / "history.jsonl").write_text("history", encoding="utf-8")
+    (master_claude_config_dir / "projects").mkdir()
+    (master_claude_config_dir / "sessions").mkdir()
+    (master_claude_config_dir / "skills").mkdir()
+    (master_claude_config_dir / "skills" / "ralph").symlink_to(external_skill_path)
+    (external_skill_path / "SKILL.md").write_text("Ralph skill", encoding="utf-8")
+    master_agent_backend = AgentBackend(
+        backend_name="claude",
+        command_name="claude",
+        agent_config_dir=master_claude_config_dir,
+        agent_home_environment_variable="CLAUDE_CONFIG_DIR",
+    )
+
+    with prepare_claude_worker_home(master_agent_backend) as worker_agent_backend:
+        worker_claude_config_dir = worker_agent_backend.agent_config_dir
+        worker_skill_path = worker_claude_config_dir / "skills" / "ralph"
+
+        assert worker_agent_backend.backend_name == "claude"
+        assert worker_agent_backend.command_name == "claude"
+        assert worker_agent_backend.agent_home_environment_variable == "CLAUDE_CONFIG_DIR"
+        assert worker_claude_config_dir != master_claude_config_dir
+        assert _read_claude_seed_files(worker_claude_config_dir) == _read_claude_seed_files(
+            master_claude_config_dir
+        )
+        assert worker_skill_path.is_dir()
+        assert not worker_skill_path.is_symlink()
+        assert (worker_skill_path / "SKILL.md").read_text(encoding="utf-8") == "Ralph skill"
+        assert not (worker_claude_config_dir / ".claude.json").exists()
+        assert not (worker_claude_config_dir / "history.jsonl").exists()
+        assert not (worker_claude_config_dir / "projects").exists()
+        assert not (worker_claude_config_dir / "sessions").exists()
+
+    assert not worker_claude_config_dir.exists()
 
 
 def test_format_claude_stream_event_for_human_emits_assistant_text_as_plain_lines() -> None:
@@ -191,3 +237,15 @@ def test_extract_claude_stream_result_text_falls_back_to_final_assistant_event()
 
 def _serialise_claude_event(event: dict[str, object]) -> str:
     return json.dumps(event)
+
+
+def _write_claude_seed_files(claude_config_dir: Path) -> None:
+    for seed_filename in CLAUDE_WORKER_CONFIG_SEED_FILENAMES:
+        (claude_config_dir / seed_filename).write_text(f"{seed_filename} content", encoding="utf-8")
+
+
+def _read_claude_seed_files(claude_config_dir: Path) -> dict[str, str]:
+    return {
+        seed_filename: (claude_config_dir / seed_filename).read_text(encoding="utf-8")
+        for seed_filename in CLAUDE_WORKER_CONFIG_SEED_FILENAMES
+    }

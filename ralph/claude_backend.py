@@ -1,12 +1,23 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import os
+import shutil
+import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Iterator
 
 if TYPE_CHECKING:
     from ralph.agent_backends import AgentBackend
+
+
+CLAUDE_WORKER_CONFIG_SEED_FILENAMES = (
+    ".credentials.json",
+    "settings.json",
+    "config.json",
+    "AGENTS.md",
+)
 
 
 def build_claude_agent_backend(agent_command: str | None) -> "AgentBackend":
@@ -20,6 +31,29 @@ def build_claude_agent_backend(agent_command: str | None) -> "AgentBackend":
         agent_config_dir=agent_config_dir,
         agent_home_environment_variable="CLAUDE_CONFIG_DIR",
     )
+
+
+@contextlib.contextmanager
+def prepare_claude_worker_home(master_agent_backend: "AgentBackend") -> Iterator["AgentBackend"]:
+    from ralph.agent_backends import AgentBackend
+
+    master_claude_config_dir = master_agent_backend.agent_config_dir
+    with tempfile.TemporaryDirectory(prefix="ralph-claude-home-") as worker_home_dir:
+        worker_claude_config_dir = Path(worker_home_dir).resolve()
+        _copy_claude_worker_seed_files(
+            master_claude_config_dir=master_claude_config_dir,
+            worker_claude_config_dir=worker_claude_config_dir,
+        )
+        _copy_claude_worker_skills(
+            master_claude_config_dir=master_claude_config_dir,
+            worker_claude_config_dir=worker_claude_config_dir,
+        )
+        yield AgentBackend(
+            backend_name=master_agent_backend.backend_name,
+            command_name=master_agent_backend.command_name,
+            agent_config_dir=worker_claude_config_dir,
+            agent_home_environment_variable=master_agent_backend.agent_home_environment_variable,
+        )
 
 
 def build_claude_command_tail(allowed_bash_commands: list[str]) -> list[str]:
@@ -41,6 +75,21 @@ def build_claude_command_tail(allowed_bash_commands: list[str]) -> list[str]:
         "--no-session-persistence",
     ]
     return command_tail
+
+
+def _copy_claude_worker_seed_files(master_claude_config_dir: Path, worker_claude_config_dir: Path) -> None:
+    for seed_filename in CLAUDE_WORKER_CONFIG_SEED_FILENAMES:
+        master_seed_path = master_claude_config_dir / seed_filename
+        worker_seed_path = worker_claude_config_dir / seed_filename
+        if master_seed_path.is_file():
+            shutil.copy2(master_seed_path, worker_seed_path)
+
+
+def _copy_claude_worker_skills(master_claude_config_dir: Path, worker_claude_config_dir: Path) -> None:
+    master_skills_path = master_claude_config_dir / "skills"
+    worker_skills_path = worker_claude_config_dir / "skills"
+    if master_skills_path.is_dir():
+        shutil.copytree(master_skills_path, worker_skills_path, symlinks=False)
 
 
 def build_claude_allowed_tools(allowed_bash_commands: list[str]) -> list[str]:

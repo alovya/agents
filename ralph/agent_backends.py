@@ -12,6 +12,7 @@ from ralph.claude_backend import (
     build_claude_command_tail,
     extract_claude_stream_result_text,
     format_claude_stream_event_for_human,
+    prepare_claude_worker_home,
 )
 from ralph.codex_backend import (
     build_codex_agent_backend,
@@ -75,6 +76,11 @@ def select_agent_backend(
 def prepare_agent_backend_for_worker(master_agent_backend: AgentBackend) -> Iterator[AgentBackend]:
     if master_agent_backend.backend_name == "codex":
         with prepare_codex_worker_home(master_agent_backend) as worker_agent_backend:
+            yield worker_agent_backend
+        return
+
+    if master_agent_backend.backend_name == "claude":
+        with prepare_claude_worker_home(master_agent_backend) as worker_agent_backend:
             yield worker_agent_backend
         return
 
