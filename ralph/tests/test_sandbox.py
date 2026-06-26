@@ -308,12 +308,12 @@ def test_build_bwrap_agent_command_mounts_codex_binary(
 ) -> None:
     bin_path = tmp_path / "bin"
     bwrap_path = bin_path / "bwrap"
-    codex_path = bin_path / "codex"
     repo_path = tmp_path / "target-repo"
     codex_home_path = tmp_path / "codex-home"
+    codex_path = codex_home_path / "packages" / "standalone" / "current" / "bin" / "codex"
     bin_path.mkdir()
     repo_path.mkdir()
-    codex_home_path.mkdir()
+    codex_path.parent.mkdir(parents=True)
     write_executable_shim(bwrap_path)
     write_executable_shim(codex_path)
     monkeypatch.setenv("PATH", str(bin_path))
@@ -396,12 +396,12 @@ def test_build_bwrap_agent_command_keeps_codex_command_tail_with_ask_for_approva
 ) -> None:
     bin_path = tmp_path / "bin"
     bwrap_path = bin_path / "bwrap"
-    codex_path = bin_path / "codex"
     repo_path = tmp_path / "target-repo"
     codex_home_path = tmp_path / "codex-home"
+    codex_path = codex_home_path / "packages" / "standalone" / "current" / "bin" / "codex"
     bin_path.mkdir()
     repo_path.mkdir()
-    codex_home_path.mkdir()
+    codex_path.parent.mkdir(parents=True)
     write_executable_shim(bwrap_path)
     write_executable_shim(codex_path)
     monkeypatch.setenv("PATH", str(bin_path))

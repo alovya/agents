@@ -107,7 +107,11 @@ def build_worker_allowed_bash_commands(task: dict[str, Any]) -> list[str]:
 
 
 def read_default_codex_agent_command() -> str:
-    return os.environ.get("RALPH_AGENT_COMMAND", os.environ.get("RALPH_CODEX_COMMAND", "codex"))
+    codex_home_path = Path(os.environ["CODEX_HOME"]).expanduser().resolve()
+    standalone_codex_path = codex_home_path / "packages" / "standalone" / "current" / "bin" / "codex"
+    if standalone_codex_path.is_file() and os.access(standalone_codex_path, os.X_OK):
+        return str(standalone_codex_path)
+    raise RuntimeError(f"Codex standalone binary does not exist or is not executable: {standalone_codex_path}")
 
 
 def read_default_claude_agent_command() -> str:

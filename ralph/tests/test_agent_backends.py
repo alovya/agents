@@ -14,36 +14,6 @@ from ralph.agent_backends import (
 )
 
 
-def test_codex_backend_uses_ralph_agent_command_before_codex_specific_default(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    codex_home_path = tmp_path / "codex-home"
-    codex_home_path.mkdir()
-    monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
-    monkeypatch.setenv("RALPH_AGENT_COMMAND", "custom-agent")
-    monkeypatch.setenv("RALPH_CODEX_COMMAND", "custom-codex")
-
-    agent_backend = select_agent_backend(agent_backend_name="codex", agent_command=None)
-
-    assert agent_backend.command_name == "custom-agent"
-
-
-def test_codex_backend_uses_codex_specific_default_before_binary_name(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    codex_home_path = tmp_path / "codex-home"
-    codex_home_path.mkdir()
-    monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
-    monkeypatch.delenv("RALPH_AGENT_COMMAND", raising=False)
-    monkeypatch.setenv("RALPH_CODEX_COMMAND", "custom-codex")
-
-    agent_backend = select_agent_backend(agent_backend_name="codex", agent_command=None)
-
-    assert agent_backend.command_name == "custom-codex"
-
-
 def test_agent_command_override_wins_after_backend_selection(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -51,27 +21,40 @@ def test_agent_command_override_wins_after_backend_selection(
     codex_home_path = tmp_path / "codex-home"
     codex_home_path.mkdir()
     monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
-    monkeypatch.setenv("RALPH_AGENT_COMMAND", "custom-agent")
-    monkeypatch.setenv("RALPH_CODEX_COMMAND", "custom-codex")
 
     agent_backend = select_agent_backend(agent_backend_name="codex", agent_command="override-agent")
 
     assert agent_backend.command_name == "override-agent"
 
 
-def test_codex_backend_falls_back_to_codex_binary_name(
+def test_codex_backend_uses_standalone_codex_from_codex_home_before_path_binary(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     codex_home_path = tmp_path / "codex-home"
-    codex_home_path.mkdir()
+    standalone_codex_path = codex_home_path / "packages" / "standalone" / "current" / "bin" / "codex"
+    standalone_codex_path.parent.mkdir(parents=True)
+    standalone_codex_path.write_text("codex", encoding="utf-8")
+    standalone_codex_path.chmod(0o755)
     monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
     monkeypatch.delenv("RALPH_AGENT_COMMAND", raising=False)
     monkeypatch.delenv("RALPH_CODEX_COMMAND", raising=False)
 
     agent_backend = select_agent_backend(agent_backend_name="codex", agent_command=None)
 
-    assert agent_backend.command_name == "codex"
+    assert agent_backend.command_name == str(standalone_codex_path)
+
+
+def test_codex_backend_rejects_missing_standalone_binary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home_path = tmp_path / "codex-home"
+    codex_home_path.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
+
+    with pytest.raises(RuntimeError, match="Codex standalone binary does not exist"):
+        select_agent_backend(agent_backend_name="codex", agent_command=None)
 
 
 def test_claude_backend_uses_ralph_agent_command_before_claude_specific_default(
