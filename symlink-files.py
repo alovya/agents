@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,6 +21,12 @@ class SkillInstallTarget:
 
 
 @dataclass(frozen=True)
+class AgentHome:
+    agent_name: str
+    home_path: Path
+
+
+@dataclass(frozen=True)
 class AgentInstructionsLink:
     agent_name: str
     source_path: Path
@@ -30,9 +37,10 @@ def main() -> None:
     arguments = _parse_arguments()
     agents_repo_path = Path(__file__).resolve().parent
     skill_directories = _find_skill_directories(agents_repo_path)
-    install_targets = _build_skill_install_targets(arguments)
+    agent_homes = _find_configured_agent_homes(arguments)
+    install_targets = _build_skill_install_targets(agent_homes)
     instruction_links = _build_agent_instructions_links(
-        arguments=arguments,
+        agent_homes=agent_homes,
         agents_repo_path=agents_repo_path,
     )
 
@@ -69,12 +77,12 @@ def _parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--codex-home",
         default=os.environ.get("CODEX_HOME"),
-        help="Codex home directory. Defaults to CODEX_HOME and errors if unset.",
+        help="Codex home directory. Defaults to CODEX_HOME; skips Codex if unset.",
     )
     parser.add_argument(
         "--claude-home",
         default=os.environ.get("CLAUDE_CONFIG_DIR"),
-        help="Claude config directory. Defaults to CLAUDE_CONFIG_DIR and errors if unset.",
+        help="Claude config directory. Defaults to CLAUDE_CONFIG_DIR; skips Claude if unset.",
     )
     parser.add_argument(
         "--codex-only",
@@ -125,61 +133,56 @@ def _raise_for_duplicate_skill_names(skill_directories: list[SkillDirectory]) ->
         raise RuntimeError(f"Duplicate skill directory names would collide:\n{details}")
 
 
-def _build_skill_install_targets(arguments: argparse.Namespace) -> list[SkillInstallTarget]:
+def _find_configured_agent_homes(arguments: argparse.Namespace) -> list[AgentHome]:
     if arguments.codex_only and arguments.claude_only:
         raise RuntimeError("Choose at most one of --codex-only and --claude-only.")
 
-    _require_agent_home_paths(arguments)
-
-    install_targets: list[SkillInstallTarget] = []
+    selected_agent_homes = []
     if not arguments.claude_only:
-        install_targets.append(
-            SkillInstallTarget(
-                agent_name="Codex",
-                skills_path=Path(arguments.codex_home).expanduser() / "skills",
-            )
-        )
+        selected_agent_homes.append(("Codex", "CODEX_HOME", "--codex-home", arguments.codex_home))
     if not arguments.codex_only:
-        install_targets.append(
-            SkillInstallTarget(
-                agent_name="Claude",
-                skills_path=Path(arguments.claude_home).expanduser() / "skills",
-            )
+        selected_agent_homes.append(
+            ("Claude", "CLAUDE_CONFIG_DIR", "--claude-home", arguments.claude_home)
         )
-    return install_targets
+
+    configured_agent_homes = []
+    for agent_name, environment_variable, option_name, home_path in selected_agent_homes:
+        if not home_path:
+            print(
+                f"Warning: skipping {agent_name} because {environment_variable} is unset "
+                f"and {option_name} was not provided.",
+                file=sys.stderr,
+            )
+            continue
+        configured_agent_homes.append(
+            AgentHome(agent_name=agent_name, home_path=Path(home_path).expanduser())
+        )
+
+    return configured_agent_homes
 
 
-def _require_agent_home_paths(arguments: argparse.Namespace) -> None:
-    if not arguments.claude_only and not arguments.codex_home:
-        raise RuntimeError("CODEX_HOME must be set or --codex-home must be provided.")
-    if not arguments.codex_only and not arguments.claude_home:
-        raise RuntimeError("CLAUDE_CONFIG_DIR must be set or --claude-home must be provided.")
+def _build_skill_install_targets(agent_homes: list[AgentHome]) -> list[SkillInstallTarget]:
+    return [
+        SkillInstallTarget(
+            agent_name=agent_home.agent_name,
+            skills_path=agent_home.home_path / "skills",
+        )
+        for agent_home in agent_homes
+    ]
 
 
 def _build_agent_instructions_links(
-    arguments: argparse.Namespace,
+    agent_homes: list[AgentHome],
     agents_repo_path: Path,
 ) -> list[AgentInstructionsLink]:
-    instruction_links: list[AgentInstructionsLink] = []
-
-    if not arguments.claude_only:
-        instruction_links.append(
-            AgentInstructionsLink(
-                agent_name="Codex",
-                source_path=agents_repo_path / "AGENTS.md",
-                destination_path=Path(arguments.codex_home).expanduser() / "AGENTS.md",
-            )
+    return [
+        AgentInstructionsLink(
+            agent_name=agent_home.agent_name,
+            source_path=agents_repo_path / "AGENTS.md",
+            destination_path=agent_home.home_path / "AGENTS.md",
         )
-    if not arguments.codex_only:
-        instruction_links.append(
-            AgentInstructionsLink(
-                agent_name="Claude",
-                source_path=agents_repo_path / "AGENTS.md",
-                destination_path=Path(arguments.claude_home).expanduser() / "AGENTS.md",
-            )
-        )
-
-    return instruction_links
+        for agent_home in agent_homes
+    ]
 
 
 def _install_skill_directory(
