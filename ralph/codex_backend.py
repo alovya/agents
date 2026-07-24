@@ -48,6 +48,21 @@ def build_codex_command_tail(repo_path: Path) -> list[str]:
     ]
 
 
+def build_direct_codex_command(agent_backend: "AgentBackend", repo_path: Path) -> list[str]:
+    return [
+        agent_backend.command_name,
+        "--ask-for-approval",
+        "never",
+        "exec",
+        "-C",
+        str(repo_path),
+        "--sandbox",
+        "workspace-write",
+        "--ephemeral",
+        "-",
+    ]
+
+
 @contextlib.contextmanager
 def prepare_codex_worker_home(master_agent_backend: "AgentBackend") -> Iterator["AgentBackend"]:
     from ralph.agent_backends import AgentBackend

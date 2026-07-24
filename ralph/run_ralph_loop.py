@@ -26,6 +26,7 @@ from ralph.agent_backends import (
     run_command_and_save_agent_transcripts,
     select_agent_backend,
 )
+from ralph.codex_backend import build_direct_codex_command
 from ralph.notion import (
     WorklogValidationError,
     delete_worker_worklog_file,
@@ -100,12 +101,13 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
     job = _find_ralph_job(arguments.job_name)
     _prepare_job_directories(job)
     _refuse_unsafe_starting_state(repo_path, job)
-    run_agent_visibility_smoke_test(
-        repo_path=repo_path,
-        agent_backend_name=arguments.agent_backend,
-        agent_command=arguments.agent_command,
-        python_venv_path=python_venv_path,
-    )
+    if not arguments.skip_ralph_sandbox:
+        run_agent_visibility_smoke_test(
+            repo_path=repo_path,
+            agent_backend_name=arguments.agent_backend,
+            agent_command=arguments.agent_command,
+            python_venv_path=python_venv_path,
+        )
 
     for _ in range(arguments.max_iterations):
         ledger = _read_yaml_file(job.ledger_path)
@@ -140,6 +142,7 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
             output_path=task_path / "agent-output.txt",
             tee_output=arguments.tee_agent_output,
             task_path=task_path,
+            skip_ralph_sandbox=arguments.skip_ralph_sandbox,
         )
         _write_text(task_path / "promise.txt", agent_result.promise)
 
@@ -380,6 +383,14 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
     run_parser.add_argument("--agent-backend", choices=["codex", "claude"], default="codex")
     run_parser.add_argument("--agent-command")
     run_parser.add_argument(
+        "--skip-ralph-sandbox",
+        action="store_true",
+        help=(
+            "Run Codex directly with its workspace-write sandbox and the existing "
+            "CODEX_HOME instead of Ralph's Bubblewrap sandbox."
+        ),
+    )
+    run_parser.add_argument(
         "--python-venv",
         help="Python venv mounted into agents with its bin directory first on PATH. Defaults to $VIRTUAL_ENV.",
     )
@@ -464,12 +475,27 @@ def _run_agent(
     output_path: Path,
     tee_output: bool,
     task_path: Path | None = None,
+    skip_ralph_sandbox: bool = False,
 ) -> AgentResult:
     _write_text(output_path, "")
     master_agent_backend = select_agent_backend(
         agent_backend_name=agent_backend_name,
         agent_command=agent_command,
     )
+    if skip_ralph_sandbox:
+        if master_agent_backend.backend_name != "codex":
+            raise ValueError("--skip-ralph-sandbox requires the Codex agent backend.")
+        return _run_agent_command(
+            command=build_direct_codex_command(
+                agent_backend=master_agent_backend,
+                repo_path=repo_path,
+            ),
+            prompt=prompt,
+            output_path=output_path,
+            tee_output=tee_output,
+            agent_backend=master_agent_backend,
+        )
+
     allowed_bash_commands = build_worker_allowed_bash_commands(task)
 
     with prepare_agent_backend_for_worker(master_agent_backend) as worker_agent_backend:

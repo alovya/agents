@@ -134,6 +134,19 @@ def test_parse_args_can_pause_for_review_between_tasks() -> None:
     assert arguments.ask_for_review is True
 
 
+def test_parse_args_can_skip_ralph_sandbox() -> None:
+    arguments = _parse_arguments([
+        "run",
+        "--repo-path",
+        "/tmp/repo",
+        "--job-name",
+        "example",
+        "--skip-ralph-sandbox",
+    ])
+
+    assert arguments.skip_ralph_sandbox is True
+
+
 def test_parse_args_accepts_python_venv() -> None:
     arguments = _parse_arguments([
         "run",
@@ -295,6 +308,62 @@ def test_run_agent_uses_prepared_codex_worker_home(
     assert observed_worker_rules_existed == [True]
     assert not master_codex_home_path.joinpath("rules", "default.rules").exists()
     assert not worker_codex_home_path.exists()
+
+
+def test_run_agent_can_use_existing_codex_home_without_bubblewrap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home_path = tmp_path / "codex-home"
+    repo_path = tmp_path / "target-repo"
+    output_path = tmp_path / "agent-output.txt"
+    codex_home_path.mkdir()
+    repo_path.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(codex_home_path))
+
+    observed_command: list[str] = []
+    observed_agent_backend: list[AgentBackend] = []
+
+    def _run_agent_command_mock(
+        command: list[str],
+        prompt: str,
+        output_path: Path,
+        tee_output: bool,
+        agent_backend: AgentBackend,
+    ) -> AgentResult:
+        observed_command.extend(command)
+        observed_agent_backend.append(agent_backend)
+        return AgentResult(promise="DONE", output="<promise>DONE</promise>")
+
+    monkeypatch.setattr("ralph.run_ralph_loop._run_agent_command", _run_agent_command_mock)
+
+    agent_result = _run_agent(
+        repo_path=repo_path,
+        task={"allowed_bash_commands": ["rg *"]},
+        prompt="Worker prompt",
+        agent_backend_name="codex",
+        agent_command="/usr/bin/codex",
+        python_venv_path=None,
+        output_path=output_path,
+        tee_output=False,
+        skip_ralph_sandbox=True,
+    )
+
+    assert agent_result.promise == "DONE"
+    assert observed_agent_backend[0].agent_config_dir == codex_home_path
+    assert observed_command == [
+        "/usr/bin/codex",
+        "--ask-for-approval",
+        "never",
+        "exec",
+        "-C",
+        str(repo_path),
+        "--sandbox",
+        "workspace-write",
+        "--ephemeral",
+        "-",
+    ]
+    assert not codex_home_path.joinpath("rules", "default.rules").exists()
 
 
 def test_find_ralph_job_uses_workspace_home_by_default(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -7,6 +7,7 @@ import pytest
 from ralph.agent_backends import AgentBackend
 from ralph.codex_backend import (
     CODEX_WORKER_HOME_SEED_FILENAMES,
+    build_direct_codex_command,
     codex_permission_setup,
     codex_rules_path,
     generate_codex_execpolicy_rules,
@@ -15,6 +16,32 @@ from ralph.codex_backend import (
     require_codex_home_path,
     write_codex_rules_atomically,
 )
+
+
+def test_build_direct_codex_command_uses_existing_home_and_workspace_sandbox(
+    tmp_path: Path,
+) -> None:
+    codex_home_path = tmp_path / "codex-home"
+    repo_path = tmp_path / "repo"
+    agent_backend = AgentBackend(
+        backend_name="codex",
+        command_name="/usr/bin/codex",
+        agent_config_dir=codex_home_path,
+        agent_home_environment_variable="CODEX_HOME",
+    )
+
+    assert build_direct_codex_command(agent_backend=agent_backend, repo_path=repo_path) == [
+        "/usr/bin/codex",
+        "--ask-for-approval",
+        "never",
+        "exec",
+        "-C",
+        str(repo_path),
+        "--sandbox",
+        "workspace-write",
+        "--ephemeral",
+        "-",
+    ]
 
 
 def test_require_codex_home_path_rejects_missing_environment(
