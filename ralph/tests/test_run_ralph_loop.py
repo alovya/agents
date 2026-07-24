@@ -31,6 +31,8 @@ from ralph.run_ralph_loop import (
     _run_agent,
     _run_agent_command,
     _save_worker_prompt_before_launch,
+    _finish_when_iteration_limit_reaches_complete_job,
+    _write_yaml_file,
 )
 from ralph.sandbox import run_agent_visibility_smoke_test
 
@@ -330,6 +332,34 @@ def test_validate_accepts_example_job(
     assert "Ralph job example is valid" in output
     assert "Next runnable task: R1" in output
     assert not ralph_home_path.joinpath("jobs", "example", "tasks").exists()
+
+
+def test_iteration_limit_finishes_when_last_allowed_worker_completed_the_job(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _create_ralph_home_with_example_job(tmp_path, monkeypatch)
+    job = _find_ralph_job("example")
+    ledger = yaml.safe_load(job.ledger_path.read_text())
+    for task in ledger["tasks"]:
+        task["status"] = "done"
+    _write_yaml_file(job.ledger_path, ledger)
+
+    _finish_when_iteration_limit_reaches_complete_job(job=job, max_iterations=2)
+
+    assert capsys.readouterr().out == "No runnable Ralph tasks remain.\n"
+
+
+def test_iteration_limit_still_fails_when_runnable_work_remains(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _create_ralph_home_with_example_job(tmp_path, monkeypatch)
+    job = _find_ralph_job("example")
+
+    with pytest.raises(SystemExit, match="Reached max iterations: 1"):
+        _finish_when_iteration_limit_reaches_complete_job(job=job, max_iterations=1)
 
 
 def test_validate_with_repo_path_runs_starting_state_checks(
@@ -835,7 +865,7 @@ def test_validate_and_log_worker_worklog_sends_worklog_to_notion(
     task_path = tmp_path / "task"
     task_path.mkdir()
     worklog_path = repo_path / WORKER_NOTION_WORKLOG_FILENAME
-    worklog_path.write_text('{"subheading": "Task done", "blocks": [{"type": "paragraph", "text": "Work summary"}]}')
+    worklog_path.write_text('{"title": "Task done", "blocks": [{"type": "paragraph", "text": "Work summary"}]}')
     observed_content = capture_notion_log_content(monkeypatch)
 
     worklog = _validate_and_log_worker_worklog(
@@ -845,8 +875,8 @@ def test_validate_and_log_worker_worklog_sends_worklog_to_notion(
     )
 
     assert worklog is not None
-    assert worklog["subheading"] == "Task done"
-    assert observed_content["subheading"] == "Task done"
+    assert worklog["title"] == "Task done"
+    assert observed_content["title"] == "Task done"
     assert observed_content["blocks"][0]["text"] == "Work summary"
     assert not worklog_path.exists()
 
@@ -901,7 +931,7 @@ def test_validate_and_log_worker_worklog_raises_on_malformed_worklog(
     task_path = tmp_path / "task"
     task_path.mkdir()
     worklog_path = repo_path / WORKER_NOTION_WORKLOG_FILENAME
-    worklog_path.write_text('{"subheading": "Task done"}')
+    worklog_path.write_text('{"title": "Task done"}')
     monkeypatch.setattr("ralph.notion._resolve_notion_tracker_command_path", lambda: "ntt")
 
     with pytest.raises(WorklogValidationError, match="missing required field: blocks"):

@@ -20,9 +20,6 @@ from ralph.plan_selection import (
 from ralph.prompt import WORKER_NOTION_WORKLOG_FILENAME
 
 
-DEFAULT_NOTION_TRACKER_STATE_PATH = Path("/workspace/.notion-task-tracker/notion_tasks_tree.json")
-
-
 def task_has_planned_notion_pairing(task: dict[str, Any]) -> bool:
     notion_task = task.get("notion_task")
     return isinstance(notion_task, dict) and notion_task.get("planned") is True
@@ -90,7 +87,7 @@ def log_slice_start_to_notion(selection: TaskSelection, task_path: Path) -> None
         task_path=task_path,
         log_name="slice-start",
         content={
-            "subheading": f"Ralph {selection.task['id']} started",
+            "title": f"Ralph {selection.task['id']} started",
             "blocks": [
                 {"type": "paragraph", "text": f"Goal: {selection.task['title']}"},
                 {"type": "code", "language": "yaml", "text": _dump_yaml({
@@ -119,7 +116,7 @@ def log_worker_promise_to_notion(
         task_path=task_path,
         log_name=f"worker-{promise.lower()}",
         content={
-            "subheading": f"Worker returned {promise}",
+            "title": f"Worker returned {promise}",
             "blocks": [
                 {"type": "paragraph", "text": f"Ralph task {selection.task['id']} stopped before verification."},
                 *_build_agent_transcript_reference_blocks(
@@ -145,7 +142,7 @@ def log_failed_verification_to_notion(
         task_path=task_path,
         log_name="verification-failed",
         content={
-            "subheading": "Verification failed",
+            "title": "Verification failed",
             "blocks": [
                 {"type": "paragraph", "text": f"Ralph task {selection.task['id']} returned DONE, then verification failed."},
                 {
@@ -178,7 +175,7 @@ def log_completed_worker_to_notion(
         task_path=task_path,
         log_name="worker-completed",
         content={
-            "subheading": f"Ralph {selection.task['id']} completed",
+            "title": f"Ralph {selection.task['id']} completed",
             "blocks": [
                 {"type": "code", "language": "text", "text": "\n".join(changed_files) or "No changed files were captured before commit."},
                 {
@@ -237,22 +234,37 @@ def validate_worker_worklog(repo_path: Path) -> dict[str, Any]:
             f"Worker worklog must be a JSON object, got {type(worklog).__name__}."
         )
 
-    _validate_worklog_subheading(worklog)
+    _validate_worklog_title(worklog)
     _validate_worklog_blocks(worklog)
     return worklog
 
 
-def _validate_worklog_subheading(worklog: dict[str, Any]) -> None:
-    if "subheading" not in worklog:
-        raise WorklogValidationError("Worker worklog missing required field: subheading")
-
-    subheading = worklog["subheading"]
-    if not isinstance(subheading, str):
+def validate_worker_worklog_is_controller_input(repo_path: Path) -> None:
+    worklog_path = repo_path / WORKER_NOTION_WORKLOG_FILENAME
+    completed_process = subprocess.run(
+        ["git", "-C", str(repo_path), "ls-files", "--error-unmatch", "--", WORKER_NOTION_WORKLOG_FILENAME],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    if completed_process.returncode == 0:
         raise WorklogValidationError(
-            f"Worker worklog field 'subheading' must be a string, got {type(subheading).__name__}."
+            f"Worker worklog must remain untracked for the controller: {worklog_path}"
         )
-    if not subheading.strip():
-        raise WorklogValidationError("Worker worklog field 'subheading' must be a non-empty string.")
+
+
+def _validate_worklog_title(worklog: dict[str, Any]) -> None:
+    if "title" not in worklog:
+        raise WorklogValidationError("Worker worklog missing required field: title")
+
+    title = worklog["title"]
+    if not isinstance(title, str):
+        raise WorklogValidationError(
+            f"Worker worklog field 'title' must be a string, got {type(title).__name__}."
+        )
+    if not title.strip():
+        raise WorklogValidationError("Worker worklog field 'title' must be a non-empty string.")
 
 
 def _validate_worklog_blocks(worklog: dict[str, Any]) -> None:
@@ -338,7 +350,7 @@ def delete_worker_worklog_file(repo_path: Path) -> None:
         worklog_path.unlink()
 
 
-def build_notion_task_creation_command(
+def _build_notion_task_creation_command(
     relationship: str,
     related_notion_task_id: str,
     title: str,
@@ -355,8 +367,6 @@ def build_notion_task_creation_command(
             title,
             "--content-path",
             str(content_path),
-            "--tracker-state-path",
-            str(DEFAULT_NOTION_TRACKER_STATE_PATH),
             "--output-path",
             str(output_path),
         ]
@@ -370,30 +380,26 @@ def build_notion_task_creation_command(
             title,
             "--content-path",
             str(content_path),
-            "--tracker-state-path",
-            str(DEFAULT_NOTION_TRACKER_STATE_PATH),
             "--output-path",
             str(output_path),
         ]
     raise ValueError(f"Unsupported Notion relationship: {relationship}")
 
 
-def extract_created_notion_task_id(output_text: str, output_path: Path, excluded_task_id: str) -> str:
-    candidate_task_ids = _alovya_task_ids_from_text(output_text)
-    if output_path.is_file():
-        candidate_task_ids += _alovya_task_ids_from_text(output_path.read_text(encoding="utf-8"))
+def _extract_created_notion_task_id(output_path: Path) -> str:
+    summary = json.loads(output_path.read_text(encoding="utf-8"))
+    notion_operations = summary.get("notion_operations")
+    if not isinstance(notion_operations, list):
+        raise RuntimeError("NTT task creation summary has no notion_operations list.")
 
-    created_task_ids = [
-        task_id
-        for task_id in dict.fromkeys(candidate_task_ids)
-        if task_id != excluded_task_id
-    ]
-    if len(created_task_ids) != 1:
-        raise RuntimeError(
-            "Could not determine the single Notion task created by ntt. "
-            f"Candidates: {created_task_ids}"
-        )
-    return created_task_ids[0]
+    for index, operation in enumerate(notion_operations[:-1]):
+        if not isinstance(operation, str) or not operation.startswith("create_database_task:"):
+            continue
+        update_operation = notion_operations[index + 1]
+        if isinstance(update_operation, str) and update_operation.startswith("update_properties:task:"):
+            return update_operation.removeprefix("update_properties:task:")
+
+    raise RuntimeError("NTT task creation summary does not identify the created task.")
 
 
 def _resolve_related_notion_task_id(tasks: list[dict[str, Any]], related_to: str) -> str:
@@ -420,13 +426,13 @@ def _create_planned_notion_task(
         task_path=task_path,
         log_name="create",
         content={
-            "subheading": "Ralph task materialised",
+            "title": "Ralph task materialised",
             "blocks": [
                 {"type": "paragraph", "text": f"Created from Ralph plan: {title}"},
             ],
         },
     )
-    command = build_notion_task_creation_command(
+    command = _build_notion_task_creation_command(
         relationship=relationship,
         related_notion_task_id=related_notion_task_id,
         title=title,
@@ -435,11 +441,7 @@ def _create_planned_notion_task(
     )
     completed_process = _run_notion_tracker_command(command)
     _write_text(task_path / "notion-create-stdout.txt", completed_process.stdout)
-    return extract_created_notion_task_id(
-        output_text=completed_process.stdout,
-        output_path=output_path,
-        excluded_task_id=related_notion_task_id,
-    )
+    return _extract_created_notion_task_id(output_path)
 
 
 def _append_notion_task_log(
@@ -457,8 +459,6 @@ def _append_notion_task_log(
         ticket_number_from_alovya_task_id(notion_task_id),
         "--content-path",
         str(content_path),
-        "--tracker-state-path",
-        str(DEFAULT_NOTION_TRACKER_STATE_PATH),
         "--output-path",
         str(output_path),
     ]
@@ -496,11 +496,6 @@ def _run_notion_tracker_command(command: list[str]) -> subprocess.CompletedProce
     if completed_process.returncode != 0:
         raise RuntimeError(f"Notion task tracker command failed:\n{completed_process.stdout}")
     return completed_process
-
-
-def _alovya_task_ids_from_text(text: str) -> list[str]:
-    import re
-    return re.findall(r"ALOVYA-\d+", text)
 
 
 def _worker_launch_constraints() -> list[str]:

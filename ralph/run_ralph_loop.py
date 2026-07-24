@@ -35,6 +35,7 @@ from ralph.notion import (
     log_worker_promise_to_notion,
     prepare_notion_task_before_worker_runs_task,
     validate_worker_worklog,
+    validate_worker_worklog_is_controller_input,
 )
 from ralph.plan_selection import (
     TaskSelection,
@@ -194,7 +195,23 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
         )
         print(f"Completed {selection.task['id']}: {commit_hash}")
 
-    raise SystemExit(f"Reached max iterations: {arguments.max_iterations}")
+    _finish_when_iteration_limit_reaches_complete_job(
+        job=job,
+        max_iterations=arguments.max_iterations,
+    )
+
+
+def _finish_when_iteration_limit_reaches_complete_job(
+    job: RalphJob,
+    max_iterations: int,
+) -> None:
+    ledger = _read_yaml_file(job.ledger_path)
+    plan_text = job.plan_path.read_text()
+    if select_next_task_from_plan_and_ledger(ledger, plan_text) is None:
+        print("No runnable Ralph tasks remain.")
+        return
+
+    raise SystemExit(f"Reached max iterations: {max_iterations}")
 
 
 def _validate_ralph_job(arguments: argparse.Namespace) -> None:
@@ -225,6 +242,7 @@ def _validate_and_log_worker_worklog(
         return None
 
     worklog = validate_worker_worklog(repo_path)
+    validate_worker_worklog_is_controller_input(repo_path)
     log_validated_worker_worklog_to_notion(
         selection=selection,
         task_path=task_path,

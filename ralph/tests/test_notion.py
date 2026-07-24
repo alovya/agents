@@ -7,11 +7,10 @@ import pytest
 import yaml
 
 from ralph.notion import (
-    DEFAULT_NOTION_TRACKER_STATE_PATH,
     WorklogValidationError,
-    build_notion_task_creation_command,
+    _build_notion_task_creation_command,
     delete_worker_worklog_file,
-    extract_created_notion_task_id,
+    _extract_created_notion_task_id,
     log_completed_worker_to_notion,
     log_failed_verification_to_notion,
     log_slice_start_to_notion,
@@ -20,6 +19,7 @@ from ralph.notion import (
     materialise_planned_notion_task_before_worker_launch,
     prepare_notion_task_before_worker_runs_task,
     validate_worker_worklog,
+    validate_worker_worklog_is_controller_input,
 )
 from ralph.prompt import WORKER_NOTION_WORKLOG_FILENAME
 from ralph.tests.conftest import (
@@ -27,6 +27,7 @@ from ralph.tests.conftest import (
     build_ledger_with_planned_notion_task,
     capture_notion_log_content,
     create_job_with_ledger,
+    parse_current_notion_tracker_command,
     select_first_task,
 )
 
@@ -45,10 +46,21 @@ def test_materialises_planned_notion_task_under_existing_alovya_parent(
 
     def run_notion_tracker_command_mock(command: list[str]) -> subprocess.CompletedProcess[str]:
         observed_commands.append(command)
+        parse_current_notion_tracker_command(command)
+        output_path = Path(command[command.index("--output-path") + 1])
+        output_path.write_text(json.dumps({
+            "action_name": "child",
+            "notion_operations": [
+                "create_database_task:split_task_into_children",
+                "update_properties:task:ALOVYA-90",
+            ],
+            "output_path": str(output_path),
+            "warnings": [],
+        }))
         return subprocess.CompletedProcess(
             args=command,
             returncode=0,
-            stdout=json.dumps({"completed_operations": ["update_properties:task:ALOVYA-90"]}),
+            stdout="",
         )
 
     monkeypatch.setattr("ralph.notion._resolve_notion_tracker_command_path", lambda: "ntt")
@@ -72,8 +84,6 @@ def test_materialises_planned_notion_task_under_existing_alovya_parent(
         "Add parser",
         "--content-path",
         str(task_path / "notion-create-content.json"),
-        "--tracker-state-path",
-        str(DEFAULT_NOTION_TRACKER_STATE_PATH),
         "--output-path",
         str(task_path / "notion-create-output.json"),
     ]]
@@ -107,10 +117,21 @@ def test_materialises_planned_notion_task_after_related_ralph_task_exists(
 
     def run_notion_tracker_command_mock(command: list[str]) -> subprocess.CompletedProcess[str]:
         observed_commands.append(command)
+        parse_current_notion_tracker_command(command)
+        output_path = Path(command[command.index("--output-path") + 1])
+        output_path.write_text(json.dumps({
+            "action_name": "child",
+            "notion_operations": [
+                "create_database_task:split_task_into_children",
+                "update_properties:task:ALOVYA-91",
+            ],
+            "output_path": str(output_path),
+            "warnings": [],
+        }))
         return subprocess.CompletedProcess(
             args=command,
             returncode=0,
-            stdout=json.dumps({"completed_operations": ["update_properties:task:ALOVYA-91"]}),
+            stdout="",
         )
 
     monkeypatch.setattr("ralph.notion._resolve_notion_tracker_command_path", lambda: "ntt")
@@ -126,7 +147,7 @@ def test_materialises_planned_notion_task_after_related_ralph_task_exists(
     assert updated_ledger["tasks"][1]["notion_task"]["materialized_task_id"] == "ALOVYA-91"
     assert "--parent-ticket-number" in observed_commands[0]
     assert observed_commands[0][observed_commands[0].index("--parent-ticket-number") + 1] == "90"
-    assert observed_commands[0][observed_commands[0].index("--tracker-state-path") + 1] == str(DEFAULT_NOTION_TRACKER_STATE_PATH)
+    assert "--tracker-state-path" not in observed_commands[0]
 
 
 def test_materialising_planned_notion_task_blocks_when_related_ralph_task_is_not_materialised(
@@ -195,12 +216,10 @@ def test_controller_logs_slice_start_to_notion(
 
     log_slice_start_to_notion(selection=selection, task_path=tmp_path)
 
-    assert observed_content["subheading"] == "Ralph R1 started"
+    assert observed_content["title"] == "Ralph R1 started"
     assert "Goal: Add parser" in observed_content["blocks"][0]["text"]
     assert "verification_commands" in observed_content["blocks"][1]["text"]
-    assert observed_content["command"][observed_content["command"].index("--tracker-state-path") + 1] == str(
-        DEFAULT_NOTION_TRACKER_STATE_PATH
-    )
+    assert "--tracker-state-path" not in observed_content["command"]
 
 
 def test_controller_logs_blocked_worker_promise_to_notion(
@@ -216,7 +235,7 @@ def test_controller_logs_blocked_worker_promise_to_notion(
         promise="BLOCKED",
     )
 
-    assert observed_content["subheading"] == "Worker returned BLOCKED"
+    assert observed_content["title"] == "Worker returned BLOCKED"
     assert "stopped before verification" in observed_content["blocks"][0]["text"]
     assert "Transcript path:" in observed_content["blocks"][1]["text"]
 
@@ -250,7 +269,7 @@ def test_controller_logs_failed_verification_to_notion(
 
     log_failed_verification_to_notion(selection=selection, task_path=tmp_path)
 
-    assert observed_content["subheading"] == "Verification failed"
+    assert observed_content["title"] == "Verification failed"
     assert "DONE, then verification failed" in observed_content["blocks"][0]["text"]
     assert observed_content["blocks"][1]["text"] == "$ pytest\nfailed\n"
     assert "Transcript path:" in observed_content["blocks"][2]["text"]
@@ -289,7 +308,7 @@ def test_controller_logs_successful_verification_and_commit_to_notion(
         commit_hash="abc123",
     )
 
-    assert observed_content["subheading"] == "Ralph R1 completed"
+    assert observed_content["title"] == "Ralph R1 completed"
     assert observed_content["blocks"][0]["text"] == "M src/parser.py"
     assert observed_content["blocks"][1]["text"] == "$ pytest\npassed\n"
     assert observed_content["blocks"][2]["text"] == "Commit hash: abc123"
@@ -316,24 +335,26 @@ def test_controller_logs_claude_completion_with_raw_stream_path(
     assert observed_content["blocks"][4]["text"] == f"Raw Claude stream path: {tmp_path / 'agent-output.raw.jsonl'}"
 
 
-def test_extract_created_notion_task_id_uses_output_file_and_excludes_related_task(
+def test_extract_created_notion_task_id_uses_creation_operation_pair(
     tmp_path: Path,
 ) -> None:
     output_path = tmp_path / "ntt-output.json"
     output_path.write_text(json.dumps({
-        "completed_operations": [
+        "notion_operations": [
             "update_timeline_log:task:ALOVYA-89:2026-06-18",
+            "create_database_task:split_task_into_children",
             "update_properties:task:ALOVYA-90",
+            "update_properties:task:ALOVYA-89",
         ]
     }))
 
-    assert extract_created_notion_task_id("", output_path, "ALOVYA-89") == "ALOVYA-90"
+    assert _extract_created_notion_task_id(output_path) == "ALOVYA-90"
 
 
 def test_build_notion_task_creation_command_builds_sibling_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("ralph.notion._resolve_notion_tracker_command_path", lambda: "ntt")
 
-    command = build_notion_task_creation_command(
+    command = _build_notion_task_creation_command(
         relationship="sibling",
         related_notion_task_id="ALOVYA-89",
         title="Add parser",
@@ -350,8 +371,6 @@ def test_build_notion_task_creation_command_builds_sibling_command(tmp_path: Pat
         "Add parser",
         "--content-path",
         str(tmp_path / "content.json"),
-        "--tracker-state-path",
-        str(DEFAULT_NOTION_TRACKER_STATE_PATH),
         "--output-path",
         str(tmp_path / "output.json"),
     ]
@@ -360,7 +379,7 @@ def test_build_notion_task_creation_command_builds_sibling_command(tmp_path: Pat
 def test_validate_worker_worklog_accepts_valid_worklog(tmp_path: Path) -> None:
     worklog_path = tmp_path / WORKER_NOTION_WORKLOG_FILENAME
     worklog_path.write_text(json.dumps({
-        "subheading": "Task completed",
+        "title": "Task completed",
         "blocks": [
             {"type": "paragraph", "text": "Summary of work done."},
             {"type": "code", "language": "text", "text": "$ pytest\npassed"},
@@ -369,7 +388,7 @@ def test_validate_worker_worklog_accepts_valid_worklog(tmp_path: Path) -> None:
 
     worklog = validate_worker_worklog(tmp_path)
 
-    assert worklog["subheading"] == "Task completed"
+    assert worklog["title"] == "Task completed"
     assert len(worklog["blocks"]) == 2
 
 
@@ -386,31 +405,31 @@ def test_validate_worker_worklog_rejects_invalid_json(tmp_path: Path) -> None:
         validate_worker_worklog(tmp_path)
 
 
-def test_validate_worker_worklog_rejects_missing_subheading(tmp_path: Path) -> None:
+def test_validate_worker_worklog_rejects_missing_title(tmp_path: Path) -> None:
     worklog_path = tmp_path / WORKER_NOTION_WORKLOG_FILENAME
     worklog_path.write_text(json.dumps({
         "blocks": [{"type": "paragraph", "text": "Summary"}],
     }))
 
-    with pytest.raises(WorklogValidationError, match="missing required field: subheading"):
+    with pytest.raises(WorklogValidationError, match="missing required field: title"):
         validate_worker_worklog(tmp_path)
 
 
-def test_validate_worker_worklog_rejects_empty_subheading(tmp_path: Path) -> None:
+def test_validate_worker_worklog_rejects_empty_title(tmp_path: Path) -> None:
     worklog_path = tmp_path / WORKER_NOTION_WORKLOG_FILENAME
     worklog_path.write_text(json.dumps({
-        "subheading": "   ",
+        "title": "   ",
         "blocks": [{"type": "paragraph", "text": "Summary"}],
     }))
 
-    with pytest.raises(WorklogValidationError, match="subheading.*non-empty string"):
+    with pytest.raises(WorklogValidationError, match="title.*non-empty string"):
         validate_worker_worklog(tmp_path)
 
 
 def test_validate_worker_worklog_rejects_missing_blocks(tmp_path: Path) -> None:
     worklog_path = tmp_path / WORKER_NOTION_WORKLOG_FILENAME
     worklog_path.write_text(json.dumps({
-        "subheading": "Task done",
+        "title": "Task done",
     }))
 
     with pytest.raises(WorklogValidationError, match="missing required field: blocks"):
@@ -420,7 +439,7 @@ def test_validate_worker_worklog_rejects_missing_blocks(tmp_path: Path) -> None:
 def test_validate_worker_worklog_rejects_empty_blocks(tmp_path: Path) -> None:
     worklog_path = tmp_path / WORKER_NOTION_WORKLOG_FILENAME
     worklog_path.write_text(json.dumps({
-        "subheading": "Task done",
+        "title": "Task done",
         "blocks": [],
     }))
 
@@ -431,7 +450,7 @@ def test_validate_worker_worklog_rejects_empty_blocks(tmp_path: Path) -> None:
 def test_validate_worker_worklog_rejects_block_missing_type(tmp_path: Path) -> None:
     worklog_path = tmp_path / WORKER_NOTION_WORKLOG_FILENAME
     worklog_path.write_text(json.dumps({
-        "subheading": "Task done",
+        "title": "Task done",
         "blocks": [{"text": "Summary"}],
     }))
 
@@ -442,7 +461,7 @@ def test_validate_worker_worklog_rejects_block_missing_type(tmp_path: Path) -> N
 def test_validate_worker_worklog_rejects_invalid_block_type(tmp_path: Path) -> None:
     worklog_path = tmp_path / WORKER_NOTION_WORKLOG_FILENAME
     worklog_path.write_text(json.dumps({
-        "subheading": "Task done",
+        "title": "Task done",
         "blocks": [{"type": "heading", "text": "Summary"}],
     }))
 
@@ -453,12 +472,39 @@ def test_validate_worker_worklog_rejects_invalid_block_type(tmp_path: Path) -> N
 def test_validate_worker_worklog_rejects_code_block_missing_language(tmp_path: Path) -> None:
     worklog_path = tmp_path / WORKER_NOTION_WORKLOG_FILENAME
     worklog_path.write_text(json.dumps({
-        "subheading": "Task done",
+        "title": "Task done",
         "blocks": [{"type": "code", "text": "$ pytest"}],
     }))
 
     with pytest.raises(WorklogValidationError, match="code block but missing required field: language"):
         validate_worker_worklog(tmp_path)
+
+
+def test_validate_worker_worklog_is_controller_input_accepts_untracked_file(
+    tmp_path: Path,
+) -> None:
+    import subprocess
+
+    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
+    (tmp_path / WORKER_NOTION_WORKLOG_FILENAME).write_text("{}")
+
+    validate_worker_worklog_is_controller_input(tmp_path)
+
+
+def test_validate_worker_worklog_is_controller_input_rejects_staged_file(
+    tmp_path: Path,
+) -> None:
+    import subprocess
+
+    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
+    (tmp_path / WORKER_NOTION_WORKLOG_FILENAME).write_text("{}")
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "add", WORKER_NOTION_WORKLOG_FILENAME],
+        check=True,
+    )
+
+    with pytest.raises(WorklogValidationError, match="must remain untracked"):
+        validate_worker_worklog_is_controller_input(tmp_path)
 
 
 def test_log_validated_worker_worklog_to_notion_sends_worklog_content(
@@ -468,7 +514,7 @@ def test_log_validated_worker_worklog_to_notion_sends_worklog_content(
     selection = select_first_task(build_ledger_with_materialised_notion_task())
     observed_content = capture_notion_log_content(monkeypatch)
     worklog = {
-        "subheading": "Worker worklog",
+        "title": "Worker worklog",
         "blocks": [{"type": "paragraph", "text": "Summary of work"}],
     }
 
@@ -478,7 +524,7 @@ def test_log_validated_worker_worklog_to_notion_sends_worklog_content(
         worklog=worklog,
     )
 
-    assert observed_content["subheading"] == "Worker worklog"
+    assert observed_content["title"] == "Worker worklog"
     assert observed_content["blocks"][0]["text"] == "Summary of work"
 
 

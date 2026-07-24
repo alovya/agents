@@ -196,6 +196,7 @@ def capture_notion_log_content(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any
     observed_content: dict[str, Any] = {}
 
     def run_notion_tracker_command_mock(command: list[str]) -> subprocess.CompletedProcess[str]:
+        parse_current_notion_tracker_command(command)
         content_path = Path(command[command.index("--content-path") + 1])
         observed_content.update(json.loads(content_path.read_text(encoding="utf-8")))
         observed_content["command"] = command
@@ -204,6 +205,14 @@ def capture_notion_log_content(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any
     monkeypatch.setattr("ralph.notion._resolve_notion_tracker_command_path", lambda: "ntt")
     monkeypatch.setattr("ralph.notion._run_notion_tracker_command", run_notion_tracker_command_mock)
     return observed_content
+
+
+def parse_current_notion_tracker_command(command: list[str]) -> dict[str, Any]:
+    from notion_task_tracker.build_tracker_command import build_tracker_command_from_cli_action
+    from notion_task_tracker.run_notion_task_tracker import parse_args
+
+    arguments = parse_args(command[1:])
+    return build_tracker_command_from_cli_action(arguments, ticket_prefix="ALOVYA")
 
 
 def contains_subsequence(command: list[str], expected: list[str]) -> bool:

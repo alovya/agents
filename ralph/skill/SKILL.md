@@ -24,8 +24,8 @@ Decide which role the current agent is playing before acting:
    Do not manually implement worker tasks in the main session.
 3. Worker: only an agent launched by the Ralph runner implements one selected
    task. Workers must not read Ralph controller state or run Ralph commands.
-   Workers should use `ntt` to log detailed work on the materialised Notion task
-   when the active task has Notion pairing.
+   Workers should write the requested JSON worklog when the active task has
+   Notion pairing. The controller validates it and owns every `ntt` call.
 
 Task `ralph-allowed-bash` blocks belong to the isolated worker. Include only the
 commands needed to complete, log, and verify that one task.

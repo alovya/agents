@@ -106,14 +106,15 @@ def test_render_agent_prompt_includes_worklog_instructions_when_materialised(tmp
     )
 
     assert ".ralph-worklog.json" in prompt
-    assert "subheading" in prompt
+    assert "title" in prompt
     assert "blocks" in prompt
     assert "commands run" in prompt
     assert "files changed" in prompt
     assert "decisions made" in prompt
     assert "unresolved risks" in prompt
     assert "BLOCKED or ABORT" in prompt
-    assert "ntt --log --ticket-number 90 --content-path .ralph-worklog.json" in prompt
+    assert "Do not run `ntt` or contact Notion" in prompt
+    assert "Never stage or commit `.ralph-worklog.json`" in prompt
     assert "Do NOT put the worklog JSON in your final answer" in prompt
     assert "Do NOT delete the worklog file" in prompt
 
