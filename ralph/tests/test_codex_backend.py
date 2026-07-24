@@ -49,6 +49,7 @@ def test_build_direct_codex_command_keeps_git_writable_for_worker_commits(
         "--ask-for-approval",
         "never",
         "exec",
+        "--json",
         "-C",
         str(repo_path),
         "--sandbox",

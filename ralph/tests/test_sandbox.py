@@ -400,10 +400,11 @@ def test_build_bwrap_agent_command_runs_codex_without_per_command_approval(
     codex_index = len(command) - 1 - list(reversed(command)).index(str(WORKER_AGENT_BINARY_PATH))
     assert command[codex_index:] == [
         str(WORKER_AGENT_BINARY_PATH),
-        "--ask-for-approval",
-            "never",
-        "exec",
-        "-C",
+            "--ask-for-approval",
+                "never",
+            "exec",
+            "--json",
+            "-C",
         str(repo_path),
         "--sandbox",
         "danger-full-access",
@@ -572,7 +573,10 @@ def test_run_agent_visibility_smoke_test_uses_prepared_codex_worker_home(
         return subprocess.CompletedProcess(
             args=command,
             returncode=0,
-            stdout="RALPH_SANDBOX_OK\n",
+            stdout=(
+                '{"type":"item.completed","item":{"id":"item-1",'
+                '"type":"agent_message","text":"RALPH_SANDBOX_OK"}}\n'
+            ),
         )
 
     monkeypatch.setattr(

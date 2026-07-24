@@ -17,6 +17,8 @@ from ralph.claude_backend import (
 from ralph.codex_backend import (
     build_codex_agent_backend,
     build_codex_command_tail,
+    extract_codex_stream_result_text,
+    format_codex_stream_event_for_human,
     prepare_codex_worker_home,
 )
 
@@ -100,9 +102,11 @@ def build_agent_command_tail(
 
 
 def extract_agent_result_text(agent_backend: AgentBackend, raw_output: str) -> str:
-    if agent_backend.backend_name != "claude":
-        return raw_output
-    return extract_claude_stream_result_text(raw_output)
+    if agent_backend.backend_name == "codex":
+        return extract_codex_stream_result_text(raw_output)
+    if agent_backend.backend_name == "claude":
+        return extract_claude_stream_result_text(raw_output)
+    return raw_output
 
 
 def read_default_codex_agent_command() -> str:
@@ -122,16 +126,10 @@ def run_command_and_tee_output(
     input_text: str,
     output_path: Path,
 ) -> subprocess.CompletedProcess[str]:
-    return run_command_and_save_agent_transcripts(
+    return _run_command_and_stream_plain_text_transcript(
         command=command,
         input_text=input_text,
         output_path=output_path,
-        agent_backend=AgentBackend(
-            backend_name="codex",
-            command_name=command[0],
-            agent_config_dir=Path(),
-            agent_home_environment_variable="",
-        ),
         tee_output=True,
     )
 
@@ -161,6 +159,12 @@ def _choose_agent_transcript_strategy(
     output_path: Path,
 ) -> AgentTranscriptStrategy:
     if backend_name == "claude":
+        return AgentTranscriptStrategy(
+            backend_name=backend_name,
+            raw_output_path=output_path.with_suffix(".raw.jsonl"),
+            human_output_path=output_path,
+        )
+    if backend_name == "codex":
         return AgentTranscriptStrategy(
             backend_name=backend_name,
             raw_output_path=output_path.with_suffix(".raw.jsonl"),
@@ -297,6 +301,9 @@ def _format_agent_stream_line_for_human(
     raw_line: str,
     emitted_claude_texts: set[str],
 ) -> str:
+    if backend_name == "codex":
+        human_lines = format_codex_stream_event_for_human(raw_line)
+        return "".join(f"{human_line}\n" for human_line in human_lines)
     if backend_name != "claude":
         return raw_line
 

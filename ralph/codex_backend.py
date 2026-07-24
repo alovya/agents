@@ -7,7 +7,7 @@ import shlex
 import shutil
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterator
+from typing import TYPE_CHECKING, Any, Iterator
 
 if TYPE_CHECKING:
     from ralph.agent_backends import AgentBackend
@@ -40,6 +40,7 @@ def build_codex_command_tail(repo_path: Path) -> list[str]:
         "--ask-for-approval",
         "never",
         "exec",
+        "--json",
         "-C",
         str(repo_path),
         "--sandbox",
@@ -67,6 +68,7 @@ def build_direct_codex_command(
         "--ask-for-approval",
         "never",
         "exec",
+        "--json",
         "-C",
         str(repo_path),
         "--sandbox",
@@ -74,6 +76,71 @@ def build_direct_codex_command(
         "--ephemeral",
         "-",
     ]
+
+
+def extract_codex_stream_result_text(raw_output: str) -> str:
+    final_agent_message: str | None = None
+    malformed_lines: list[str] = []
+    for line in raw_output.splitlines():
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            malformed_lines.append(line)
+            continue
+
+        agent_message = _extract_completed_codex_agent_message(event)
+        if agent_message:
+            final_agent_message = agent_message
+
+    if final_agent_message is not None:
+        return final_agent_message
+    if malformed_lines:
+        raise RuntimeError("Codex JSON Lines output contained malformed JSON lines.")
+    raise RuntimeError("Codex JSON Lines output did not include a completed agent message.")
+
+
+def format_codex_stream_event_for_human(raw_line: str) -> list[str]:
+    try:
+        event = json.loads(raw_line)
+    except json.JSONDecodeError:
+        return ["Codex stream error: malformed JSON line"]
+
+    agent_message = _extract_completed_codex_agent_message(event)
+    if agent_message:
+        return _split_codex_transcript_text_into_lines(agent_message)
+
+    error_text = _extract_codex_error_text(event)
+    if error_text:
+        return _split_codex_transcript_text_into_lines(f"Codex stream error: {error_text}")
+    return []
+
+
+def _extract_completed_codex_agent_message(event: dict[str, Any]) -> str:
+    if event.get("type") != "item.completed":
+        return ""
+    item = event.get("item")
+    if not isinstance(item, dict) or item.get("type") != "agent_message":
+        return ""
+    text = item.get("text")
+    return text if isinstance(text, str) else ""
+
+
+def _extract_codex_error_text(event: dict[str, Any]) -> str:
+    if event.get("type") not in {"error", "turn.failed"}:
+        return ""
+    for key in ("message", "error"):
+        value = event.get(key)
+        if isinstance(value, str) and value:
+            return value
+        if isinstance(value, dict) and isinstance(value.get("message"), str):
+            return value["message"]
+    return ""
+
+
+def _split_codex_transcript_text_into_lines(text: str) -> list[str]:
+    return [line for line in text.splitlines() if line]
 
 
 @contextlib.contextmanager

@@ -7,6 +7,7 @@ import pytest
 
 from ralph.agent_backends import (
     AgentBackend,
+    extract_agent_result_text,
     run_command_and_save_agent_transcripts,
     run_command_and_tee_output,
     select_agent_backend,
@@ -119,7 +120,7 @@ def test_run_command_and_tee_output_writes_to_terminal_and_file(
     assert capsys.readouterr().out == "before\nmiddle\nafter\n"
 
 
-def test_run_command_and_save_agent_transcripts_keeps_codex_transcript_plain(
+def test_run_command_and_save_agent_transcripts_keeps_codex_raw_stream_and_readable_messages(
     tmp_path: Path,
     capsys,
 ) -> None:
@@ -131,8 +132,22 @@ def test_run_command_and_save_agent_transcripts_keeps_codex_transcript_plain(
         agent_home_environment_variable="CODEX_HOME",
     )
 
+    raw_stream = "\n".join([
+        json.dumps({"type": "thread.started", "thread_id": "thread-1"}),
+        json.dumps({
+            "type": "item.completed",
+            "item": {"id": "item-1", "type": "reasoning", "text": "private reasoning"},
+        }),
+        json.dumps({
+            "type": "item.completed",
+            "item": {"id": "item-2", "type": "agent_message", "text": "Work finished.\n<promise>DONE</promise>"},
+        }),
+        json.dumps({"type": "turn.completed", "usage": {"input_tokens": 10}}),
+    ]) + "\n"
+    python_code = f"import sys; sys.stdin.read(); sys.stdout.write({raw_stream!r})"
+
     completed_process = run_command_and_save_agent_transcripts(
-        command=["bash", "-lc", "printf 'before\\n'; cat; printf 'after\\n'"],
+        command=["/workspace/venv/bin/python", "-c", python_code],
         input_text="middle\n",
         output_path=output_path,
         agent_backend=agent_backend,
@@ -140,10 +155,35 @@ def test_run_command_and_save_agent_transcripts_keeps_codex_transcript_plain(
     )
 
     assert completed_process.returncode == 0
-    assert completed_process.stdout == "before\nmiddle\nafter\n"
-    assert output_path.read_text(encoding="utf-8") == "before\nmiddle\nafter\n"
-    assert not (tmp_path / "agent-output.raw.jsonl").exists()
-    assert capsys.readouterr().out == "before\nmiddle\nafter\n"
+    readable_transcript = "Work finished.\n<promise>DONE</promise>\n"
+
+    assert completed_process.stdout == raw_stream
+    assert (tmp_path / "agent-output.raw.jsonl").read_text(encoding="utf-8") == raw_stream
+    assert output_path.read_text(encoding="utf-8") == readable_transcript
+    assert capsys.readouterr().out == readable_transcript
+
+
+def test_extract_agent_result_text_reads_final_completed_codex_agent_message(
+    tmp_path: Path,
+) -> None:
+    agent_backend = AgentBackend(
+        backend_name="codex",
+        command_name="codex",
+        agent_config_dir=tmp_path / "codex-home",
+        agent_home_environment_variable="CODEX_HOME",
+    )
+    raw_output = "\n".join([
+        json.dumps({
+            "type": "item.completed",
+            "item": {"id": "item-1", "type": "agent_message", "text": "Still working."},
+        }),
+        json.dumps({
+            "type": "item.completed",
+            "item": {"id": "item-2", "type": "agent_message", "text": "<promise>DONE</promise>"},
+        }),
+    ])
+
+    assert extract_agent_result_text(agent_backend, raw_output) == "<promise>DONE</promise>"
 
 
 def test_run_command_and_save_agent_transcripts_keeps_claude_raw_stream_and_readable_transcript(

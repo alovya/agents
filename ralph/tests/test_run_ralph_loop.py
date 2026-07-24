@@ -435,6 +435,7 @@ def test_run_agent_can_use_existing_codex_home_without_bubblewrap(
         "--ask-for-approval",
         "never",
         "exec",
+        "--json",
         "-C",
         str(repo_path),
         "--sandbox",
