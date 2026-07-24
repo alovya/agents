@@ -46,6 +46,8 @@ Rules:
 - Do not try to find or read Ralph controller state.
 - Do not edit task ledgers or plan files.
 - Write each NTT log entry to a JSON file shaped like `{{"title": "Short summary", "blocks": [{{"type": "paragraph", "text": "Detailed log entry"}}]}}`, then run `ntt --log --ticket-number {ntt_ticket_number} --content-path <json-path>`.
+- In paragraph text, wrap inline technical names such as file paths, commands, environment variables, functions, class names, field names, tickets, and literal values in backticks.
+- Use code blocks for standalone commands, outputs, diffs, stack traces, paths, JSON, YAML, and structured observations.
 - Record implementation progress, commands, errors, decisions, discoveries, verification evidence, and unresolved risks directly on your assigned NTT task.
 - Do not read, create, restructure, complete, cancel, or change dependencies on NTT tasks.
 - Decide how to verify the completed behaviour and run the relevant checks before returning DONE.

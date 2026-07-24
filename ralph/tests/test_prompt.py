@@ -112,6 +112,9 @@ def test_render_agent_prompt_includes_direct_ntt_logging_contract(tmp_path: Path
     assert "commands" in prompt
     assert "decisions" in prompt
     assert "unresolved risks" in prompt
+    assert "wrap inline technical names" in prompt
+    assert "in backticks" in prompt
+    assert "Use code blocks for standalone commands" in prompt
     assert "Do not read, create, restructure, complete, cancel" in prompt
     assert ".ralph-worklog.json" not in prompt
 
