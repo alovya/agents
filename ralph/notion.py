@@ -17,6 +17,9 @@ from ralph.plan_selection import (
 )
 
 
+NTT_COMPLETE_STATUS = "Complete"
+
+
 def materialise_and_validate_notion_task_graph(job: Any, ledger: dict[str, Any]) -> dict[str, Any]:
     """Create the complete NTT graph before any worker receives a prompt."""
     materialisation_path = job.job_path / "notion-materialisation"
@@ -288,12 +291,12 @@ def _reconcile_completed_notion_tasks(job: Any, ledger: dict[str, Any]) -> dict[
             ledger["ntt_ticket_prefix"],
             job.job_path / "notion-materialisation" / f"{task['ralph_task_id']}-reconcile.json",
         )
-        if task["status"] == "done" and tracker_task["status"] != "Completed":
+        if task["status"] == "done" and tracker_task["status"] != NTT_COMPLETE_STATUS:
             raise RuntimeError(
                 f"Ralph task {task['ralph_task_id']} is done but its NTT task is "
                 f"{tracker_task['status']}."
             )
-        if task["status"] == "pending" and tracker_task["status"] == "Completed":
+        if task["status"] == "pending" and tracker_task["status"] == NTT_COMPLETE_STATUS:
             task["status"] = "done"
             changed = True
     if changed:

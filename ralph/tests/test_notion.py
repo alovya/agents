@@ -10,6 +10,7 @@ import yaml
 from ralph.notion import (
     _extract_created_notion_task_id,
     _notion_page_id_from_url,
+    _reconcile_completed_notion_tasks,
     _resolve_notion_tracker_command_path,
     complete_notion_task_after_accepting_worker,
     materialise_and_validate_notion_task_graph,
@@ -190,6 +191,29 @@ def test_matching_notion_graph_skips_dependency_writes(
     materialise_and_validate_notion_task_graph(job, ledger)
 
     assert observed_commands == []
+
+
+@pytest.mark.parametrize("ralph_status", ["pending", "done"])
+def test_reconciles_ntt_complete_status(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    ralph_status: str,
+) -> None:
+    ledger = _build_unmaterialised_ledger()
+    ledger["tasks"] = [ledger["tasks"][0]]
+    ledger["tasks"][0]["status"] = ralph_status
+    ledger["tasks"][0]["ntt_task_id"] = "ALOVYA-90"
+    job = create_job_with_ledger(tmp_path, ledger)
+
+    monkeypatch.setattr(
+        "ralph.notion._read_notion_task",
+        lambda *_args, **_kwargs: {"status": "Complete"},
+    )
+
+    reconciled_ledger = _reconcile_completed_notion_tasks(job, ledger)
+
+    assert reconciled_ledger["tasks"][0]["status"] == "done"
+    assert yaml.safe_load(job.ledger_path.read_text())["tasks"][0]["status"] == "done"
 
 
 def test_complete_uses_only_accepted_identity_and_commit(
