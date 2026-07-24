@@ -100,7 +100,11 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
     python_venv_path = resolve_python_venv_path(arguments.python_venv)
     job = _find_ralph_job(arguments.job_name)
     _prepare_job_directories(job)
-    _refuse_unsafe_starting_state(repo_path, job)
+    _refuse_unsafe_starting_state(
+        repo_path,
+        job,
+        allow_dirty_start=arguments.allow_dirty_start,
+    )
     if not arguments.skip_ralph_sandbox:
         run_agent_visibility_smoke_test(
             repo_path=repo_path,
@@ -226,7 +230,11 @@ def _validate_ralph_job(arguments: argparse.Namespace) -> None:
     selection = select_next_task_from_plan_and_ledger(ledger, plan_text)
 
     if arguments.repo_path is not None:
-        _refuse_unsafe_starting_state(_resolve_repo_path(arguments.repo_path), job)
+        _refuse_unsafe_starting_state(
+            _resolve_repo_path(arguments.repo_path),
+            job,
+            allow_dirty_start=arguments.allow_dirty_start,
+        )
 
     if selection is None:
         print(f"Ralph job {job.job_name} is valid. No runnable tasks remain.")
@@ -405,11 +413,21 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
         action="store_true",
         help="Pause after each completed task so a human can review before Ralph selects the next task.",
     )
+    run_parser.add_argument(
+        "--allow-dirty-start",
+        action="store_true",
+        help="Resume work from existing uncommitted target repository changes.",
+    )
     run_parser.set_defaults(tee_agent_output=True)
 
     validate_parser = subparsers.add_parser("validate", help="Validate one Ralph job without launching workers.")
     validate_parser.add_argument("--job-name", required=True)
     validate_parser.add_argument("--repo-path")
+    validate_parser.add_argument(
+        "--allow-dirty-start",
+        action="store_true",
+        help="Accept existing uncommitted target repository changes during validation.",
+    )
 
     smoke_parser = subparsers.add_parser("smoke-test", help="Verify the agent sandbox contract.")
     smoke_parser.add_argument("--repo-path", required=True)
@@ -447,7 +465,12 @@ def _require_ralph_job_files(job: RalphJob) -> None:
         raise FileNotFoundError(f"Missing Ralph ledger: {job.ledger_path}")
 
 
-def _refuse_unsafe_starting_state(repo_path: Path, job: RalphJob) -> None:
+def _refuse_unsafe_starting_state(
+    repo_path: Path,
+    job: RalphJob,
+    *,
+    allow_dirty_start: bool = False,
+) -> None:
     if not repo_path.is_dir():
         raise FileNotFoundError(f"Target repo does not exist: {repo_path}")
     if _is_path_inside(child_path=job.job_path, parent_path=repo_path):
@@ -461,7 +484,7 @@ def _refuse_unsafe_starting_state(repo_path: Path, job: RalphJob) -> None:
             raise RuntimeError(f"Refusing to run because {control_path_name} exists under the target repo.")
     if _repo_contains_private_plan_path(repo_path):
         raise RuntimeError("Refusing to run because Ralph PLAN.md and ledger.yaml exist under the target repo.")
-    if _read_git_status(repo_path):
+    if not allow_dirty_start and _read_git_status(repo_path):
         raise RuntimeError("Refusing to run because the target repo is dirty.")
 
 

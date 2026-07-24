@@ -147,6 +147,28 @@ def test_parse_args_can_skip_ralph_sandbox() -> None:
     assert arguments.skip_ralph_sandbox is True
 
 
+def test_parse_args_can_allow_dirty_start_for_run_and_validation() -> None:
+    run_arguments = _parse_arguments([
+        "run",
+        "--repo-path",
+        "/tmp/repo",
+        "--job-name",
+        "example",
+        "--allow-dirty-start",
+    ])
+    validate_arguments = _parse_arguments([
+        "validate",
+        "--repo-path",
+        "/tmp/repo",
+        "--job-name",
+        "example",
+        "--allow-dirty-start",
+    ])
+
+    assert run_arguments.allow_dirty_start is True
+    assert validate_arguments.allow_dirty_start is True
+
+
 def test_parse_args_accepts_python_venv() -> None:
     arguments = _parse_arguments([
         "run",
@@ -676,6 +698,20 @@ def test_refuse_unsafe_starting_state_accepts_ordinary_repo_plan_docs(tmp_path: 
     run_git(repo_path, "commit", "-m", "Add public plan doc")
 
     _refuse_unsafe_starting_state(repo_path, job)
+
+
+def test_refuse_unsafe_starting_state_requires_explicit_permission_for_dirty_repo(
+    tmp_path: Path,
+) -> None:
+    repo_path = initialise_git_repo(tmp_path / "target-repo")
+    job = create_job_with_ledger(tmp_path, build_example_ledger())
+    dirty_file_path = repo_path / "unfinished-work.txt"
+    dirty_file_path.write_text("Worker progress.")
+
+    with pytest.raises(RuntimeError, match="target repo is dirty"):
+        _refuse_unsafe_starting_state(repo_path, job)
+
+    _refuse_unsafe_starting_state(repo_path, job, allow_dirty_start=True)
 
 
 def test_refuse_unsafe_starting_state_still_rejects_private_ralph_ledgers(tmp_path: Path) -> None:
