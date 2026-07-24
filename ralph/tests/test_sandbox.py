@@ -378,9 +378,10 @@ def test_build_bwrap_agent_command_uses_claude_command_tail(
         "Glob",
         "Grep",
         "Edit",
-        "MultiEdit",
-        "Write",
-        "Bash(python -m pytest ralph/tests/test_run_ralph_loop.py)",
+            "MultiEdit",
+            "Write",
+            "Bash",
+            "Bash(python -m pytest ralph/tests/test_run_ralph_loop.py)",
         "Bash(git add .)",
         "Bash(git commit --no-verify -m *)",
         "Bash(git rev-parse HEAD)",
@@ -390,7 +391,7 @@ def test_build_bwrap_agent_command_uses_claude_command_tail(
     assert "--dangerously-skip-permissions" not in command
 
 
-def test_build_bwrap_agent_command_keeps_codex_command_tail_with_ask_for_approval_untrusted(
+def test_build_bwrap_agent_command_runs_codex_without_per_command_approval(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -418,7 +419,7 @@ def test_build_bwrap_agent_command_keeps_codex_command_tail_with_ask_for_approva
     assert command[codex_index:] == [
         str(WORKER_AGENT_BINARY_PATH),
         "--ask-for-approval",
-        "untrusted",
+            "never",
         "exec",
         "-C",
         str(repo_path),

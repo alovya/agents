@@ -1,27 +1,18 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
-
-import yaml
 
 from ralph.plan_selection import TaskSelection
 
 
 def render_agent_prompt(
     repo_path: Path,
-    ledger: dict[str, Any],
     selection: TaskSelection,
     python_venv_path: Path | None,
 ) -> str:
-    visible_ledger = _remove_duplicated_task_prose_before_rendering_prompt(ledger)
-    active_task = _remove_duplicated_task_prose_before_rendering_prompt(selection.task)
-
     return WORKER_PROMPT_TEMPLATE.format(
         repo_path=repo_path,
         tool_environment_context=describe_python_venv_for_worker_prompt(python_venv_path),
-        active_task_yaml=_dump_yaml(active_task),
-        visible_ledger_yaml=_dump_yaml(visible_ledger),
         shared_plan_context=selection.shared_plan_context.strip(),
         active_task_plan_context=selection.active_task_plan_context.strip(),
         notion_log_instructions=_build_notion_log_instructions(selection.task),
@@ -57,12 +48,6 @@ Repository:
 Agent tool environment:
 {tool_environment_context}
 
-Active task:
-{active_task_yaml}
-
-Full visible ledger:
-{visible_ledger_yaml}
-
 Shared plan context:
 {shared_plan_context}
 
@@ -71,24 +56,15 @@ Active task plan slice:
 
 Rules:
 - Work only on the active task.
-- Touch only paths listed in the active task unless you must make a directly required adjacent change.
-- Run only bash commands listed in the active task allowed_bash_commands, verification_commands, or Ralph's always-allowed worker commands.
 - Do not try to find or read Ralph controller state.
 - Do not edit task ledgers, plan files, or Ralph task logs.
-- Run every verification command listed in the active task before returning DONE.
+- Decide how to verify the completed behaviour and run the relevant checks before returning DONE.
 - Commit the finished repo changes before returning DONE with `git commit --no-verify -m "Ralph: <task id> <task title>"`.
 - Do not use `git commit` without `--no-verify`.
 
 {notion_log_instructions}
 
-- After the worklog block, include exactly one verification transcript block:
-
-RALPH_VERIFICATION_BEGIN
-$ <verification command>
-<command output>
-RALPH_VERIFICATION_END
-
-- After that block, include exactly one commit line:
+- Include exactly one commit line:
 
 RALPH_COMMIT <40-character git commit hash>
 
@@ -141,19 +117,3 @@ def _build_notion_log_instructions(task: dict[str, Any]) -> str:
 
 def _build_notion_log_instructions_not_applicable() -> str:
     return "Notion logging is not applicable for this task."
-
-
-def _remove_duplicated_task_prose_before_rendering_prompt(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {
-            key: _remove_duplicated_task_prose_before_rendering_prompt(child_value)
-            for key, child_value in value.items()
-            if key not in {"plan", "context", "notes", "description", "implementation"}
-        }
-    if isinstance(value, list):
-        return [_remove_duplicated_task_prose_before_rendering_prompt(item) for item in value]
-    return value
-
-
-def _dump_yaml(value: Any) -> str:
-    return yaml.safe_dump(value, sort_keys=False)

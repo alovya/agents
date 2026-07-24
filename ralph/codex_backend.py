@@ -37,7 +37,7 @@ def build_codex_agent_backend(agent_command: str | None) -> "AgentBackend":
 def build_codex_command_tail(repo_path: Path) -> list[str]:
     return [
         "--ask-for-approval",
-        "untrusted",
+        "never",
         "exec",
         "-C",
         str(repo_path),

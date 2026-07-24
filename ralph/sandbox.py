@@ -647,21 +647,10 @@ def reject_worker_visible_path_that_overlaps_hidden_state(path: Path, role: str)
 @contextlib.contextmanager
 def agent_permission_setup(
     agent_backend: "AgentBackend",
-    allowed_bash_commands: list[str],
     task_path: Path | None,
 ) -> Iterator[None]:
-    from ralph.codex_backend import codex_permission_setup
-
-    if agent_backend.backend_name == "codex" and task_path is not None:
-        with codex_permission_setup(
-            agent_backend=agent_backend,
-            allowed_bash_commands=allowed_bash_commands,
-            task_path=task_path,
-        ):
-            yield
-    else:
-        with _claude_permission_setup():
-            yield
+    with _claude_permission_setup():
+        yield
 
 
 @contextlib.contextmanager

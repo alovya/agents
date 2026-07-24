@@ -218,7 +218,7 @@ def test_controller_logs_slice_start_to_notion(
 
     assert observed_content["title"] == "Ralph R1 started"
     assert "Goal: Add parser" in observed_content["blocks"][0]["text"]
-    assert "verification_commands" in observed_content["blocks"][1]["text"]
+    assert "ralph_task_id" in observed_content["blocks"][1]["text"]
     assert "--tracker-state-path" not in observed_content["command"]
 
 
@@ -293,12 +293,11 @@ def test_controller_logs_claude_failed_verification_with_raw_stream_path(
     assert observed_content["blocks"][3]["text"] == f"Raw Claude stream path: {tmp_path / 'agent-output.raw.jsonl'}"
 
 
-def test_controller_logs_successful_verification_and_commit_to_notion(
+def test_controller_logs_completed_commit_to_notion(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     selection = select_first_task(build_ledger_with_materialised_notion_task())
-    (tmp_path / "verification-output.txt").write_text("$ pytest\npassed\n")
     observed_content = capture_notion_log_content(monkeypatch)
 
     log_completed_worker_to_notion(
@@ -310,9 +309,8 @@ def test_controller_logs_successful_verification_and_commit_to_notion(
 
     assert observed_content["title"] == "Ralph R1 completed"
     assert observed_content["blocks"][0]["text"] == "M src/parser.py"
-    assert observed_content["blocks"][1]["text"] == "$ pytest\npassed\n"
-    assert observed_content["blocks"][2]["text"] == "Commit hash: abc123"
-    assert "Transcript path:" in observed_content["blocks"][3]["text"]
+    assert observed_content["blocks"][1]["text"] == "Commit hash: abc123"
+    assert "Transcript path:" in observed_content["blocks"][2]["text"]
 
 
 def test_controller_logs_claude_completion_with_raw_stream_path(
@@ -320,7 +318,6 @@ def test_controller_logs_claude_completion_with_raw_stream_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     selection = select_first_task(build_ledger_with_materialised_notion_task())
-    (tmp_path / "verification-output.txt").write_text("$ pytest\npassed\n")
     observed_content = capture_notion_log_content(monkeypatch)
 
     log_completed_worker_to_notion(
@@ -331,8 +328,8 @@ def test_controller_logs_claude_completion_with_raw_stream_path(
         agent_backend_name="claude",
     )
 
-    assert observed_content["blocks"][3]["text"] == f"Transcript path: {tmp_path / 'agent-output.txt'}"
-    assert observed_content["blocks"][4]["text"] == f"Raw Claude stream path: {tmp_path / 'agent-output.raw.jsonl'}"
+    assert observed_content["blocks"][2]["text"] == f"Transcript path: {tmp_path / 'agent-output.txt'}"
+    assert observed_content["blocks"][3]["text"] == f"Raw Claude stream path: {tmp_path / 'agent-output.raw.jsonl'}"
 
 
 def test_extract_created_notion_task_id_uses_creation_operation_pair(

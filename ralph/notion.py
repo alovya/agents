@@ -92,8 +92,6 @@ def log_slice_start_to_notion(selection: TaskSelection, task_path: Path) -> None
                 {"type": "paragraph", "text": f"Goal: {selection.task['title']}"},
                 {"type": "code", "language": "yaml", "text": _dump_yaml({
                     "ralph_task_id": selection.task["id"],
-                    "touchable_paths": selection.task.get("touchable_paths") or [],
-                    "verification_commands": selection.task.get("verification_commands") or [],
                     "constraints": _worker_launch_constraints(),
                 })},
             ],
@@ -178,11 +176,6 @@ def log_completed_worker_to_notion(
             "title": f"Ralph {selection.task['id']} completed",
             "blocks": [
                 {"type": "code", "language": "text", "text": "\n".join(changed_files) or "No changed files were captured before commit."},
-                {
-                    "type": "code",
-                    "language": "text",
-                    "text": _read_text_if_file_exists(task_path / "verification-output.txt"),
-                },
                 {"type": "paragraph", "text": f"Commit hash: {commit_hash}"},
                 *_build_agent_transcript_reference_blocks(
                     task_path=task_path,

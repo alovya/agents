@@ -7,7 +7,6 @@ import pytest
 
 from ralph.agent_backends import (
     AgentBackend,
-    build_worker_allowed_bash_commands,
     run_command_and_save_agent_transcripts,
     run_command_and_tee_output,
     select_agent_backend,
@@ -100,29 +99,6 @@ def test_claude_backend_falls_back_to_claude_binary_name(
     agent_backend = select_agent_backend(agent_backend_name="claude", agent_command=None)
 
     assert agent_backend.command_name == "claude"
-
-
-def test_build_worker_allowed_bash_commands_combines_controller_and_plan_commands() -> None:
-    task = {
-        "allowed_bash_commands": ["rg *", "sed -n *"],
-        "verification_commands": ["python -m pytest ralph/tests/test_run_ralph_loop.py"],
-    }
-
-    allowed_bash_commands = build_worker_allowed_bash_commands(task)
-
-    assert allowed_bash_commands == [
-        "git status",
-        "git status --short",
-        "git diff",
-        "git diff --staged",
-        "git ls-files",
-        "git add .",
-        "git commit --no-verify -m *",
-        "git rev-parse HEAD",
-        "rg *",
-        "sed -n *",
-        "python -m pytest ralph/tests/test_run_ralph_loop.py",
-    ]
 
 
 def test_run_command_and_tee_output_writes_to_terminal_and_file(

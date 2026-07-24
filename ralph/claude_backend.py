@@ -93,7 +93,7 @@ def _copy_claude_worker_skills(master_claude_config_dir: Path, worker_claude_con
 
 
 def build_claude_allowed_tools(allowed_bash_commands: list[str]) -> list[str]:
-    allowed_tools = ["Read", "Glob", "Grep", "Edit", "MultiEdit", "Write"]
+    allowed_tools = ["Read", "Glob", "Grep", "Edit", "MultiEdit", "Write", "Bash"]
     allowed_tools += [
         f"Bash({command})"
         for command in allowed_bash_commands

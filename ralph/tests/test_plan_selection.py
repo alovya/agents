@@ -27,8 +27,6 @@ def test_extracts_only_active_plan_slice() -> None:
     assert selection.task["id"] == "R1"
     assert "First task context." in selection.active_task_plan_context
     assert "Second task context." not in selection.active_task_plan_context
-    assert selection.task["allowed_bash_commands"] == ["rg *", "sed -n *"]
-    assert selection.task["verification_commands"] == ["test -f src/parser.py"]
 
 
 def test_rejects_missing_plan_slice() -> None:
@@ -42,7 +40,7 @@ Shared context.
         select_next_task_from_plan_and_ledger(build_example_ledger(), plan_text)
 
 
-def test_rejects_task_plan_without_allowed_bash_block() -> None:
+def test_accepts_task_plan_that_only_specifies_behaviour() -> None:
     plan_text = """
 <!-- ralph-shared:start -->
 Shared context.
@@ -50,58 +48,16 @@ Shared context.
 
 <!-- ralph-task:start R1 -->
 First task context.
-
-<!-- ralph-verification:start -->
-- test -f src/parser.py
-<!-- ralph-verification:end -->
 <!-- ralph-task:end R1 -->
 
 <!-- ralph-task:start R2 -->
 Second task context.
-
-<!-- ralph-allowed-bash:start -->
-- rg *
-<!-- ralph-allowed-bash:end -->
-
-<!-- ralph-verification:start -->
-- python -m pytest tests/test_cli.py
-<!-- ralph-verification:end -->
 <!-- ralph-task:end R2 -->
 """
 
-    with pytest.raises(ValueError, match="exactly one ralph-allowed-bash block"):
-        select_next_task_from_plan_and_ledger(build_example_ledger(), plan_text)
+    selection = select_next_task_from_plan_and_ledger(build_example_ledger(), plan_text)
 
-
-def test_rejects_task_plan_without_verification_block() -> None:
-    plan_text = """
-<!-- ralph-shared:start -->
-Shared context.
-<!-- ralph-shared:end -->
-
-<!-- ralph-task:start R1 -->
-First task context.
-
-<!-- ralph-allowed-bash:start -->
-- rg *
-<!-- ralph-allowed-bash:end -->
-<!-- ralph-task:end R1 -->
-
-<!-- ralph-task:start R2 -->
-Second task context.
-
-<!-- ralph-allowed-bash:start -->
-- rg *
-<!-- ralph-allowed-bash:end -->
-
-<!-- ralph-verification:start -->
-- python -m pytest tests/test_cli.py
-<!-- ralph-verification:end -->
-<!-- ralph-task:end R2 -->
-"""
-
-    with pytest.raises(ValueError, match="exactly one ralph-verification block"):
-        select_next_task_from_plan_and_ledger(build_example_ledger(), plan_text)
+    assert selection.task["id"] == "R1"
 
 
 def test_selects_dependency_ready_task() -> None:
@@ -111,7 +67,6 @@ def test_selects_dependency_ready_task() -> None:
     selection = select_next_task_from_plan_and_ledger(ledger, build_example_plan())
 
     assert selection.task["id"] == "R2"
-    assert selection.task["verification_commands"] == ["python -m pytest tests/test_cli.py"]
 
 
 def test_selects_first_pending_task_after_skipping_pending_task_with_unfinished_dependencies() -> None:
@@ -156,10 +111,24 @@ def test_accepts_example_ledger() -> None:
     assert read_tasks_from_ledger(ledger)
 
 
-@pytest.mark.parametrize("command_policy_key", ["allowed_bash_commands", "verification_commands"])
-def test_read_tasks_rejects_command_policy_in_ledger(command_policy_key: str) -> None:
+@pytest.mark.parametrize(
+    "obsolete_field",
+    ["allowed_bash_commands", "touchable_paths", "verification_commands"],
+)
+def test_read_tasks_rejects_obsolete_control_fields(obsolete_field: str) -> None:
     ledger = build_example_ledger()
-    ledger["tasks"][0][command_policy_key] = ["rg *"]
+    ledger["tasks"][0][obsolete_field] = ["obsolete"]
 
-    with pytest.raises(ValueError, match=f"must keep {command_policy_key} in PLAN.md"):
+    with pytest.raises(ValueError, match="obsolete control fields"):
         read_tasks_from_ledger(ledger)
+
+
+@pytest.mark.parametrize("obsolete_marker", ["ralph-allowed-bash", "ralph-verification"])
+def test_select_task_rejects_obsolete_plan_control_markers(obsolete_marker: str) -> None:
+    plan_text = build_example_plan().replace(
+        "First task context.",
+        f"First task context.\n<!-- {obsolete_marker}:start -->\n<!-- {obsolete_marker}:end -->",
+    )
+
+    with pytest.raises(ValueError, match="obsolete control markers"):
+        select_next_task_from_plan_and_ledger(build_example_ledger(), plan_text)

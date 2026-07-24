@@ -7,7 +7,15 @@ from dataclasses import dataclass
 
 
 ALOVYA_TASK_ID_PATTERN = re.compile(r"^ALOVYA-(?P<ticket_number>\d+)$")
-PLAN_COMMAND_ITEM_PATTERN = re.compile(r"^\s*-\s+(?P<command>.+?)\s*$")
+OBSOLETE_TASK_CONTROL_FIELDS = frozenset({
+    "allowed_bash_commands",
+    "touchable_paths",
+    "verification_commands",
+})
+OBSOLETE_PLAN_CONTROL_MARKERS = (
+    "ralph-allowed-bash",
+    "ralph-verification",
+)
 TASK_BLOCK_PATTERN = re.compile(
     r"<!--\s*ralph-task:start\s+(?P<task_id>[A-Za-z0-9_.-]+)\s*-->\n"
     r"(?P<body>.*?)"
@@ -36,7 +44,7 @@ def select_next_task_from_plan_and_ledger(
     tasks = read_tasks_from_ledger(ledger)
     shared_plan_context = _extract_shared_plan_context(plan_text)
     task_plan_contexts = _extract_task_plan_contexts(plan_text)
-    task_command_contracts = _derive_task_command_contracts_from_plan(task_plan_contexts)
+    _reject_obsolete_plan_control_markers(task_plan_contexts)
     _validate_plan_and_ledger_match(tasks, task_plan_contexts)
 
     completed_task_ids = {task["id"] for task in tasks if task.get("status") == "done"}
@@ -45,13 +53,8 @@ def select_next_task_from_plan_and_ledger(
             continue
         depends_on = task.get("depends_on") or []
         if all(task_id in completed_task_ids for task_id in depends_on):
-            task_with_plan_commands = _attach_plan_command_contract_to_task(
-                task=task,
-                allowed_bash_commands=task_command_contracts[task["id"]]["allowed_bash_commands"],
-                verification_commands=task_command_contracts[task["id"]]["verification_commands"],
-            )
             return TaskSelection(
-                task=task_with_plan_commands,
+                task=task,
                 shared_plan_context=shared_plan_context,
                 active_task_plan_context=task_plan_contexts[task["id"]],
             )
@@ -75,13 +78,8 @@ def refresh_task_selection_from_ledger(
     selection: TaskSelection,
 ) -> TaskSelection:
     refreshed_task = find_task_by_id(read_tasks_from_ledger(ledger), selection.task["id"])
-    refreshed_task_with_plan_commands = _attach_plan_command_contract_to_task(
-        task=refreshed_task,
-        allowed_bash_commands=selection.task.get("allowed_bash_commands") or [],
-        verification_commands=selection.task.get("verification_commands") or [],
-    )
     return TaskSelection(
-        task=refreshed_task_with_plan_commands,
+        task=refreshed_task,
         shared_plan_context=selection.shared_plan_context,
         active_task_plan_context=selection.active_task_plan_context,
     )
@@ -111,9 +109,9 @@ def _validate_task_shape(task: Any) -> None:
     for required_key in ["id", "title", "status"]:
         if not task.get(required_key):
             raise ValueError(f"Every ledger task must have {required_key}.")
-    for plan_command_key in ["allowed_bash_commands", "verification_commands"]:
-        if plan_command_key in task:
-            raise ValueError(f"Ledger task {task['id']} must keep {plan_command_key} in PLAN.md.")
+    obsolete_fields = sorted(OBSOLETE_TASK_CONTROL_FIELDS.intersection(task))
+    if obsolete_fields:
+        raise ValueError(f"Ledger task {task['id']} contains obsolete control fields: {obsolete_fields}")
     if task["status"] not in {"pending", "done", "blocked", "aborted"}:
         raise ValueError(f"Invalid task status for {task['id']}: {task['status']}")
     if _contains_forbidden_plan_field(task):
@@ -203,81 +201,15 @@ def _extract_task_plan_contexts(plan_text: str) -> dict[str, str]:
     return task_plan_contexts
 
 
-def _derive_task_command_contracts_from_plan(
-    task_plan_contexts: dict[str, str],
-) -> dict[str, dict[str, list[str]]]:
-    return {
-        task_id: {
-            "allowed_bash_commands": _extract_plan_command_list(
-                task_id=task_id,
-                task_plan_context=task_plan_context,
-                block_name="ralph-allowed-bash",
-            ),
-            "verification_commands": _extract_plan_command_list(
-                task_id=task_id,
-                task_plan_context=task_plan_context,
-                block_name="ralph-verification",
-            ),
-        }
-        for task_id, task_plan_context in task_plan_contexts.items()
-    }
-
-
-def _attach_plan_command_contract_to_task(
-    task: dict[str, Any],
-    allowed_bash_commands: list[str],
-    verification_commands: list[str],
-) -> dict[str, Any]:
-    task_with_plan_commands = dict(task)
-    task_with_plan_commands["allowed_bash_commands"] = allowed_bash_commands
-    task_with_plan_commands["verification_commands"] = verification_commands
-    return task_with_plan_commands
-
-
-def _extract_plan_command_list(
-    task_id: str,
-    task_plan_context: str,
-    block_name: str,
-) -> list[str]:
-    block_body = _extract_single_plan_command_block(
-        task_id=task_id,
-        task_plan_context=task_plan_context,
-        block_name=block_name,
-    )
-    commands: list[str] = []
-    malformed_lines: list[str] = []
-    for line in block_body.splitlines():
-        if not line.strip():
-            continue
-        match = PLAN_COMMAND_ITEM_PATTERN.match(line)
-        if match is None:
-            malformed_lines.append(line)
-            continue
-        commands.append(match.group("command"))
-    if malformed_lines:
-        raise ValueError(
-            f"Task {task_id} {block_name} block must contain only '- <command>' lines: {malformed_lines}"
-        )
-    if not commands:
-        raise ValueError(f"Task {task_id} {block_name} block must contain at least one command.")
-    return commands
-
-
-def _extract_single_plan_command_block(
-    task_id: str,
-    task_plan_context: str,
-    block_name: str,
-) -> str:
-    command_block_pattern = re.compile(
-        rf"<!--\s*{re.escape(block_name)}:start\s*-->\n"
-        rf"(?P<body>.*?)"
-        rf"<!--\s*{re.escape(block_name)}:end\s*-->",
-        re.DOTALL,
-    )
-    matches = list(command_block_pattern.finditer(task_plan_context))
-    if len(matches) != 1:
-        raise ValueError(f"Task {task_id} must contain exactly one {block_name} block.")
-    return matches[0].group("body")
+def _reject_obsolete_plan_control_markers(task_plan_contexts: dict[str, str]) -> None:
+    for task_id, task_plan_context in task_plan_contexts.items():
+        found_markers = [
+            marker
+            for marker in OBSOLETE_PLAN_CONTROL_MARKERS
+            if marker in task_plan_context
+        ]
+        if found_markers:
+            raise ValueError(f"PLAN.md task {task_id} contains obsolete control markers: {found_markers}")
 
 
 def _validate_plan_and_ledger_match(

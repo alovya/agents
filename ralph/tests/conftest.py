@@ -23,14 +23,12 @@ def build_example_ledger() -> dict[str, Any]:
                 "title": "Add parser",
                 "status": "pending",
                 "depends_on": [],
-                "touchable_paths": ["src/parser.py"],
             },
             {
                 "id": "R2",
                 "title": "Add command line entrypoint",
                 "status": "pending",
                 "depends_on": ["R1"],
-                "touchable_paths": ["src/cli.py"],
             },
         ],
     }
@@ -46,28 +44,24 @@ def build_ledger_where_first_pending_task_waits_and_second_pending_task_is_ready
                 "title": "Prepare dependency",
                 "status": "blocked",
                 "depends_on": [],
-                "touchable_paths": ["src/dependency.py"],
             },
             {
                 "id": "R1",
                 "title": "Wait for dependency",
                 "status": "pending",
                 "depends_on": ["R0"],
-                "touchable_paths": ["src/waiting.py"],
             },
             {
                 "id": "R2",
                 "title": "First ready task",
                 "status": "pending",
                 "depends_on": [],
-                "touchable_paths": ["src/first_ready.py"],
             },
             {
                 "id": "R3",
                 "title": "Second ready task",
                 "status": "pending",
                 "depends_on": [],
-                "touchable_paths": ["src/second_ready.py"],
             },
         ],
     }
@@ -81,28 +75,10 @@ Shared context.
 
 <!-- ralph-task:start R1 -->
 First task context.
-
-<!-- ralph-allowed-bash:start -->
-- rg *
-- sed -n *
-<!-- ralph-allowed-bash:end -->
-
-<!-- ralph-verification:start -->
-- test -f src/parser.py
-<!-- ralph-verification:end -->
 <!-- ralph-task:end R1 -->
 
 <!-- ralph-task:start R2 -->
 Second task context.
-
-<!-- ralph-allowed-bash:start -->
-- rg *
-- sed -n *
-<!-- ralph-allowed-bash:end -->
-
-<!-- ralph-verification:start -->
-- python -m pytest tests/test_cli.py
-<!-- ralph-verification:end -->
 <!-- ralph-task:end R2 -->
 """
 
@@ -115,50 +91,18 @@ Shared context.
 
 <!-- ralph-task:start R0 -->
 Dependency task context.
-
-<!-- ralph-allowed-bash:start -->
-- rg *
-<!-- ralph-allowed-bash:end -->
-
-<!-- ralph-verification:start -->
-- test -f src/dependency.py
-<!-- ralph-verification:end -->
 <!-- ralph-task:end R0 -->
 
 <!-- ralph-task:start R1 -->
 Waiting task context.
-
-<!-- ralph-allowed-bash:start -->
-- rg *
-<!-- ralph-allowed-bash:end -->
-
-<!-- ralph-verification:start -->
-- test -f src/waiting.py
-<!-- ralph-verification:end -->
 <!-- ralph-task:end R1 -->
 
 <!-- ralph-task:start R2 -->
 Second task context.
-
-<!-- ralph-allowed-bash:start -->
-- rg *
-<!-- ralph-allowed-bash:end -->
-
-<!-- ralph-verification:start -->
-- test -f src/first_ready.py
-<!-- ralph-verification:end -->
 <!-- ralph-task:end R2 -->
 
 <!-- ralph-task:start R3 -->
 Third task context.
-
-<!-- ralph-allowed-bash:start -->
-- rg *
-<!-- ralph-allowed-bash:end -->
-
-<!-- ralph-verification:start -->
-- test -f src/second_ready.py
-<!-- ralph-verification:end -->
 <!-- ralph-task:end R3 -->
 """
 
@@ -173,7 +117,6 @@ def build_ledger_with_planned_notion_task(related_to: str, task_id: str = "R1") 
                 "title": "Add parser",
                 "status": "pending",
                 "depends_on": [],
-                "touchable_paths": ["src/parser.py"],
                 "notion_task": {
                     "planned": True,
                     "relationship": "child",
@@ -244,11 +187,7 @@ def command_windows(command: list[str], size: int) -> list[list[str]]:
 
 def select_first_task(ledger: dict[str, Any]) -> TaskSelection:
     return TaskSelection(
-        task={
-            **ledger["tasks"][0],
-            "allowed_bash_commands": ["rg *", "sed -n *"],
-            "verification_commands": ["test -f src/parser.py"],
-        },
+        task=ledger["tasks"][0],
         shared_plan_context="Shared context.",
         active_task_plan_context="First task context.",
     )

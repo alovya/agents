@@ -17,7 +17,6 @@ def test_render_agent_prompt_excludes_unrelated_task_slice(tmp_path: Path) -> No
 
     prompt = render_agent_prompt(
         repo_path=tmp_path,
-        ledger=ledger,
         selection=selection,
         python_venv_path=None,
     )
@@ -28,7 +27,7 @@ def test_render_agent_prompt_excludes_unrelated_task_slice(tmp_path: Path) -> No
     assert "Codex" not in prompt
 
 
-def test_render_agent_prompt_keeps_plan_instructions_without_duplicating_ledger_prose(tmp_path: Path) -> None:
+def test_render_agent_prompt_keeps_plan_instructions_without_rendering_ledger_state(tmp_path: Path) -> None:
     ledger = build_example_ledger()
     ledger["tasks"][0]["context"] = "Duplicated task prose from ledger YAML."
     selection = TaskSelection(
@@ -39,13 +38,16 @@ def test_render_agent_prompt_keeps_plan_instructions_without_duplicating_ledger_
 
     prompt = render_agent_prompt(
         repo_path=tmp_path,
-        ledger=ledger,
         selection=selection,
         python_venv_path=None,
     )
 
     assert "Task instructions kept from PLAN.md." in prompt
     assert "Duplicated task prose from ledger YAML." not in prompt
+    assert "Full visible ledger" not in prompt
+    assert "status: pending" not in prompt
+    assert "depends_on" not in prompt
+    assert "Add command line entrypoint" not in prompt
 
 
 def test_render_agent_prompt_documents_python_venv(tmp_path: Path) -> None:
@@ -59,7 +61,6 @@ def test_render_agent_prompt_documents_python_venv(tmp_path: Path) -> None:
 
     prompt = render_agent_prompt(
         repo_path=tmp_path,
-        ledger=ledger,
         selection=selection,
         python_venv_path=python_venv_path,
     )
@@ -79,13 +80,13 @@ def test_render_agent_prompt_does_not_require_json_worklog_block(tmp_path: Path)
 
     prompt = render_agent_prompt(
         repo_path=tmp_path,
-        ledger=ledger,
         selection=selection,
         python_venv_path=None,
     )
 
     assert "RALPH_WORKLOG_JSON_BEGIN" not in prompt
     assert "RALPH_WORKLOG_JSON_END" not in prompt
+    assert "RALPH_VERIFICATION_BEGIN" not in prompt
 
 
 def test_render_agent_prompt_includes_worklog_instructions_when_materialised(tmp_path: Path) -> None:
@@ -100,7 +101,6 @@ def test_render_agent_prompt_includes_worklog_instructions_when_materialised(tmp
 
     prompt = render_agent_prompt(
         repo_path=tmp_path,
-        ledger=ledger,
         selection=selection,
         python_venv_path=None,
     )
@@ -129,7 +129,6 @@ def test_render_agent_prompt_notion_log_not_applicable_without_task(tmp_path: Pa
 
     prompt = render_agent_prompt(
         repo_path=tmp_path,
-        ledger=ledger,
         selection=selection,
         python_venv_path=None,
     )

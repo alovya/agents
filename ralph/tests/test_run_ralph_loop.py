@@ -313,7 +313,7 @@ def test_run_agent_uses_prepared_codex_worker_home(
 
     agent_result = _run_agent(
         repo_path=repo_path,
-        task={"allowed_bash_commands": ["rg *"]},
+        task={},
         prompt="Worker prompt",
         agent_backend_name="codex",
         agent_command="codex",
@@ -327,7 +327,7 @@ def test_run_agent_uses_prepared_codex_worker_home(
     assert agent_result.promise == "DONE"
     assert observed_worker_agent_backend["bwrap"] == observed_worker_agent_backend["agent"]
     assert worker_codex_home_path != master_codex_home_path
-    assert observed_worker_rules_existed == [True]
+    assert observed_worker_rules_existed == [False]
     assert not master_codex_home_path.joinpath("rules", "default.rules").exists()
     assert not worker_codex_home_path.exists()
 
@@ -361,7 +361,7 @@ def test_run_agent_can_use_existing_codex_home_without_bubblewrap(
 
     agent_result = _run_agent(
         repo_path=repo_path,
-        task={"allowed_bash_commands": ["rg *"]},
+        task={},
         prompt="Worker prompt",
         agent_backend_name="codex",
         agent_command="/usr/bin/codex",
@@ -492,12 +492,6 @@ def test_validate_rejects_missing_job_files(
         (
             "<!-- ralph-task:start R1 -->\n"
             "Task context.\n"
-            "<!-- ralph-allowed-bash:start -->\n"
-            "- rg *\n"
-            "<!-- ralph-allowed-bash:end -->\n"
-            "<!-- ralph-verification:start -->\n"
-            "- test -f src/parser.py\n"
-            "<!-- ralph-verification:end -->\n"
             "<!-- ralph-task:end R1 -->\n",
             "ralph-shared block",
         ),
@@ -506,30 +500,6 @@ def test_validate_rejects_missing_job_files(
             "Shared context.\n"
             "<!-- ralph-shared:end -->\n",
             "missing Ralph task blocks",
-        ),
-        (
-            "<!-- ralph-shared:start -->\n"
-            "Shared context.\n"
-            "<!-- ralph-shared:end -->\n\n"
-            "<!-- ralph-task:start R1 -->\n"
-            "Task context.\n"
-            "<!-- ralph-verification:start -->\n"
-            "- test -f src/parser.py\n"
-            "<!-- ralph-verification:end -->\n"
-            "<!-- ralph-task:end R1 -->\n",
-            "ralph-allowed-bash block",
-        ),
-        (
-            "<!-- ralph-shared:start -->\n"
-            "Shared context.\n"
-            "<!-- ralph-shared:end -->\n\n"
-            "<!-- ralph-task:start R1 -->\n"
-            "Task context.\n"
-            "<!-- ralph-allowed-bash:start -->\n"
-            "- rg *\n"
-            "<!-- ralph-allowed-bash:end -->\n"
-            "<!-- ralph-task:end R1 -->\n",
-            "ralph-verification block",
         ),
     ],
 )
@@ -547,25 +517,6 @@ def test_validate_rejects_malformed_plan(
     )
 
     with pytest.raises(ValueError, match=expected_message):
-        main(["validate", "--job-name", "example"])
-
-
-@pytest.mark.parametrize("command_policy_key", ["allowed_bash_commands", "verification_commands"])
-def test_validate_rejects_command_policy_copied_into_ledger(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    command_policy_key: str,
-) -> None:
-    ledger = build_example_ledger()
-    ledger["tasks"][0][command_policy_key] = ["rg *"]
-    _create_ralph_home_with_job(
-        tmp_path=tmp_path,
-        monkeypatch=monkeypatch,
-        plan_text=build_example_plan(),
-        ledger=ledger,
-    )
-
-    with pytest.raises(ValueError, match=f"must keep {command_policy_key} in PLAN.md"):
         main(["validate", "--job-name", "example"])
 
 
@@ -751,7 +702,7 @@ def test_save_worker_prompt_before_launch_writes_sliced_prompt_as_markdown(
     assert task_path.joinpath("PROMPT.md").read_text() == "# Worker prompt\n\nSliced task context."
 
 
-def test_accepts_worker_completed_task_after_worker_verifies_and_commits(
+def test_accepts_worker_completed_task_after_worker_commits(
     tmp_path: Path,
 ) -> None:
     repo_path = initialise_git_repo(tmp_path / "target-repo")
@@ -766,9 +717,6 @@ def test_accepts_worker_completed_task_after_worker_verifies_and_commits(
     worker_commit_hash = run_git(repo_path, "rev-parse", "HEAD").strip()
     agent_output = "\n".join(
         [
-            "RALPH_VERIFICATION_BEGIN",
-            "$ test -f src/parser.py",
-            "RALPH_VERIFICATION_END",
             f"RALPH_COMMIT {worker_commit_hash}",
             "<promise>DONE</promise>",
         ]
@@ -788,7 +736,6 @@ def test_accepts_worker_completed_task_after_worker_verifies_and_commits(
     assert accepted_commit_hash == worker_commit_hash
     assert committed_subject == "Ralph: R1 Add parser"
     assert yaml.safe_load(job.ledger_path.read_text())["tasks"][0]["status"] == "done"
-    assert "$ test -f src/parser.py" in task_path.joinpath("verification-output.txt").read_text()
     assert task_path.joinpath("commit.txt").read_text() == worker_commit_hash
 
 
@@ -808,9 +755,6 @@ def test_review_pause_exposes_accepted_worker_commit_as_uncommitted_diff(
     worker_commit_hash = run_git(repo_path, "rev-parse", "HEAD").strip()
     agent_output = "\n".join(
         [
-            "RALPH_VERIFICATION_BEGIN",
-            "$ test -f src/parser.py",
-            "RALPH_VERIFICATION_END",
             f"RALPH_COMMIT {worker_commit_hash}",
             "<promise>DONE</promise>",
         ]
@@ -847,7 +791,7 @@ def test_review_pause_exposes_accepted_worker_commit_as_uncommitted_diff(
     assert task_path.joinpath("commit.txt").read_text() == reviewed_commit_hash
 
 
-def test_accepts_worker_completed_task_after_prompt_examples_and_final_worker_markers(
+def test_accepts_worker_completed_task_after_prompt_example_and_final_worker_marker(
     tmp_path: Path,
 ) -> None:
     repo_path = initialise_git_repo(tmp_path / "target-repo")
@@ -863,15 +807,8 @@ def test_accepts_worker_completed_task_after_prompt_examples_and_final_worker_ma
     agent_output = "\n".join(
         [
             "Prompt example:",
-            "RALPH_VERIFICATION_BEGIN",
-            "$ <verification command>",
-            "<command output>",
-            "RALPH_VERIFICATION_END",
             "RALPH_COMMIT 0000000000000000000000000000000000000000",
             "Worker final answer:",
-            "RALPH_VERIFICATION_BEGIN",
-            "$ test -f src/parser.py",
-            "RALPH_VERIFICATION_END",
             f"RALPH_COMMIT {worker_commit_hash}",
             "<promise>DONE</promise>",
         ]
@@ -888,7 +825,6 @@ def test_accepts_worker_completed_task_after_prompt_examples_and_final_worker_ma
 
     assert accepted_commit_hash == worker_commit_hash
     assert yaml.safe_load(job.ledger_path.read_text())["tasks"][0]["status"] == "done"
-    assert "$ test -f src/parser.py" in task_path.joinpath("verification-output.txt").read_text()
     assert task_path.joinpath("commit.txt").read_text() == worker_commit_hash
 
 
@@ -908,9 +844,6 @@ def test_accept_worker_completed_task_rejects_uncommitted_worker_changes(
     parser_path.write_text("def parse_value(value):\n    return value.strip()\n")
     agent_output = "\n".join(
         [
-            "RALPH_VERIFICATION_BEGIN",
-            "$ test -f src/parser.py",
-            "RALPH_VERIFICATION_END",
             f"RALPH_COMMIT {worker_commit_hash}",
             "<promise>DONE</promise>",
         ]
@@ -927,36 +860,7 @@ def test_accept_worker_completed_task_rejects_uncommitted_worker_changes(
         )
 
     assert yaml.safe_load(job.ledger_path.read_text())["tasks"][0]["status"] == "pending"
-    assert "$ test -f src/parser.py" in task_path.joinpath("verification-output.txt").read_text()
     assert task_path.joinpath("commit.txt").read_text() == worker_commit_hash
-
-
-def test_accept_worker_completed_task_rejects_missing_verification_transcript(
-    tmp_path: Path,
-) -> None:
-    repo_path = initialise_git_repo(tmp_path / "target-repo")
-    ledger = build_example_ledger()
-    job = create_job_with_ledger(tmp_path, ledger)
-
-    with pytest.raises(RuntimeError, match="verification transcript entries"):
-        _accept_worker_completed_task(
-            repo_path=repo_path,
-            job=job,
-            ledger=ledger,
-            selection=select_first_task(ledger),
-            task_path=tmp_path / "task",
-            agent_output="\n".join(
-                [
-                    "RALPH_VERIFICATION_BEGIN",
-                    "$ python -m pytest",
-                    "RALPH_VERIFICATION_END",
-                    f"RALPH_COMMIT {run_git(repo_path, 'rev-parse', 'HEAD').strip()}",
-                    "<promise>DONE</promise>",
-                ]
-            ),
-        )
-
-    assert yaml.safe_load(job.ledger_path.read_text())["tasks"][0]["status"] == "pending"
 
 
 def test_validate_and_log_worker_worklog_sends_worklog_to_notion(

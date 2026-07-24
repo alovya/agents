@@ -11,7 +11,7 @@ Ralph is a controller for slicing a private plan into isolated worker tasks. The
 skill should guide human judgement; validators, prompts, tests, and examples own
 the exact file contracts.
 
-## Role Boundary
+## Role boundary
 
 Decide which role the current agent is playing before acting:
 
@@ -27,8 +27,8 @@ Decide which role the current agent is playing before acting:
    Workers should write the requested JSON worklog when the active task has
    Notion pairing. The controller validates it and owns every `ntt` call.
 
-Task `ralph-allowed-bash` blocks belong to the isolated worker. Include only the
-commands needed to complete, log, and verify that one task.
+Plans specify required behaviour. Workers choose the files, commands, and
+verification needed to implement that behaviour inside the isolated environment.
 
 ## Files
 
@@ -44,7 +44,7 @@ Store Ralph job state outside the target repository:
 Use `RALPH_HOME` only when the host needs a different explicit Ralph control root.
 Do not place private Ralph control files in the target repository.
 
-## Notion Pairing
+## Notion pairing
 
 Notion is the human-facing task record. Ralph's `PLAN.md` and `ledger.yaml` are
 private execution control files.
@@ -66,7 +66,7 @@ Choose relationships by work shape:
 For small one-off loops without a `parent:<id>`, ask whether the user wants a
 Notion task before creating one.
 
-## Canonical Shape
+## Canonical shape
 
 Keep the canonical example files valid:
 
@@ -75,11 +75,11 @@ ralph/examples/PLAN.md
 ralph/examples/ledger.yaml
 ```
 
-Use that shape when creating a new job. Keep command policy in `PLAN.md`, keep
-task status and Notion pairing in `ledger.yaml`, and avoid copying task prose or
-implementation notes into the ledger.
+Use that shape when creating a new job. Keep behavioural intent in `PLAN.md`,
+keep task status and Notion pairing in `ledger.yaml`, and avoid copying task
+prose or implementation notes into the ledger.
 
-## Validate Before Running
+## Validate before running
 
 Run validation before handing off a plan or launching workers:
 

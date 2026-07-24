@@ -105,13 +105,6 @@ def extract_agent_result_text(agent_backend: AgentBackend, raw_output: str) -> s
     return extract_claude_stream_result_text(raw_output)
 
 
-def build_worker_allowed_bash_commands(task: dict[str, Any]) -> list[str]:
-    allowed_commands = list(ALWAYS_ALLOWED_WORKER_BASH_COMMANDS)
-    allowed_commands += list(task.get("allowed_bash_commands") or [])
-    allowed_commands += list(task.get("verification_commands") or [])
-    return list(dict.fromkeys(allowed_commands))
-
-
 def read_default_codex_agent_command() -> str:
     codex_home_path = Path(os.environ["CODEX_HOME"]).expanduser().resolve()
     standalone_codex_path = codex_home_path / "packages" / "standalone" / "current" / "bin" / "codex"

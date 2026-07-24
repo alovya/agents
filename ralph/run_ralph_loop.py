@@ -20,7 +20,6 @@ import yaml
 from ralph.agent_backends import (
     AgentBackend,
     AgentResult,
-    build_worker_allowed_bash_commands,
     extract_agent_result_text,
     prepare_agent_backend_for_worker,
     run_command_and_save_agent_transcripts,
@@ -57,10 +56,6 @@ from ralph.sandbox import (
 DEFAULT_MAX_ITERATIONS = 10
 PROMISE_PATTERN = re.compile(r"<promise>(DONE|BLOCKED|ABORT)</promise>")
 PROMISE_LINE_PATTERN = re.compile(r"^<promise>(DONE|BLOCKED|ABORT)</promise>$")
-WORKER_VERIFICATION_BLOCK_PATTERN = re.compile(
-    r"^RALPH_VERIFICATION_BEGIN\n(?P<verification_output>.*?)^RALPH_VERIFICATION_END$",
-    re.DOTALL | re.MULTILINE,
-)
 WORKER_COMMIT_LINE_PATTERN = re.compile(r"^RALPH_COMMIT (?P<commit_hash>[0-9a-f]{40})$", re.MULTILINE)
 
 PRIVATE_CONTROL_PATH_NAMES = frozenset({"ledger.yaml", ".ralph"})
@@ -131,7 +126,6 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
         )
         prompt = render_agent_prompt(
             repo_path=repo_path,
-            ledger=ledger,
             selection=selection,
             python_venv_path=python_venv_path,
         )
@@ -304,13 +298,8 @@ def _accept_worker_completed_task(
     task_path: Path,
     agent_output: str,
 ) -> str:
-    verification_output = _extract_worker_verification_output(
-        task=selection.task,
-        agent_output=agent_output,
-    )
     commit_hash = _extract_worker_commit_hash(agent_output)
 
-    _write_text(task_path / "verification-output.txt", verification_output)
     _write_text(task_path / "commit.txt", commit_hash)
     _validate_worker_commit_matches_repo_state(
         repo_path=repo_path,
@@ -321,34 +310,6 @@ def _accept_worker_completed_task(
     advanced_ledger = _mark_task_done(ledger, selection.task["id"])
     _write_yaml_file(job.ledger_path, advanced_ledger)
     return commit_hash
-
-
-def _extract_worker_verification_output(task: dict[str, Any], agent_output: str) -> str:
-    matches = WORKER_VERIFICATION_BLOCK_PATTERN.findall(agent_output)
-    if not matches:
-        raise RuntimeError("Worker DONE must include one RALPH_VERIFICATION_BEGIN block.")
-
-    verification_output = matches[-1].strip()
-    _validate_worker_verification_output_mentions_required_commands(
-        task=task,
-        verification_output=verification_output,
-    )
-    return verification_output
-
-
-def _validate_worker_verification_output_mentions_required_commands(
-    task: dict[str, Any],
-    verification_output: str,
-) -> None:
-    missing_commands = [
-        command
-        for command in task.get("verification_commands") or []
-        if f"$ {command}" not in verification_output
-    ]
-    if missing_commands:
-        raise RuntimeError(
-            f"Worker DONE did not include verification transcript entries for: {missing_commands}"
-        )
 
 
 def _extract_worker_commit_hash(agent_output: str) -> str:
@@ -519,18 +480,14 @@ def _run_agent(
             agent_backend=master_agent_backend,
         )
 
-    allowed_bash_commands = build_worker_allowed_bash_commands(task)
-
     with prepare_agent_backend_for_worker(master_agent_backend) as worker_agent_backend:
         command = build_bwrap_agent_command(
             repo_path=repo_path,
             agent_backend=worker_agent_backend,
             python_venv_path=python_venv_path,
-            allowed_bash_commands=allowed_bash_commands,
         )
         with agent_permission_setup(
             agent_backend=worker_agent_backend,
-            allowed_bash_commands=allowed_bash_commands,
             task_path=task_path,
         ):
             return _run_agent_command(
