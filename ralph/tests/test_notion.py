@@ -50,6 +50,7 @@ def test_materialises_every_child_and_dependency_before_returning(
     job = create_job_with_ledger(tmp_path, ledger)
     observed_commands: list[list[str]] = []
     created_task_ids = iter(["ALOVYA-90", "ALOVYA-91"])
+    observed_dependency_mismatches = iter([["R1", "R2"], []])
 
     def _run_notion_tracker_command_mock(
         command: list[str],
@@ -78,8 +79,8 @@ def test_materialises_every_child_and_dependency_before_returning(
         lambda **_: None,
     )
     monkeypatch.setattr(
-        "ralph.notion._require_notion_children_match_ledger",
-        lambda **_: None,
+        "ralph.notion._find_notion_tasks_with_unexpected_dependencies",
+        lambda **_: next(observed_dependency_mismatches),
     )
     monkeypatch.setattr(
         "ralph.notion._reconcile_completed_notion_tasks",
@@ -139,8 +140,8 @@ def test_materialisation_resumes_without_recreating_recorded_children(
         lambda **_: None,
     )
     monkeypatch.setattr(
-        "ralph.notion._require_notion_children_match_ledger",
-        lambda **_: None,
+        "ralph.notion._find_notion_tasks_with_unexpected_dependencies",
+        lambda **_: [],
     )
     monkeypatch.setattr(
         "ralph.notion._reconcile_completed_notion_tasks",
@@ -154,6 +155,41 @@ def test_materialisation_resumes_without_recreating_recorded_children(
     ]
     assert len(child_commands) == 1
     assert "Add command line entrypoint" in child_commands[0]
+
+
+def test_matching_notion_graph_skips_dependency_writes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ledger = _build_unmaterialised_ledger()
+    ledger["tasks"][0]["ntt_task_id"] = "ALOVYA-90"
+    ledger["tasks"][1]["ntt_task_id"] = "ALOVYA-91"
+    job = create_job_with_ledger(tmp_path, ledger)
+    observed_commands: list[list[str]] = []
+
+    monkeypatch.setattr(
+        "ralph.notion._run_notion_tracker_command",
+        lambda command: (
+            observed_commands.append(command)
+            or subprocess.CompletedProcess(command, 0, "")
+        ),
+    )
+    monkeypatch.setattr(
+        "ralph.notion._require_parent_is_available_for_ralph_children",
+        lambda **_: None,
+    )
+    monkeypatch.setattr(
+        "ralph.notion._find_notion_tasks_with_unexpected_dependencies",
+        lambda **_: [],
+    )
+    monkeypatch.setattr(
+        "ralph.notion._reconcile_completed_notion_tasks",
+        lambda **arguments: arguments["ledger"],
+    )
+
+    materialise_and_validate_notion_task_graph(job, ledger)
+
+    assert observed_commands == []
 
 
 def test_complete_uses_only_accepted_identity_and_commit(

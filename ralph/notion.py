@@ -32,11 +32,7 @@ def materialise_and_validate_notion_task_graph(job: Any, ledger: dict[str, Any])
         ledger=ledger,
         materialisation_path=materialisation_path,
     )
-    _replace_every_notion_dependency_set(
-        ledger=materialised_ledger,
-        materialisation_path=materialisation_path,
-    )
-    _require_notion_children_match_ledger(
+    _repair_notion_dependencies_when_they_differ_from_ledger(
         ledger=materialised_ledger,
         materialisation_path=materialisation_path,
     )
@@ -171,10 +167,36 @@ def _replace_every_notion_dependency_set(
         _run_notion_tracker_command(command)
 
 
-def _require_notion_children_match_ledger(
+def _repair_notion_dependencies_when_they_differ_from_ledger(
     ledger: dict[str, Any],
     materialisation_path: Path,
 ) -> None:
+    mismatched_task_ids = _find_notion_tasks_with_unexpected_dependencies(
+        ledger=ledger,
+        materialisation_path=materialisation_path,
+    )
+    if not mismatched_task_ids:
+        return
+
+    _replace_every_notion_dependency_set(
+        ledger=ledger,
+        materialisation_path=materialisation_path,
+    )
+    remaining_mismatched_task_ids = _find_notion_tasks_with_unexpected_dependencies(
+        ledger=ledger,
+        materialisation_path=materialisation_path,
+    )
+    if remaining_mismatched_task_ids:
+        raise RuntimeError(
+            "NTT dependencies still differ from the Ralph ledger after repair for "
+            f"tasks: {remaining_mismatched_task_ids}"
+        )
+
+
+def _find_notion_tasks_with_unexpected_dependencies(
+    ledger: dict[str, Any],
+    materialisation_path: Path,
+) -> list[str]:
     parent_task_id = ledger["ntt_parent_task_id"]
     expected_task_ids = {
         _require_materialised_notion_task_id(task)
@@ -208,6 +230,7 @@ def _require_notion_children_match_ledger(
         ntt_task_id: observed_task["notion_url"]
         for ntt_task_id, observed_task in observed_tasks_by_ntt_task_id.items()
     }
+    mismatched_task_ids = []
     for task in read_tasks_from_ledger(ledger):
         ntt_task_id = _require_materialised_notion_task_id(task)
         expected_dependency_page_ids = {
@@ -225,9 +248,8 @@ def _require_notion_children_match_ledger(
             )
         }
         if observed_dependency_page_ids != expected_dependency_page_ids:
-            raise RuntimeError(
-                f"NTT dependencies for {ntt_task_id} do not match the Ralph ledger."
-            )
+            mismatched_task_ids.append(task["ralph_task_id"])
+    return mismatched_task_ids
 
 
 def _read_relation_urls(task: dict[str, Any], property_name: str) -> list[str]:
