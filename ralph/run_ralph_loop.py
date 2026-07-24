@@ -386,7 +386,7 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
         "--skip-ralph-sandbox",
         action="store_true",
         help=(
-            "Run Codex directly with its workspace-write sandbox and the existing "
+            "Run Codex directly with writable Git metadata and the existing "
             "CODEX_HOME instead of Ralph's Bubblewrap sandbox."
         ),
     )

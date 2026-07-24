@@ -18,7 +18,7 @@ from ralph.codex_backend import (
 )
 
 
-def test_build_direct_codex_command_uses_existing_home_and_workspace_sandbox(
+def test_build_direct_codex_command_keeps_git_writable_for_worker_commits(
     tmp_path: Path,
 ) -> None:
     codex_home_path = tmp_path / "codex-home"
@@ -38,7 +38,7 @@ def test_build_direct_codex_command_uses_existing_home_and_workspace_sandbox(
         "-C",
         str(repo_path),
         "--sandbox",
-        "workspace-write",
+        "danger-full-access",
         "--ephemeral",
         "-",
     ]

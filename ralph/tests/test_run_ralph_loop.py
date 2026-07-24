@@ -359,7 +359,7 @@ def test_run_agent_can_use_existing_codex_home_without_bubblewrap(
         "-C",
         str(repo_path),
         "--sandbox",
-        "workspace-write",
+        "danger-full-access",
         "--ephemeral",
         "-",
     ]

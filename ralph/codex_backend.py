@@ -57,7 +57,7 @@ def build_direct_codex_command(agent_backend: "AgentBackend", repo_path: Path) -
         "-C",
         str(repo_path),
         "--sandbox",
-        "workspace-write",
+        "danger-full-access",
         "--ephemeral",
         "-",
     ]
