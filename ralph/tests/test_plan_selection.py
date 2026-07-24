@@ -13,7 +13,6 @@ from ralph.tests.conftest import (
     build_example_ledger,
     build_example_plan,
     build_ledger_where_first_pending_task_waits_and_second_pending_task_is_ready,
-    build_ledger_with_planned_notion_task,
     build_three_task_plan,
 )
 
@@ -24,7 +23,7 @@ def test_extracts_only_active_plan_slice() -> None:
 
     selection = select_next_task_from_plan_and_ledger(ledger, plan_text)
 
-    assert selection.task["id"] == "R1"
+    assert selection.task["ralph_task_id"] == "R1"
     assert "First task context." in selection.active_task_plan_context
     assert "Second task context." not in selection.active_task_plan_context
 
@@ -57,7 +56,7 @@ Second task context.
 
     selection = select_next_task_from_plan_and_ledger(build_example_ledger(), plan_text)
 
-    assert selection.task["id"] == "R1"
+    assert selection.task["ralph_task_id"] == "R1"
 
 
 def test_selects_dependency_ready_task() -> None:
@@ -66,7 +65,7 @@ def test_selects_dependency_ready_task() -> None:
 
     selection = select_next_task_from_plan_and_ledger(ledger, build_example_plan())
 
-    assert selection.task["id"] == "R2"
+    assert selection.task["ralph_task_id"] == "R2"
 
 
 def test_selects_first_pending_task_after_skipping_pending_task_with_unfinished_dependencies() -> None:
@@ -74,33 +73,49 @@ def test_selects_first_pending_task_after_skipping_pending_task_with_unfinished_
 
     selection = select_next_task_from_plan_and_ledger(ledger, build_three_task_plan())
 
-    assert selection.task["id"] == "R2"
+    assert selection.task["ralph_task_id"] == "R2"
     assert selection.active_task_plan_context.strip().startswith("Second task context.")
 
 
-@pytest.mark.parametrize(
-    ("mutate_ledger", "expected_message"),
-    [
-        (lambda ledger: ledger["tasks"][1]["notion_task"].__setitem__("planned", "yes"), "planned"),
-        (lambda ledger: ledger["tasks"][1]["notion_task"].__setitem__("relationship", "parent"), "relationship"),
-        (lambda ledger: ledger["tasks"][1]["notion_task"].__setitem__("related_to", ""), "related_to"),
-        (lambda ledger: ledger["tasks"][1]["notion_task"].__setitem__("title", ""), "title"),
-        (lambda ledger: ledger["tasks"][1]["notion_task"].__setitem__("materialized_task_id", "R1"), "materialized_task_id"),
-        (lambda ledger: ledger["tasks"][1]["notion_task"].__setitem__("related_to", "R3"), "unknown Ralph task"),
-        (lambda ledger: ledger["tasks"][1]["notion_task"].__setitem__("related_to", "R1"), "must depend on related Ralph task"),
-    ],
-)
-def test_read_tasks_rejects_malformed_notion_task_entries(mutate_ledger, expected_message: str) -> None:
-    ledger = build_ledger_with_planned_notion_task(related_to="ALOVYA-89", task_id="R2")
-    ledger["tasks"].insert(0, {
-        "id": "R1",
-        "title": "Prepare parent",
-        "status": "pending",
-        "depends_on": [],
-    })
-    mutate_ledger(ledger)
+def test_read_tasks_requires_ntt_parent_identity() -> None:
+    ledger = build_example_ledger()
+    del ledger["ntt_parent_task_id"]
 
-    with pytest.raises(ValueError, match=expected_message):
+    with pytest.raises(ValueError, match="ntt_parent_task_id"):
+        read_tasks_from_ledger(ledger)
+
+
+def test_read_tasks_accepts_configured_ntt_ticket_prefix() -> None:
+    ledger = build_example_ledger()
+    ledger["ntt_ticket_prefix"] = "PROJECT"
+    ledger["ntt_parent_task_id"] = "PROJECT-89"
+    ledger["tasks"][0]["ntt_task_id"] = "PROJECT-90"
+    ledger["tasks"][1]["ntt_task_id"] = "PROJECT-91"
+
+    assert read_tasks_from_ledger(ledger)
+
+
+def test_read_tasks_requires_ntt_ticket_prefix() -> None:
+    ledger = build_example_ledger()
+    del ledger["ntt_ticket_prefix"]
+
+    with pytest.raises(ValueError, match="ntt_ticket_prefix"):
+        read_tasks_from_ledger(ledger)
+
+
+def test_read_tasks_rejects_obsolete_notion_task_shape() -> None:
+    ledger = build_example_ledger()
+    ledger["tasks"][0]["notion_task"] = {"planned": True}
+
+    with pytest.raises(ValueError, match="obsolete task identity fields"):
+        read_tasks_from_ledger(ledger)
+
+
+def test_read_tasks_rejects_dependency_cycles() -> None:
+    ledger = build_example_ledger()
+    ledger["tasks"][0]["depends_on"] = ["R2"]
+
+    with pytest.raises(ValueError, match="contains a cycle"):
         read_tasks_from_ledger(ledger)
 
 

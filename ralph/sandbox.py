@@ -15,14 +15,6 @@ if TYPE_CHECKING:
 WORKER_HOME_PATH = Path("/tmp/ralph-worker-home")
 WORKER_TEMP_PATH = Path("/tmp/ralph-worker-tmp")
 WORKER_AGENT_BINARY_PATH = Path("/tmp/ralph-agent-bin/agent")
-DEFAULT_RALPH_HOME_PATH = Path("/workspace/.ralph")
-
-
-def resolve_ralph_home_path() -> Path:
-    configured_path = os.environ.get("RALPH_HOME")
-    if configured_path:
-        return Path(configured_path).expanduser().resolve()
-    return DEFAULT_RALPH_HOME_PATH
 
 
 def build_bwrap_agent_command(
@@ -231,7 +223,6 @@ def build_explicit_worker_mount_paths(
 
 def build_sensitive_paths_that_workers_must_not_see() -> list[Path]:
     return [
-        resolve_ralph_home_path(),
         Path.home() / ".ralph",
         Path.home() / ".notion-task-tracker",
         Path.home() / ".ssh",

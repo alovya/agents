@@ -1,24 +1,16 @@
 version: 1
 job_name: example
+ntt_ticket_prefix: EXAMPLE
+ntt_parent_task_id: EXAMPLE-99
 tasks:
-  - id: R1
+  - ralph_task_id: R1
     title: Add parser
     status: pending
     depends_on: []
-    notion_task:
-      planned: true
-      relationship: child
-      related_to: ALOVYA-99
-      title: Add parser
-      materialized_task_id: ALOVYA-100
-  - id: R2
+    ntt_task_id: null
+  - ralph_task_id: R2
     title: Add command line entrypoint
     status: pending
     depends_on:
       - R1
-    notion_task:
-      planned: true
-      relationship: child
-      related_to: R1
-      title: Add command line entrypoint
-      materialized_task_id: null
+    ntt_task_id: null

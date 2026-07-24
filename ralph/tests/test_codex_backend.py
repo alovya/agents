@@ -23,6 +23,8 @@ def test_build_direct_codex_command_keeps_git_writable_for_worker_commits(
 ) -> None:
     codex_home_path = tmp_path / "codex-home"
     repo_path = tmp_path / "repo"
+    tool_virtual_environment_path = tmp_path / "tool venv"
+    controller_path = f"{tool_virtual_environment_path}/bin:/usr/bin:/bin"
     agent_backend = AgentBackend(
         backend_name="codex",
         command_name="/usr/bin/codex",
@@ -30,8 +32,20 @@ def test_build_direct_codex_command_keeps_git_writable_for_worker_commits(
         agent_home_environment_variable="CODEX_HOME",
     )
 
-    assert build_direct_codex_command(agent_backend=agent_backend, repo_path=repo_path) == [
+    assert build_direct_codex_command(
+        agent_backend=agent_backend,
+        repo_path=repo_path,
+        tool_virtual_environment_path=tool_virtual_environment_path,
+        controller_path=controller_path,
+    ) == [
         "/usr/bin/codex",
+        "--config",
+        f'shell_environment_policy.set.PATH="{controller_path}"',
+        "--config",
+        (
+            "shell_environment_policy.set.VIRTUAL_ENV="
+            f'"{tool_virtual_environment_path}"'
+        ),
         "--ask-for-approval",
         "never",
         "exec",

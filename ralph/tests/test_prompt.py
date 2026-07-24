@@ -11,6 +11,7 @@ def test_render_agent_prompt_excludes_unrelated_task_slice(tmp_path: Path) -> No
     ledger = build_example_ledger()
     selection = TaskSelection(
         task=ledger["tasks"][0],
+        ntt_ticket_prefix=ledger["ntt_ticket_prefix"],
         shared_plan_context="Shared context.",
         active_task_plan_context="First task context.",
     )
@@ -18,7 +19,6 @@ def test_render_agent_prompt_excludes_unrelated_task_slice(tmp_path: Path) -> No
     prompt = render_agent_prompt(
         repo_path=tmp_path,
         selection=selection,
-        python_venv_path=None,
     )
 
     assert "First task context." in prompt
@@ -32,6 +32,7 @@ def test_render_agent_prompt_keeps_plan_instructions_without_rendering_ledger_st
     ledger["tasks"][0]["context"] = "Duplicated task prose from ledger YAML."
     selection = TaskSelection(
         task=ledger["tasks"][0],
+        ntt_ticket_prefix=ledger["ntt_ticket_prefix"],
         shared_plan_context="Shared context.",
         active_task_plan_context="Task instructions kept from PLAN.md.",
     )
@@ -39,7 +40,6 @@ def test_render_agent_prompt_keeps_plan_instructions_without_rendering_ledger_st
     prompt = render_agent_prompt(
         repo_path=tmp_path,
         selection=selection,
-        python_venv_path=None,
     )
 
     assert "Task instructions kept from PLAN.md." in prompt
@@ -50,30 +50,34 @@ def test_render_agent_prompt_keeps_plan_instructions_without_rendering_ledger_st
     assert "Add command line entrypoint" not in prompt
 
 
-def test_render_agent_prompt_documents_python_venv(tmp_path: Path) -> None:
+def test_render_agent_prompt_does_not_explain_tool_environment(tmp_path: Path) -> None:
     ledger = build_example_ledger()
     selection = TaskSelection(
         task=ledger["tasks"][0],
+        ntt_ticket_prefix=ledger["ntt_ticket_prefix"],
         shared_plan_context="Shared context.",
         active_task_plan_context="First task context.",
     )
-    python_venv_path = tmp_path / "venv"
-
     prompt = render_agent_prompt(
         repo_path=tmp_path,
         selection=selection,
-        python_venv_path=python_venv_path,
     )
 
-    assert f"Python venv: {python_venv_path}" in prompt
-    assert "already first on PATH" in prompt
-    assert "ntt --log --ticket-number" not in prompt
+    assert "Agent tool environment" not in prompt
+    assert "Python venv" not in prompt
+    assert "VIRTUAL_ENV" not in prompt
+    assert "BASH_ENV" not in prompt
+    assert "ntt --log --ticket-number 90" in prompt
+    assert "--content-path <json-path>" in prompt
+    assert '{"title": "Short summary", "blocks":' in prompt
+    assert 'git commit --no-verify -m "Ralph: R1 Add parser"' in prompt
 
 
 def test_render_agent_prompt_does_not_require_json_worklog_block(tmp_path: Path) -> None:
     ledger = build_example_ledger()
     selection = TaskSelection(
         task=ledger["tasks"][0],
+        ntt_ticket_prefix=ledger["ntt_ticket_prefix"],
         shared_plan_context="Shared context.",
         active_task_plan_context="First task context.",
     )
@@ -81,7 +85,6 @@ def test_render_agent_prompt_does_not_require_json_worklog_block(tmp_path: Path)
     prompt = render_agent_prompt(
         repo_path=tmp_path,
         selection=selection,
-        python_venv_path=None,
     )
 
     assert "RALPH_WORKLOG_JSON_BEGIN" not in prompt
@@ -89,40 +92,11 @@ def test_render_agent_prompt_does_not_require_json_worklog_block(tmp_path: Path)
     assert "RALPH_VERIFICATION_BEGIN" not in prompt
 
 
-def test_render_agent_prompt_includes_worklog_instructions_when_materialised(tmp_path: Path) -> None:
-    from ralph.tests.conftest import build_ledger_with_materialised_notion_task
-
-    ledger = build_ledger_with_materialised_notion_task()
-    selection = TaskSelection(
-        task=ledger["tasks"][0],
-        shared_plan_context="Shared context.",
-        active_task_plan_context="First task context.",
-    )
-
-    prompt = render_agent_prompt(
-        repo_path=tmp_path,
-        selection=selection,
-        python_venv_path=None,
-    )
-
-    assert ".ralph-worklog.json" in prompt
-    assert "title" in prompt
-    assert "blocks" in prompt
-    assert "commands run" in prompt
-    assert "files changed" in prompt
-    assert "decisions made" in prompt
-    assert "unresolved risks" in prompt
-    assert "BLOCKED or ABORT" in prompt
-    assert "Do not run `ntt` or contact Notion" in prompt
-    assert "Never stage or commit `.ralph-worklog.json`" in prompt
-    assert "Do NOT put the worklog JSON in your final answer" in prompt
-    assert "Do NOT delete the worklog file" in prompt
-
-
-def test_render_agent_prompt_notion_log_not_applicable_without_task(tmp_path: Path) -> None:
+def test_render_agent_prompt_includes_direct_ntt_logging_contract(tmp_path: Path) -> None:
     ledger = build_example_ledger()
     selection = TaskSelection(
         task=ledger["tasks"][0],
+        ntt_ticket_prefix=ledger["ntt_ticket_prefix"],
         shared_plan_context="Shared context.",
         active_task_plan_context="First task context.",
     )
@@ -130,8 +104,31 @@ def test_render_agent_prompt_notion_log_not_applicable_without_task(tmp_path: Pa
     prompt = render_agent_prompt(
         repo_path=tmp_path,
         selection=selection,
-        python_venv_path=None,
     )
 
-    assert "not applicable for this task" in prompt
-    assert "ntt --log" not in prompt
+    assert "Ralph task identity: R1" in prompt
+    assert "NTT task identity: ALOVYA-90" in prompt
+    assert "ntt --log --ticket-number 90" in prompt
+    assert "commands" in prompt
+    assert "decisions" in prompt
+    assert "unresolved risks" in prompt
+    assert "Do not read, create, restructure, complete, cancel" in prompt
+    assert ".ralph-worklog.json" not in prompt
+
+
+def test_render_agent_prompt_contains_no_context_read_from_ntt(tmp_path: Path) -> None:
+    ledger = build_example_ledger()
+    selection = TaskSelection(
+        task=ledger["tasks"][0],
+        ntt_ticket_prefix=ledger["ntt_ticket_prefix"],
+        shared_plan_context="Shared context.",
+        active_task_plan_context="First task context.",
+    )
+
+    prompt = render_agent_prompt(
+        repo_path=tmp_path,
+        selection=selection,
+    )
+
+    assert "Notion summary" not in prompt
+    assert "previous NTT log" not in prompt

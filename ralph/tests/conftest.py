@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import shlex
 import subprocess
 from pathlib import Path
@@ -17,18 +16,22 @@ def build_example_ledger() -> dict[str, Any]:
     return {
         "version": 1,
         "job_name": "example",
+        "ntt_ticket_prefix": "ALOVYA",
+        "ntt_parent_task_id": "ALOVYA-89",
         "tasks": [
             {
-                "id": "R1",
+                "ralph_task_id": "R1",
                 "title": "Add parser",
                 "status": "pending",
                 "depends_on": [],
+                "ntt_task_id": "ALOVYA-90",
             },
             {
-                "id": "R2",
+                "ralph_task_id": "R2",
                 "title": "Add command line entrypoint",
                 "status": "pending",
                 "depends_on": ["R1"],
+                "ntt_task_id": "ALOVYA-91",
             },
         ],
     }
@@ -38,30 +41,36 @@ def build_ledger_where_first_pending_task_waits_and_second_pending_task_is_ready
     return {
         "version": 1,
         "job_name": "example",
+        "ntt_ticket_prefix": "ALOVYA",
+        "ntt_parent_task_id": "ALOVYA-89",
         "tasks": [
             {
-                "id": "R0",
+                "ralph_task_id": "R0",
                 "title": "Prepare dependency",
                 "status": "blocked",
                 "depends_on": [],
+                "ntt_task_id": "ALOVYA-90",
             },
             {
-                "id": "R1",
+                "ralph_task_id": "R1",
                 "title": "Wait for dependency",
                 "status": "pending",
                 "depends_on": ["R0"],
+                "ntt_task_id": "ALOVYA-91",
             },
             {
-                "id": "R2",
+                "ralph_task_id": "R2",
                 "title": "First ready task",
                 "status": "pending",
                 "depends_on": [],
+                "ntt_task_id": "ALOVYA-92",
             },
             {
-                "id": "R3",
+                "ralph_task_id": "R3",
                 "title": "Second ready task",
                 "status": "pending",
                 "depends_on": [],
+                "ntt_task_id": "ALOVYA-93",
             },
         ],
     }
@@ -107,57 +116,6 @@ Third task context.
 """
 
 
-def build_ledger_with_planned_notion_task(related_to: str, task_id: str = "R1") -> dict[str, Any]:
-    return {
-        "version": 1,
-        "job_name": "example",
-        "tasks": [
-            {
-                "id": task_id,
-                "title": "Add parser",
-                "status": "pending",
-                "depends_on": [],
-                "notion_task": {
-                    "planned": True,
-                    "relationship": "child",
-                    "related_to": related_to,
-                    "title": "Add parser",
-                    "materialized_task_id": None,
-                },
-            }
-        ],
-    }
-
-
-def build_ledger_with_materialised_notion_task() -> dict[str, Any]:
-    ledger = build_ledger_with_planned_notion_task(related_to="ALOVYA-89")
-    ledger["tasks"][0]["notion_task"]["materialized_task_id"] = "ALOVYA-90"
-    return ledger
-
-
-def capture_notion_log_content(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    observed_content: dict[str, Any] = {}
-
-    def run_notion_tracker_command_mock(command: list[str]) -> subprocess.CompletedProcess[str]:
-        parse_current_notion_tracker_command(command)
-        content_path = Path(command[command.index("--content-path") + 1])
-        observed_content.update(json.loads(content_path.read_text(encoding="utf-8")))
-        observed_content["command"] = command
-        return subprocess.CompletedProcess(args=command, returncode=0, stdout="{}")
-
-    monkeypatch.setattr("ralph.notion._resolve_notion_tracker_command_path", lambda: "ntt")
-    monkeypatch.setattr("ralph.notion._run_notion_tracker_command", run_notion_tracker_command_mock)
-    return observed_content
-
-
-def parse_current_notion_tracker_command(command: list[str]) -> dict[str, Any]:
-    from notion_task_tracker.build_tracker_command import build_tracker_command_from_cli_action
-    from notion_task_tracker.run_notion_task_tracker import parse_args
-
-    arguments = parse_args(command[1:])
-    return build_tracker_command_from_cli_action(arguments, ticket_prefix="ALOVYA")
-
-
 def contains_subsequence(command: list[str], expected: list[str]) -> bool:
     return any(
         command[index:index + len(expected)] == expected
@@ -188,6 +146,7 @@ def command_windows(command: list[str], size: int) -> list[list[str]]:
 def select_first_task(ledger: dict[str, Any]) -> TaskSelection:
     return TaskSelection(
         task=ledger["tasks"][0],
+        ntt_ticket_prefix=ledger["ntt_ticket_prefix"],
         shared_plan_context="Shared context.",
         active_task_plan_context="First task context.",
     )

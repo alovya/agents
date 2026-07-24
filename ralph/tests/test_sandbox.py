@@ -9,7 +9,6 @@ import pytest
 
 from ralph.agent_backends import AgentBackend, AgentHomeMount, select_agent_backend
 from ralph.sandbox import (
-    DEFAULT_RALPH_HOME_PATH,
     WORKER_AGENT_BINARY_PATH,
     WORKER_HOME_PATH,
     WORKER_TEMP_PATH,
@@ -17,7 +16,6 @@ from ralph.sandbox import (
     build_bwrap_agent_command,
     reject_worker_visible_path_that_overlaps_hidden_state,
     resolve_python_venv_path,
-    resolve_ralph_home_path,
     run_agent_visibility_smoke_test,
 )
 from ralph.tests.conftest import (
@@ -27,22 +25,6 @@ from ralph.tests.conftest import (
     create_python_venv_shape,
     write_executable_shim,
 )
-
-
-def test_resolve_ralph_home_path_defaults_to_workspace(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("RALPH_HOME", raising=False)
-
-    assert resolve_ralph_home_path() == DEFAULT_RALPH_HOME_PATH
-
-
-def test_resolve_ralph_home_path_accepts_explicit_override(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    ralph_home_path = tmp_path / "ralph-home"
-    monkeypatch.setenv("RALPH_HOME", str(ralph_home_path))
-
-    assert resolve_ralph_home_path() == ralph_home_path
 
 
 def test_build_bwrap_command_mounts_python_venv_from_path(
@@ -451,7 +433,6 @@ def test_build_agent_visibility_smoke_test_prompt_checks_sandbox_contract(tmp_pa
     assert f"test ! -e {shlex.quote(str(Path.home() / '.notion-task-tracker'))}" in prompt
     assert f"test ! -e {shlex.quote(str(Path.home() / '.aws'))}" in prompt
     assert f"test ! -e {shlex.quote(str(Path.home() / '.claude'))}" in prompt
-    assert "test ! -e /workspace/.ralph" in prompt
     assert "test ! -e /workspace/.codex" in prompt
     assert "test ! -e /workspace/.aws" in prompt
     assert "test ! -e /workspace/.claude" in prompt
@@ -734,3 +715,11 @@ def test_resolve_python_venv_path_accepts_non_sensitive_helper_venv(
     )
 
     assert resolve_python_venv_path(str(python_venv_path)) == python_venv_path
+
+
+def test_resolve_python_venv_path_does_not_infer_environment_from_interpreter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("VIRTUAL_ENV", raising=False)
+
+    assert resolve_python_venv_path(None) is None

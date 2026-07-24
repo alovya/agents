@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import shlex
 import shutil
@@ -48,9 +49,21 @@ def build_codex_command_tail(repo_path: Path) -> list[str]:
     ]
 
 
-def build_direct_codex_command(agent_backend: "AgentBackend", repo_path: Path) -> list[str]:
+def build_direct_codex_command(
+    agent_backend: "AgentBackend",
+    repo_path: Path,
+    tool_virtual_environment_path: Path,
+    controller_path: str,
+) -> list[str]:
     return [
         agent_backend.command_name,
+        "--config",
+        f"shell_environment_policy.set.PATH={json.dumps(controller_path)}",
+        "--config",
+        (
+            "shell_environment_policy.set.VIRTUAL_ENV="
+            f"{json.dumps(str(tool_virtual_environment_path))}"
+        ),
         "--ask-for-approval",
         "never",
         "exec",

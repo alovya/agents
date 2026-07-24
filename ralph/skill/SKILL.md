@@ -5,102 +5,52 @@ description: Create Ralph loop plans and ledgers, or run Ralph-style Codex task 
 
 # Ralph
 
-Use this skill when creating or maintaining Ralph loop artefacts.
+Use this skill when planning, running, or maintaining a Ralph job.
 
-Ralph is a controller for slicing a private plan into isolated worker tasks. The
-skill should guide human judgement; validators, prompts, tests, and examples own
-the exact file contracts.
+Read [`../README.md`](../README.md) before changing Ralph control artefacts or
+running the controller. The README owns behaviour, file shapes, commands,
+execution modes, NTT lifecycle, and recovery semantics. The canonical examples
+own the exact plan and ledger formats.
 
-## Role boundary
+## Choose one role
 
-Decide which role the current agent is playing before acting:
+1. Planner
 
-1. Planner: create or update Ralph control artefacts under `/workspace/.ralph`.
-   Stop after writing or presenting those artefacts. Do not implement target
-   repository changes and do not launch workers.
-2. Controller: run `ralph/run_ralph_loop.py`, prepare branches or worktrees,
-   materialise and log Notion tasks, inspect Ralph outputs, and handle
-   verification failures.
-   Do not manually implement worker tasks in the main session.
-3. Worker: only an agent launched by the Ralph runner implements one selected
-   task. Workers must not read Ralph controller state or run Ralph commands.
-   Workers should write the requested JSON worklog when the active task has
-   Notion pairing. The controller validates it and owns every `ntt` call.
+   1. Create or update private control artefacts outside the target repository.
+   2. Put shared behavioural context and one behavioural slice per task in
+      `PLAN.md`.
+   3. Put identities, dependencies, and lifecycle state in `ledger.yaml`.
+   4. Stop after writing or presenting the plan. Do not implement repository
+      changes or launch workers.
 
-Plans specify required behaviour. Workers choose the files, commands, and
-verification needed to implement that behaviour inside the isolated environment.
+2. Controller
 
-## Files
+   1. Validate the job before running it.
+   2. Prepare the target branch or worktree.
+   3. Pass the private control root explicitly with `--ralph-home-path`.
+   4. Run `ralph/run_ralph_loop.py` rather than implementing worker slices
+      manually.
+   5. Inspect controller outputs and stop on graph, lifecycle, commit, or
+      repository inconsistencies.
 
-Store Ralph job state outside the target repository:
+3. Worker
 
-```text
-/workspace/.ralph/jobs/<job-name>/
-  PLAN.md
-  ledger.yaml
-  tasks/
-```
+   1. Implement only the active slice supplied by the controller.
+   2. Do not read Ralph controller state or run Ralph commands.
+   3. Log implementation history only to the assigned NTT task with
+      `ntt --log`.
+   4. Do not read or alter NTT structure or lifecycle.
 
-Use `RALPH_HOME` only when the host needs a different explicit Ralph control root.
-Do not place private Ralph control files in the target repository.
+## Apply judgement
 
-## Notion pairing
-
-Notion is the human-facing task record. Ralph's `PLAN.md` and `ledger.yaml` are
-private execution control files.
-
-When a user gives `parent:<id>`, treat it as the root ALOVYA task for the initial
-Ralph task set. Record intended Notion relationships in `ledger.yaml`, but do not
-materialise every planned Notion task during planning. The controller materialises
-each task when its Ralph slice starts.
-
-Choose relationships by work shape:
-
-1. Use `child` when the new task narrows, investigates, follows up, or unblocks
-   an existing task.
-2. Use `sibling` when the new task is a peer track under the same parent.
-3. Use `related_to: ALOVYA-123` for an existing Notion task.
-4. Use `related_to: R1` only when the current Ralph task depends on `R1`, so the
-   controller can resolve the materialised Notion id first.
-
-For small one-off loops without a `parent:<id>`, ask whether the user wants a
-Notion task before creating one.
-
-## Canonical shape
-
-Keep the canonical example files valid:
-
-```text
-ralph/examples/PLAN.md
-ralph/examples/ledger.yaml
-```
-
-Use that shape when creating a new job. Keep behavioural intent in `PLAN.md`,
-keep task status and Notion pairing in `ledger.yaml`, and avoid copying task
-prose or implementation notes into the ledger.
-
-## Validate before running
-
-Run validation before handing off a plan or launching workers:
-
-```bash
-python -m ralph.run_ralph_loop validate --job-name <job-name>
-python -m ralph.run_ralph_loop validate --job-name <job-name> --repo-path <repo-path>
-```
-
-With `--repo-path`, validation also checks the non-mutating start state that a run
-would require. Validation does not materialise Notion tasks and does not launch
-workers.
-
-Run Ralph commands that launch inner agent sandboxes with network access;
-otherwise the inner sandboxes fail.
-
-Run the loop only after validation passes:
-
-```bash
-CODEX_HOME=/workspace/.codex python -m ralph.run_ralph_loop run --repo-path <repo-path> --job-name <job-name> --agent-backend codex
-CLAUDE_CONFIG_DIR=/workspace/.claude python -m ralph.run_ralph_loop run --repo-path <repo-path> --job-name <job-name> --agent-backend claude
-```
-
-Add `--ask-for-review` when the user wants to review each completed Ralph task
-before Ralph commits it and moves on to the next task.
+- Keep private Ralph state outside the target repository.
+- Let the planner decide what prior knowledge belongs in future worker context.
+- Never insert NTT reads into the current worker prompt.
+- Use `--skip-ralph-sandbox` only when direct Codex execution is intended, such
+  as when workers need NTT network access and credentials.
+- For direct execution, source `<tool-venv>/bin/activate` and launch Ralph
+  in the same shell command so the controller and workers inherit `ntt`.
+- Preserve the sandboxed path and Claude support when direct execution is not
+  required.
+- Use `--ask-for-review` when the user wants to review each completed slice
+  before Ralph continues.

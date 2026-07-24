@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import datetime as dt
 import json
+import os
 import re
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -27,15 +30,8 @@ from ralph.agent_backends import (
 )
 from ralph.codex_backend import build_direct_codex_command
 from ralph.notion import (
-    WorklogValidationError,
-    delete_worker_worklog_file,
-    log_completed_worker_to_notion,
-    log_failed_verification_to_notion,
-    log_validated_worker_worklog_to_notion,
-    log_worker_promise_to_notion,
-    prepare_notion_task_before_worker_runs_task,
-    validate_worker_worklog,
-    validate_worker_worklog_is_controller_input,
+    complete_notion_task_after_accepting_worker,
+    materialise_and_validate_notion_task_graph,
 )
 from ralph.plan_selection import (
     TaskSelection,
@@ -48,7 +44,6 @@ from ralph.sandbox import (
     build_bwrap_agent_command,
     reject_worker_visible_path_that_overlaps_hidden_state,
     resolve_python_venv_path,
-    resolve_ralph_home_path,
     run_agent_visibility_smoke_test,
 )
 
@@ -91,14 +86,23 @@ def main(argv: list[str] | None = None) -> None:
 
 
 def _run_ralph_loop(arguments: argparse.Namespace) -> None:
+    tool_virtual_environment_path = _require_controller_tool_virtual_environment()
+    controller_path = os.environ["PATH"]
     repo_path = _resolve_repo_path(arguments.repo_path)
     python_venv_path = resolve_python_venv_path(arguments.python_venv)
-    job = _find_ralph_job(arguments.job_name)
+    job = _find_ralph_job(
+        job_name=arguments.job_name,
+        ralph_home_path=_resolve_ralph_home_path(arguments.ralph_home_path),
+    )
     _prepare_job_directories(job)
     _refuse_unsafe_starting_state(
         repo_path,
         job,
         allow_dirty_start=arguments.allow_dirty_start,
+    )
+    ledger = materialise_and_validate_notion_task_graph(
+        job=job,
+        ledger=_read_yaml_file(job.ledger_path),
     )
     if not arguments.skip_ralph_sandbox:
         run_agent_visibility_smoke_test(
@@ -107,7 +111,6 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
             agent_command=arguments.agent_command,
             python_venv_path=python_venv_path,
         )
-
     for _ in range(arguments.max_iterations):
         ledger = _read_yaml_file(job.ledger_path)
         plan_text = job.plan_path.read_text()
@@ -116,18 +119,14 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
             print("No runnable Ralph tasks remain.")
             return
 
-        task_path = _create_task_directory(job.tasks_path, selection.task["id"])
-        print(f"Ralph task: {task_path}")
-        ledger, selection = prepare_notion_task_before_worker_runs_task(
-            job=job,
-            ledger=ledger,
-            selection=selection,
-            task_path=task_path,
+        task_path = _create_task_directory(
+            job.tasks_path,
+            selection.task["ralph_task_id"],
         )
+        print(f"Ralph task: {task_path}")
         prompt = render_agent_prompt(
             repo_path=repo_path,
             selection=selection,
-            python_venv_path=python_venv_path,
         )
         _save_worker_prompt_before_launch(task_path=task_path, prompt=prompt)
         agent_result = _run_agent(
@@ -141,64 +140,70 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
             tee_output=arguments.tee_agent_output,
             task_path=task_path,
             skip_ralph_sandbox=arguments.skip_ralph_sandbox,
+            tool_virtual_environment_path=tool_virtual_environment_path,
+            controller_path=controller_path,
         )
         _write_text(task_path / "promise.txt", agent_result.promise)
 
         if agent_result.promise != "DONE":
-            _validate_and_log_worker_worklog(
-                repo_path=repo_path,
-                selection=selection,
-                task_path=task_path,
-            )
-            log_worker_promise_to_notion(
-                selection=selection,
-                task_path=task_path,
+            stopped_ledger = _mark_task_stopped(
+                ledger=ledger,
+                task_id=selection.task["ralph_task_id"],
                 promise=agent_result.promise,
-                agent_backend_name=arguments.agent_backend,
             )
+            _write_yaml_file(job.ledger_path, stopped_ledger)
             print(f"Agent stopped with {agent_result.promise}. See {task_path}")
             return
 
-        _validate_and_log_worker_worklog(
+        commit_hash = _accept_worker_completed_task(
             repo_path=repo_path,
             selection=selection,
             task_path=task_path,
+            agent_output=agent_result.output,
         )
-        try:
-            commit_hash = _accept_worker_completed_task(
+        if arguments.ask_for_review:
+            commit_hash = _pause_for_human_review_after_accepting_worker_completed_task(
                 repo_path=repo_path,
-                job=job,
-                ledger=ledger,
-                selection=selection,
+                task=selection.task,
                 task_path=task_path,
-                agent_output=agent_result.output,
+                accepted_commit_hash=commit_hash,
             )
-            if arguments.ask_for_review:
-                commit_hash = _pause_for_human_review_after_accepting_worker_completed_task(
-                    repo_path=repo_path,
-                    task=selection.task,
-                    task_path=task_path,
-                    accepted_commit_hash=commit_hash,
-                )
-        except Exception:
-            log_failed_verification_to_notion(
-                selection=selection,
-                task_path=task_path,
-                agent_backend_name=arguments.agent_backend,
-            )
-            raise
-        log_completed_worker_to_notion(
+        complete_notion_task_after_accepting_worker(
             selection=selection,
             task_path=task_path,
-            changed_files=_read_committed_files(repo_path=repo_path, commit_hash=commit_hash),
             commit_hash=commit_hash,
-            agent_backend_name=arguments.agent_backend,
         )
-        print(f"Completed {selection.task['id']}: {commit_hash}")
+        _write_yaml_file(
+            job.ledger_path,
+            _mark_task_done(ledger, selection.task["ralph_task_id"]),
+        )
+        print(f"Completed {selection.task['ralph_task_id']}: {commit_hash}")
 
     _finish_when_iteration_limit_reaches_complete_job(
         job=job,
         max_iterations=arguments.max_iterations,
+    )
+
+
+def _require_controller_tool_virtual_environment() -> Path:
+    virtual_environment = os.environ.get("VIRTUAL_ENV")
+    ntt_command_path = shutil.which("ntt")
+    if virtual_environment is not None:
+        virtual_environment_bin_path = Path(virtual_environment).expanduser().absolute() / "bin"
+        python_runs_from_virtual_environment = (
+            Path(sys.executable).absolute().parent == virtual_environment_bin_path
+        )
+        ntt_runs_from_virtual_environment = (
+            ntt_command_path is not None
+            and Path(ntt_command_path).absolute().parent == virtual_environment_bin_path
+        )
+        if python_runs_from_virtual_environment and ntt_runs_from_virtual_environment:
+            return Path(virtual_environment).expanduser().absolute()
+
+    raise RuntimeError(
+        "Ralph must run from the tool virtual environment that provides NTT. "
+        "Launch it with `source /path/to/tool-venv/bin/activate && "
+        "python -m ralph.run_ralph_loop run ...`."
     )
 
 
@@ -216,7 +221,10 @@ def _finish_when_iteration_limit_reaches_complete_job(
 
 
 def _validate_ralph_job(arguments: argparse.Namespace) -> None:
-    job = _find_ralph_job(arguments.job_name)
+    job = _find_ralph_job(
+        job_name=arguments.job_name,
+        ralph_home_path=_resolve_ralph_home_path(arguments.ralph_home_path),
+    )
     _require_ralph_job_files(job)
 
     ledger = _read_yaml_file(job.ledger_path)
@@ -233,28 +241,10 @@ def _validate_ralph_job(arguments: argparse.Namespace) -> None:
     if selection is None:
         print(f"Ralph job {job.job_name} is valid. No runnable tasks remain.")
         return
-    print(f"Ralph job {job.job_name} is valid. Next runnable task: {selection.task['id']}")
-
-
-def _validate_and_log_worker_worklog(
-    repo_path: Path,
-    selection: TaskSelection,
-    task_path: Path,
-) -> dict[str, Any] | None:
-    from ralph.notion import materialised_notion_task_id_from_task
-
-    if materialised_notion_task_id_from_task(selection.task) is None:
-        return None
-
-    worklog = validate_worker_worklog(repo_path)
-    validate_worker_worklog_is_controller_input(repo_path)
-    log_validated_worker_worklog_to_notion(
-        selection=selection,
-        task_path=task_path,
-        worklog=worklog,
+    print(
+        f"Ralph job {job.job_name} is valid. "
+        f"Next runnable task: {selection.task['ralph_task_id']}"
     )
-    delete_worker_worklog_file(repo_path)
-    return worklog
 
 
 def _save_worker_prompt_before_launch(task_path: Path, prompt: str) -> None:
@@ -270,7 +260,7 @@ def _pause_for_human_review_after_accepting_worker_completed_task(
     _run_git(repo_path, "reset", "--mixed", "HEAD^")
     input(
         "\n".join([
-            f"Review uncommitted Ralph task {task['id']}: {task['title']}",
+            f"Review uncommitted Ralph task {task['ralph_task_id']}: {task['title']}",
             f"Task artefacts: {task_path}",
             "Review the worktree diff now.",
             "Press Enter to commit this task and continue, or interrupt to stop.",
@@ -278,7 +268,13 @@ def _pause_for_human_review_after_accepting_worker_completed_task(
         ])
     )
     _run_git(repo_path, "add", "--all")
-    _run_git(repo_path, "commit", "--no-verify", "-m", f"Ralph: {task['id']} {task['title']}")
+    _run_git(
+        repo_path,
+        "commit",
+        "--no-verify",
+        "-m",
+        f"Ralph: {task['ralph_task_id']} {task['title']}",
+    )
     reviewed_commit_hash = _run_git(repo_path, "rev-parse", "HEAD").strip()
     _write_text(task_path / "commit.txt", reviewed_commit_hash)
     _validate_worker_commit_matches_repo_state(
@@ -292,8 +288,6 @@ def _pause_for_human_review_after_accepting_worker_completed_task(
 
 def _accept_worker_completed_task(
     repo_path: Path,
-    job: RalphJob,
-    ledger: dict[str, Any],
     selection: TaskSelection,
     task_path: Path,
     agent_output: str,
@@ -307,8 +301,6 @@ def _accept_worker_completed_task(
         commit_hash=commit_hash,
     )
 
-    advanced_ledger = _mark_task_done(ledger, selection.task["id"])
-    _write_yaml_file(job.ledger_path, advanced_ledger)
     return commit_hash
 
 
@@ -330,7 +322,7 @@ def _validate_worker_commit_matches_repo_state(
             f"Worker reported commit {commit_hash}, but target repo HEAD is {actual_head_commit_hash}."
         )
 
-    expected_commit_subject = f"Ralph: {task['id']} {task['title']}"
+    expected_commit_subject = f"Ralph: {task['ralph_task_id']} {task['title']}"
     actual_commit_subject = _run_git(repo_path, "log", "--format=%s", "-1", commit_hash).strip()
     if actual_commit_subject != expected_commit_subject:
         raise RuntimeError(
@@ -338,7 +330,9 @@ def _validate_worker_commit_matches_repo_state(
         )
 
     if _read_git_status(repo_path):
-        raise RuntimeError(f"Task {task['id']} returned DONE but left uncommitted target repo changes.")
+        raise RuntimeError(
+            f"Task {task['ralph_task_id']} returned DONE but left uncommitted target repo changes."
+        )
 
 
 def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
@@ -347,6 +341,7 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
 
     run_parser = subparsers.add_parser("run", help="Run the Ralph loop for one job.")
     run_parser.add_argument("--repo-path", required=True)
+    run_parser.add_argument("--ralph-home-path", required=True)
     run_parser.add_argument("--job-name", required=True)
     run_parser.add_argument("--max-iterations", type=int, default=DEFAULT_MAX_ITERATIONS)
     run_parser.add_argument("--agent-backend", choices=["codex", "claude"], default="codex")
@@ -382,6 +377,7 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
     run_parser.set_defaults(tee_agent_output=True)
 
     validate_parser = subparsers.add_parser("validate", help="Validate one Ralph job without launching workers.")
+    validate_parser.add_argument("--ralph-home-path", required=True)
     validate_parser.add_argument("--job-name", required=True)
     validate_parser.add_argument("--repo-path")
     validate_parser.add_argument(
@@ -403,8 +399,12 @@ def _resolve_repo_path(repo_path: str) -> Path:
     return Path(repo_path).expanduser().resolve()
 
 
-def _find_ralph_job(job_name: str) -> RalphJob:
-    job_path = resolve_ralph_home_path() / "jobs" / job_name
+def _resolve_ralph_home_path(ralph_home_path: str) -> Path:
+    return Path(ralph_home_path).expanduser().resolve()
+
+
+def _find_ralph_job(job_name: str, ralph_home_path: Path) -> RalphJob:
+    job_path = ralph_home_path / "jobs" / job_name
     return RalphJob(
         job_name=job_name,
         job_path=job_path,
@@ -460,6 +460,8 @@ def _run_agent(
     tee_output: bool,
     task_path: Path | None = None,
     skip_ralph_sandbox: bool = False,
+    tool_virtual_environment_path: Path | None = None,
+    controller_path: str | None = None,
 ) -> AgentResult:
     _write_text(output_path, "")
     master_agent_backend = select_agent_backend(
@@ -469,10 +471,16 @@ def _run_agent(
     if skip_ralph_sandbox:
         if master_agent_backend.backend_name != "codex":
             raise ValueError("--skip-ralph-sandbox requires the Codex agent backend.")
+        if tool_virtual_environment_path is None or controller_path is None:
+            raise ValueError(
+                "Direct Codex workers require the controller tool environment."
+            )
         return _run_agent_command(
             command=build_direct_codex_command(
                 agent_backend=master_agent_backend,
                 repo_path=repo_path,
+                tool_virtual_environment_path=tool_virtual_environment_path,
+                controller_path=controller_path,
             ),
             prompt=prompt,
             output_path=output_path,
@@ -497,8 +505,6 @@ def _run_agent(
                 tee_output=tee_output,
                 agent_backend=worker_agent_backend,
             )
-
-
 def _run_agent_command(
     command: list[str],
     prompt: str,
@@ -562,12 +568,29 @@ def _mark_task_done(ledger: dict[str, Any], task_id: str) -> dict[str, Any]:
     updated_tasks = []
     for task in read_tasks_from_ledger(ledger):
         updated_task = dict(task)
-        if updated_task["id"] == task_id:
+        if updated_task["ralph_task_id"] == task_id:
             updated_task["status"] = "done"
             updated_task["completed_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
         updated_tasks.append(updated_task)
     updated_ledger["tasks"] = updated_tasks
     return updated_ledger
+
+
+def _mark_task_stopped(
+    ledger: dict[str, Any],
+    task_id: str,
+    promise: str,
+) -> dict[str, Any]:
+    status_by_promise = {
+        "BLOCKED": "blocked",
+        "ABORT": "aborted",
+    }
+    updated_ledger = copy.deepcopy(ledger)
+    for task in read_tasks_from_ledger(updated_ledger):
+        if task["ralph_task_id"] == task_id:
+            task["status"] = status_by_promise[promise]
+            return updated_ledger
+    raise ValueError(f"Unknown Ralph task id: {task_id}")
 
 
 def _parse_agent_promise(output: str) -> str:

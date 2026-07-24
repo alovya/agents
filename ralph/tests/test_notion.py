@@ -1,594 +1,229 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
 import yaml
 
 from ralph.notion import (
-    WorklogValidationError,
-    _build_notion_task_creation_command,
-    delete_worker_worklog_file,
     _extract_created_notion_task_id,
-    log_completed_worker_to_notion,
-    log_failed_verification_to_notion,
-    log_slice_start_to_notion,
-    log_validated_worker_worklog_to_notion,
-    log_worker_promise_to_notion,
-    materialise_planned_notion_task_before_worker_launch,
-    prepare_notion_task_before_worker_runs_task,
-    validate_worker_worklog,
-    validate_worker_worklog_is_controller_input,
+    _notion_page_id_from_url,
+    _resolve_notion_tracker_command_path,
+    complete_notion_task_after_accepting_worker,
+    materialise_and_validate_notion_task_graph,
 )
-from ralph.prompt import WORKER_NOTION_WORKLOG_FILENAME
-from ralph.tests.conftest import (
-    build_ledger_with_materialised_notion_task,
-    build_ledger_with_planned_notion_task,
-    capture_notion_log_content,
-    create_job_with_ledger,
-    parse_current_notion_tracker_command,
-    select_first_task,
-)
+from ralph.tests.conftest import create_job_with_ledger, select_first_task
 
 
-def test_materialises_planned_notion_task_under_existing_alovya_parent(
+def _build_unmaterialised_ledger() -> dict:
+    return {
+        "version": 1,
+        "job_name": "example",
+        "ntt_ticket_prefix": "ALOVYA",
+        "ntt_parent_task_id": "ALOVYA-89",
+        "tasks": [
+            {
+                "ralph_task_id": "R1",
+                "title": "Add parser",
+                "status": "pending",
+                "depends_on": [],
+                "ntt_task_id": None,
+            },
+            {
+                "ralph_task_id": "R2",
+                "title": "Add command line entrypoint",
+                "status": "pending",
+                "depends_on": ["R1"],
+                "ntt_task_id": None,
+            },
+        ],
+    }
+
+
+def test_materialises_every_child_and_dependency_before_returning(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import subprocess
-
-    ledger = build_ledger_with_planned_notion_task(related_to="ALOVYA-89")
+    ledger = _build_unmaterialised_ledger()
     job = create_job_with_ledger(tmp_path, ledger)
-    task_path = tmp_path / "task"
-    task_path.mkdir()
     observed_commands: list[list[str]] = []
+    created_task_ids = iter(["ALOVYA-90", "ALOVYA-91"])
 
-    def run_notion_tracker_command_mock(command: list[str]) -> subprocess.CompletedProcess[str]:
+    def _run_notion_tracker_command_mock(
+        command: list[str],
+    ) -> subprocess.CompletedProcess[str]:
         observed_commands.append(command)
-        parse_current_notion_tracker_command(command)
-        output_path = Path(command[command.index("--output-path") + 1])
-        output_path.write_text(json.dumps({
-            "action_name": "child",
-            "notion_operations": [
-                "create_database_task:split_task_into_children",
-                "update_properties:task:ALOVYA-90",
-            ],
-            "output_path": str(output_path),
-            "warnings": [],
-        }))
-        return subprocess.CompletedProcess(
-            args=command,
-            returncode=0,
-            stdout="",
-        )
+        if "--child" in command:
+            output_path = Path(command[command.index("--output-path") + 1])
+            created_task_id = next(created_task_ids)
+            output_path.write_text(json.dumps({
+                "notion_operations": [
+                    f"update_properties:task:{created_task_id}",
+                ]
+            }))
+        return subprocess.CompletedProcess(command, 0, "")
 
-    monkeypatch.setattr("ralph.notion._resolve_notion_tracker_command_path", lambda: "ntt")
-    monkeypatch.setattr("ralph.notion._run_notion_tracker_command", run_notion_tracker_command_mock)
-
-    updated_ledger = materialise_planned_notion_task_before_worker_launch(
-        job=job,
-        ledger=ledger,
-        task=ledger["tasks"][0],
-        task_path=task_path,
+    monkeypatch.setattr(
+        "ralph.notion._resolve_notion_tracker_command_path",
+        lambda: "ntt",
+    )
+    monkeypatch.setattr(
+        "ralph.notion._run_notion_tracker_command",
+        _run_notion_tracker_command_mock,
+    )
+    monkeypatch.setattr(
+        "ralph.notion._require_parent_is_available_for_ralph_children",
+        lambda **_: None,
+    )
+    monkeypatch.setattr(
+        "ralph.notion._require_notion_children_match_ledger",
+        lambda **_: None,
+    )
+    monkeypatch.setattr(
+        "ralph.notion._reconcile_completed_notion_tasks",
+        lambda **arguments: arguments["ledger"],
     )
 
-    assert updated_ledger["tasks"][0]["notion_task"]["materialized_task_id"] == "ALOVYA-90"
-    assert yaml.safe_load(job.ledger_path.read_text())["tasks"][0]["notion_task"]["materialized_task_id"] == "ALOVYA-90"
-    assert observed_commands == [[
+    materialised_ledger = materialise_and_validate_notion_task_graph(job, ledger)
+
+    assert [
+        task["ntt_task_id"] for task in materialised_ledger["tasks"]
+    ] == ["ALOVYA-90", "ALOVYA-91"]
+    assert [
+        task["ntt_task_id"]
+        for task in yaml.safe_load(job.ledger_path.read_text())["tasks"]
+    ] == ["ALOVYA-90", "ALOVYA-91"]
+    dependency_commands = [
+        command for command in observed_commands if "--set-dependencies" in command
+    ]
+    assert len(dependency_commands) == 2
+    assert "--dependency-ticket-number" not in dependency_commands[0]
+    assert dependency_commands[1][-2:] == [
+        "--dependency-ticket-number",
+        "90",
+    ]
+
+
+def test_materialisation_resumes_without_recreating_recorded_children(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ledger = _build_unmaterialised_ledger()
+    ledger["tasks"][0]["ntt_task_id"] = "ALOVYA-90"
+    job = create_job_with_ledger(tmp_path, ledger)
+    observed_commands: list[list[str]] = []
+
+    def _run_notion_tracker_command_mock(
+        command: list[str],
+    ) -> subprocess.CompletedProcess[str]:
+        observed_commands.append(command)
+        if "--child" in command:
+            output_path = Path(command[command.index("--output-path") + 1])
+            output_path.write_text(json.dumps({
+                "notion_operations": ["update_properties:task:ALOVYA-91"]
+            }))
+        return subprocess.CompletedProcess(command, 0, "")
+
+    monkeypatch.setattr(
+        "ralph.notion._resolve_notion_tracker_command_path",
+        lambda: "ntt",
+    )
+    monkeypatch.setattr(
+        "ralph.notion._run_notion_tracker_command",
+        _run_notion_tracker_command_mock,
+    )
+    monkeypatch.setattr(
+        "ralph.notion._require_parent_is_available_for_ralph_children",
+        lambda **_: None,
+    )
+    monkeypatch.setattr(
+        "ralph.notion._require_notion_children_match_ledger",
+        lambda **_: None,
+    )
+    monkeypatch.setattr(
+        "ralph.notion._reconcile_completed_notion_tasks",
+        lambda **arguments: arguments["ledger"],
+    )
+
+    materialise_and_validate_notion_task_graph(job, ledger)
+
+    child_commands = [
+        command for command in observed_commands if "--child" in command
+    ]
+    assert len(child_commands) == 1
+    assert "Add command line entrypoint" in child_commands[0]
+
+
+def test_complete_uses_only_accepted_identity_and_commit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ledger = _build_unmaterialised_ledger()
+    ledger["tasks"][0]["ntt_task_id"] = "ALOVYA-90"
+    selection = select_first_task(ledger)
+    observed_commands: list[list[str]] = []
+
+    monkeypatch.setattr(
+        "ralph.notion._resolve_notion_tracker_command_path",
+        lambda: "ntt",
+    )
+    monkeypatch.setattr(
+        "ralph.notion._run_notion_tracker_command",
+        lambda command: (
+            observed_commands.append(command)
+            or subprocess.CompletedProcess(command, 0, "")
+        ),
+    )
+
+    complete_notion_task_after_accepting_worker(
+        selection=selection,
+        task_path=tmp_path,
+        commit_hash="a" * 40,
+    )
+
+    assert observed_commands[0][:4] == [
         "ntt",
-        "--child",
-        "--parent-ticket-number",
-        "89",
-        "--title",
-        "Add parser",
-        "--content-path",
-        str(task_path / "notion-create-content.json"),
-        "--output-path",
-        str(task_path / "notion-create-output.json"),
-    ]]
-
-
-def test_materialises_planned_notion_task_after_related_ralph_task_exists(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import subprocess
-
-    ledger = build_ledger_with_planned_notion_task(related_to="R1", task_id="R2")
-    ledger["tasks"].insert(0, {
-        "id": "R1",
-        "title": "Prepare parent",
-        "status": "done",
-        "depends_on": [],
-        "notion_task": {
-            "planned": True,
-            "relationship": "child",
-            "related_to": "ALOVYA-89",
-            "title": "Prepare parent",
-            "materialized_task_id": "ALOVYA-90",
-        },
-    })
-    ledger["tasks"][1]["depends_on"] = ["R1"]
-    job = create_job_with_ledger(tmp_path, ledger)
-    task_path = tmp_path / "task"
-    task_path.mkdir()
-    observed_commands: list[list[str]] = []
-
-    def run_notion_tracker_command_mock(command: list[str]) -> subprocess.CompletedProcess[str]:
-        observed_commands.append(command)
-        parse_current_notion_tracker_command(command)
-        output_path = Path(command[command.index("--output-path") + 1])
-        output_path.write_text(json.dumps({
-            "action_name": "child",
-            "notion_operations": [
-                "create_database_task:split_task_into_children",
-                "update_properties:task:ALOVYA-91",
-            ],
-            "output_path": str(output_path),
-            "warnings": [],
-        }))
-        return subprocess.CompletedProcess(
-            args=command,
-            returncode=0,
-            stdout="",
-        )
-
-    monkeypatch.setattr("ralph.notion._resolve_notion_tracker_command_path", lambda: "ntt")
-    monkeypatch.setattr("ralph.notion._run_notion_tracker_command", run_notion_tracker_command_mock)
-
-    updated_ledger = materialise_planned_notion_task_before_worker_launch(
-        job=job,
-        ledger=ledger,
-        task=ledger["tasks"][1],
-        task_path=task_path,
+        "--complete",
+        "--ticket-number",
+        "90",
+    ]
+    content_path = Path(
+        observed_commands[0][observed_commands[0].index("--content-path") + 1]
     )
+    content = json.loads(content_path.read_text())
+    assert content["blocks"] == [{
+        "type": "paragraph",
+        "text": f"Accepted Ralph task R1 at commit {'a' * 40}.",
+    }]
 
-    assert updated_ledger["tasks"][1]["notion_task"]["materialized_task_id"] == "ALOVYA-91"
-    assert "--parent-ticket-number" in observed_commands[0]
-    assert observed_commands[0][observed_commands[0].index("--parent-ticket-number") + 1] == "90"
-    assert "--tracker-state-path" not in observed_commands[0]
 
-
-def test_materialising_planned_notion_task_blocks_when_related_ralph_task_is_not_materialised(
+def test_extract_created_task_identity_uses_update_operation(
     tmp_path: Path,
 ) -> None:
-    ledger = build_ledger_with_planned_notion_task(related_to="R1", task_id="R2")
-    ledger["tasks"].insert(0, {
-        "id": "R1",
-        "title": "Prepare parent",
-        "status": "done",
-        "depends_on": [],
-        "notion_task": {
-            "planned": True,
-            "relationship": "child",
-            "related_to": "ALOVYA-89",
-            "title": "Prepare parent",
-            "materialized_task_id": None,
-        },
-    })
-    ledger["tasks"][1]["depends_on"] = ["R1"]
-    job = create_job_with_ledger(tmp_path, ledger)
-    task_path = tmp_path / "task"
-    task_path.mkdir()
-
-    with pytest.raises(RuntimeError, match="must materialise its Notion task"):
-        materialise_planned_notion_task_before_worker_launch(
-            job=job,
-            ledger=ledger,
-            task=ledger["tasks"][1],
-            task_path=task_path,
-        )
-
-
-def test_prepare_notion_task_blocks_worker_launch_when_notion_tracker_fails(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    ledger = build_ledger_with_planned_notion_task(related_to="ALOVYA-89")
-    job = create_job_with_ledger(tmp_path, ledger)
-    task_path = tmp_path / "task"
-    task_path.mkdir()
-
-    def run_notion_tracker_command_mock(command: list[str]) -> None:
-        raise RuntimeError("Notion task tracker command failed")
-
-    monkeypatch.setattr("ralph.notion._resolve_notion_tracker_command_path", lambda: "ntt")
-    monkeypatch.setattr("ralph.notion._run_notion_tracker_command", run_notion_tracker_command_mock)
-
-    with pytest.raises(RuntimeError, match="Notion task tracker command failed"):
-        prepare_notion_task_before_worker_runs_task(
-            job=job,
-            ledger=ledger,
-            selection=select_first_task(ledger),
-            task_path=task_path,
-        )
-
-    assert yaml.safe_load(job.ledger_path.read_text())["tasks"][0]["notion_task"]["materialized_task_id"] is None
-
-
-def test_controller_logs_slice_start_to_notion(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    selection = select_first_task(build_ledger_with_materialised_notion_task())
-    observed_content = capture_notion_log_content(monkeypatch)
-
-    log_slice_start_to_notion(selection=selection, task_path=tmp_path)
-
-    assert observed_content["title"] == "Ralph R1 started"
-    assert "Goal: Add parser" in observed_content["blocks"][0]["text"]
-    assert "ralph_task_id" in observed_content["blocks"][1]["text"]
-    assert "--tracker-state-path" not in observed_content["command"]
-
-
-def test_controller_logs_blocked_worker_promise_to_notion(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    selection = select_first_task(build_ledger_with_materialised_notion_task())
-    observed_content = capture_notion_log_content(monkeypatch)
-
-    log_worker_promise_to_notion(
-        selection=selection,
-        task_path=tmp_path,
-        promise="BLOCKED",
-    )
-
-    assert observed_content["title"] == "Worker returned BLOCKED"
-    assert "stopped before verification" in observed_content["blocks"][0]["text"]
-    assert "Transcript path:" in observed_content["blocks"][1]["text"]
-
-
-def test_controller_logs_claude_worker_promise_with_readable_transcript_first(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    selection = select_first_task(build_ledger_with_materialised_notion_task())
-    observed_content = capture_notion_log_content(monkeypatch)
-
-    log_worker_promise_to_notion(
-        selection=selection,
-        task_path=tmp_path,
-        promise="BLOCKED",
-        agent_backend_name="claude",
-    )
-
-    assert observed_content["blocks"][1]["text"] == f"Transcript path: {tmp_path / 'agent-output.txt'}"
-    assert observed_content["blocks"][2]["text"] == f"Raw Claude stream path: {tmp_path / 'agent-output.raw.jsonl'}"
-
-
-def test_controller_logs_failed_verification_to_notion(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    selection = select_first_task(build_ledger_with_materialised_notion_task())
-    verification_output_path = tmp_path / "verification-output.txt"
-    verification_output_path.write_text("$ pytest\nfailed\n")
-    observed_content = capture_notion_log_content(monkeypatch)
-
-    log_failed_verification_to_notion(selection=selection, task_path=tmp_path)
-
-    assert observed_content["title"] == "Verification failed"
-    assert "DONE, then verification failed" in observed_content["blocks"][0]["text"]
-    assert observed_content["blocks"][1]["text"] == "$ pytest\nfailed\n"
-    assert "Transcript path:" in observed_content["blocks"][2]["text"]
-
-
-def test_controller_logs_claude_failed_verification_with_raw_stream_path(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    selection = select_first_task(build_ledger_with_materialised_notion_task())
-    (tmp_path / "verification-output.txt").write_text("$ pytest\nfailed\n")
-    observed_content = capture_notion_log_content(monkeypatch)
-
-    log_failed_verification_to_notion(
-        selection=selection,
-        task_path=tmp_path,
-        agent_backend_name="claude",
-    )
-
-    assert observed_content["blocks"][2]["text"] == f"Transcript path: {tmp_path / 'agent-output.txt'}"
-    assert observed_content["blocks"][3]["text"] == f"Raw Claude stream path: {tmp_path / 'agent-output.raw.jsonl'}"
-
-
-def test_controller_logs_completed_commit_to_notion(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    selection = select_first_task(build_ledger_with_materialised_notion_task())
-    observed_content = capture_notion_log_content(monkeypatch)
-
-    log_completed_worker_to_notion(
-        selection=selection,
-        task_path=tmp_path,
-        changed_files=["M src/parser.py"],
-        commit_hash="abc123",
-    )
-
-    assert observed_content["title"] == "Ralph R1 completed"
-    assert observed_content["blocks"][0]["text"] == "M src/parser.py"
-    assert observed_content["blocks"][1]["text"] == "Commit hash: abc123"
-    assert "Transcript path:" in observed_content["blocks"][2]["text"]
-
-
-def test_controller_logs_claude_completion_with_raw_stream_path(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    selection = select_first_task(build_ledger_with_materialised_notion_task())
-    observed_content = capture_notion_log_content(monkeypatch)
-
-    log_completed_worker_to_notion(
-        selection=selection,
-        task_path=tmp_path,
-        changed_files=["M src/parser.py"],
-        commit_hash="abc123",
-        agent_backend_name="claude",
-    )
-
-    assert observed_content["blocks"][2]["text"] == f"Transcript path: {tmp_path / 'agent-output.txt'}"
-    assert observed_content["blocks"][3]["text"] == f"Raw Claude stream path: {tmp_path / 'agent-output.raw.jsonl'}"
-
-
-def test_extract_created_notion_task_id_uses_creation_operation_pair(
-    tmp_path: Path,
-) -> None:
-    output_path = tmp_path / "ntt-output.json"
+    output_path = tmp_path / "output.json"
     output_path.write_text(json.dumps({
-        "notion_operations": [
-            "update_timeline_log:task:ALOVYA-89:2026-06-18",
-            "create_database_task:split_task_into_children",
-            "update_properties:task:ALOVYA-90",
-            "update_properties:task:ALOVYA-89",
-        ]
+        "notion_operations": ["update_properties:task:ALOVYA-90"]
     }))
 
     assert _extract_created_notion_task_id(output_path) == "ALOVYA-90"
 
 
-def test_build_notion_task_creation_command_builds_sibling_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("ralph.notion._resolve_notion_tracker_command_path", lambda: "ntt")
+def test_notion_page_identity_is_independent_of_url_shape() -> None:
+    page_id = "3a703da5d69a81c48cacc9576cd0773c"
 
-    command = _build_notion_task_creation_command(
-        relationship="sibling",
-        related_notion_task_id="ALOVYA-89",
-        title="Add parser",
-        content_path=tmp_path / "content.json",
-        output_path=tmp_path / "output.json",
-    )
-
-    assert command == [
-        "ntt",
-        "--sibling",
-        "--sibling-ticket-number",
-        "89",
-        "--title",
-        "Add parser",
-        "--content-path",
-        str(tmp_path / "content.json"),
-        "--output-path",
-        str(tmp_path / "output.json"),
-    ]
+    assert _notion_page_id_from_url(f"https://www.notion.so/{page_id}") == page_id
+    assert _notion_page_id_from_url(
+        "https://app.notion.com/p/task-"
+        "3a703da5-d69a-81c4-8cac-c9576cd0773c"
+    ) == page_id
 
 
-def test_validate_worker_worklog_accepts_valid_worklog(tmp_path: Path) -> None:
-    worklog_path = tmp_path / WORKER_NOTION_WORKLOG_FILENAME
-    worklog_path.write_text(json.dumps({
-        "title": "Task completed",
-        "blocks": [
-            {"type": "paragraph", "text": "Summary of work done."},
-            {"type": "code", "language": "text", "text": "$ pytest\npassed"},
-        ],
-    }))
-
-    worklog = validate_worker_worklog(tmp_path)
-
-    assert worklog["title"] == "Task completed"
-    assert len(worklog["blocks"]) == 2
-
-
-def test_validate_worker_worklog_rejects_missing_file(tmp_path: Path) -> None:
-    with pytest.raises(WorklogValidationError, match="Worker worklog file not found"):
-        validate_worker_worklog(tmp_path)
-
-
-def test_validate_worker_worklog_rejects_invalid_json(tmp_path: Path) -> None:
-    worklog_path = tmp_path / WORKER_NOTION_WORKLOG_FILENAME
-    worklog_path.write_text("not valid json {")
-
-    with pytest.raises(WorklogValidationError, match="not valid JSON"):
-        validate_worker_worklog(tmp_path)
-
-
-def test_validate_worker_worklog_rejects_missing_title(tmp_path: Path) -> None:
-    worklog_path = tmp_path / WORKER_NOTION_WORKLOG_FILENAME
-    worklog_path.write_text(json.dumps({
-        "blocks": [{"type": "paragraph", "text": "Summary"}],
-    }))
-
-    with pytest.raises(WorklogValidationError, match="missing required field: title"):
-        validate_worker_worklog(tmp_path)
-
-
-def test_validate_worker_worklog_rejects_empty_title(tmp_path: Path) -> None:
-    worklog_path = tmp_path / WORKER_NOTION_WORKLOG_FILENAME
-    worklog_path.write_text(json.dumps({
-        "title": "   ",
-        "blocks": [{"type": "paragraph", "text": "Summary"}],
-    }))
-
-    with pytest.raises(WorklogValidationError, match="title.*non-empty string"):
-        validate_worker_worklog(tmp_path)
-
-
-def test_validate_worker_worklog_rejects_missing_blocks(tmp_path: Path) -> None:
-    worklog_path = tmp_path / WORKER_NOTION_WORKLOG_FILENAME
-    worklog_path.write_text(json.dumps({
-        "title": "Task done",
-    }))
-
-    with pytest.raises(WorklogValidationError, match="missing required field: blocks"):
-        validate_worker_worklog(tmp_path)
-
-
-def test_validate_worker_worklog_rejects_empty_blocks(tmp_path: Path) -> None:
-    worklog_path = tmp_path / WORKER_NOTION_WORKLOG_FILENAME
-    worklog_path.write_text(json.dumps({
-        "title": "Task done",
-        "blocks": [],
-    }))
-
-    with pytest.raises(WorklogValidationError, match="blocks.*non-empty list"):
-        validate_worker_worklog(tmp_path)
-
-
-def test_validate_worker_worklog_rejects_block_missing_type(tmp_path: Path) -> None:
-    worklog_path = tmp_path / WORKER_NOTION_WORKLOG_FILENAME
-    worklog_path.write_text(json.dumps({
-        "title": "Task done",
-        "blocks": [{"text": "Summary"}],
-    }))
-
-    with pytest.raises(WorklogValidationError, match="blocks\\[0\\] missing required field: type"):
-        validate_worker_worklog(tmp_path)
-
-
-def test_validate_worker_worklog_rejects_invalid_block_type(tmp_path: Path) -> None:
-    worklog_path = tmp_path / WORKER_NOTION_WORKLOG_FILENAME
-    worklog_path.write_text(json.dumps({
-        "title": "Task done",
-        "blocks": [{"type": "heading", "text": "Summary"}],
-    }))
-
-    with pytest.raises(WorklogValidationError, match="type.*must be 'paragraph' or 'code'"):
-        validate_worker_worklog(tmp_path)
-
-
-def test_validate_worker_worklog_rejects_code_block_missing_language(tmp_path: Path) -> None:
-    worklog_path = tmp_path / WORKER_NOTION_WORKLOG_FILENAME
-    worklog_path.write_text(json.dumps({
-        "title": "Task done",
-        "blocks": [{"type": "code", "text": "$ pytest"}],
-    }))
-
-    with pytest.raises(WorklogValidationError, match="code block but missing required field: language"):
-        validate_worker_worklog(tmp_path)
-
-
-def test_validate_worker_worklog_is_controller_input_accepts_untracked_file(
-    tmp_path: Path,
-) -> None:
-    import subprocess
-
-    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
-    (tmp_path / WORKER_NOTION_WORKLOG_FILENAME).write_text("{}")
-
-    validate_worker_worklog_is_controller_input(tmp_path)
-
-
-def test_validate_worker_worklog_is_controller_input_rejects_staged_file(
-    tmp_path: Path,
-) -> None:
-    import subprocess
-
-    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
-    (tmp_path / WORKER_NOTION_WORKLOG_FILENAME).write_text("{}")
-    subprocess.run(
-        ["git", "-C", str(tmp_path), "add", WORKER_NOTION_WORKLOG_FILENAME],
-        check=True,
-    )
-
-    with pytest.raises(WorklogValidationError, match="must remain untracked"):
-        validate_worker_worklog_is_controller_input(tmp_path)
-
-
-def test_log_validated_worker_worklog_to_notion_sends_worklog_content(
-    tmp_path: Path,
+def test_notion_command_resolves_only_from_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    selection = select_first_task(build_ledger_with_materialised_notion_task())
-    observed_content = capture_notion_log_content(monkeypatch)
-    worklog = {
-        "title": "Worker worklog",
-        "blocks": [{"type": "paragraph", "text": "Summary of work"}],
-    }
+    monkeypatch.setattr("ralph.notion.shutil.which", lambda command: None)
 
-    log_validated_worker_worklog_to_notion(
-        selection=selection,
-        task_path=tmp_path,
-        worklog=worklog,
-    )
-
-    assert observed_content["title"] == "Worker worklog"
-    assert observed_content["blocks"][0]["text"] == "Summary of work"
-
-
-def test_delete_worker_worklog_file_removes_file(tmp_path: Path) -> None:
-    worklog_path = tmp_path / WORKER_NOTION_WORKLOG_FILENAME
-    worklog_path.write_text("{}")
-
-    delete_worker_worklog_file(tmp_path)
-
-    assert not worklog_path.exists()
-
-
-def test_delete_worker_worklog_file_does_nothing_when_file_missing(tmp_path: Path) -> None:
-    delete_worker_worklog_file(tmp_path)
-
-
-def test_controller_completion_log_does_not_include_worker_worklog_block(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    selection = select_first_task(build_ledger_with_materialised_notion_task())
-    (tmp_path / "verification-output.txt").write_text("$ pytest\npassed\n")
-    observed_content = capture_notion_log_content(monkeypatch)
-
-    log_completed_worker_to_notion(
-        selection=selection,
-        task_path=tmp_path,
-        changed_files=["M src/parser.py"],
-        commit_hash="abc123",
-    )
-
-    all_block_texts = [block.get("text", "") for block in observed_content.get("blocks", [])]
-    combined_text = "\n".join(all_block_texts)
-    assert "Worker worklog:" not in combined_text
-    assert "worklog" not in combined_text.lower()
-
-
-def test_controller_blocked_log_does_not_include_worker_worklog_block(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    selection = select_first_task(build_ledger_with_materialised_notion_task())
-    observed_content = capture_notion_log_content(monkeypatch)
-
-    log_worker_promise_to_notion(
-        selection=selection,
-        task_path=tmp_path,
-        promise="BLOCKED",
-    )
-
-    all_block_texts = [block.get("text", "") for block in observed_content.get("blocks", [])]
-    combined_text = "\n".join(all_block_texts)
-    assert "Worker worklog:" not in combined_text
-    assert "worklog" not in combined_text.lower()
-
-
-def test_controller_failed_verification_log_does_not_include_worker_worklog_block(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    selection = select_first_task(build_ledger_with_materialised_notion_task())
-    (tmp_path / "verification-output.txt").write_text("$ pytest\nfailed\n")
-    observed_content = capture_notion_log_content(monkeypatch)
-
-    log_failed_verification_to_notion(selection=selection, task_path=tmp_path)
-
-    all_block_texts = [block.get("text", "") for block in observed_content.get("blocks", [])]
-    combined_text = "\n".join(all_block_texts)
-    assert "Worker worklog:" not in combined_text
-    assert "worklog" not in combined_text.lower()
+    with pytest.raises(RuntimeError, match="not available on PATH"):
+        _resolve_notion_tracker_command_path()
