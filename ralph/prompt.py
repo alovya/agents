@@ -11,7 +11,9 @@ from ralph.plan_selection import (
 def render_agent_prompt(
     repo_path: Path,
     selection: TaskSelection,
+    python_venv_path: Path | None = None,
 ) -> str:
+    ntt_command = f"{python_venv_path}/bin/ntt" if python_venv_path else "ntt"
     return WORKER_PROMPT_TEMPLATE.format(
         repo_path=repo_path,
         shared_plan_context=selection.shared_plan_context.strip(),
@@ -23,6 +25,7 @@ def render_agent_prompt(
             selection.task["ntt_task_id"],
             selection.ntt_ticket_prefix,
         ),
+        ntt_command=ntt_command,
     )
 WORKER_PROMPT_TEMPLATE = """You are implementing one Ralph task in a fresh agent session.
 
@@ -45,7 +48,7 @@ Rules:
 - Work only on the active task.
 - Do not try to find or read Ralph controller state.
 - Do not edit task ledgers or plan files.
-- Write each NTT log entry to a JSON file shaped like `{{"title": "Short summary", "blocks": [{{"type": "paragraph", "text": "Detailed log entry"}}]}}`, then run `ntt --log --ticket-number {ntt_ticket_number} --content-path <json-path>`.
+- Write each NTT log entry to a JSON file shaped like `{{"title": "Short summary", "blocks": [{{"type": "paragraph", "text": "Detailed log entry"}}]}}`, then run `{ntt_command} --log --ticket-number {ntt_ticket_number} --content-path <json-path>`.
 - In paragraph text, wrap inline technical names such as file paths, commands, environment variables, functions, class names, field names, tickets, and literal values in backticks.
 - Use code blocks for standalone commands, outputs, diffs, stack traces, paths, JSON, YAML, and structured observations.
 - Record implementation progress, commands, errors, decisions, discoveries, verification evidence, and unresolved risks directly on your assigned NTT task.

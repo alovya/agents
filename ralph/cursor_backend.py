@@ -136,19 +136,34 @@ def format_cursor_stream_event_for_human(
         return [f"Unexpected Cursor stream-json value: {raw_line}"]
 
     event_type = event.get("type")
-    if event_type == "assistant":
-        return _format_cursor_assistant_event_for_human(event)
-    if event_type == "user":
-        return _format_cursor_user_event_for_human(event)
+    event_subtype = event.get("subtype")
+
+    if event_type == "system" and event_subtype == "init":
+        model = event.get("model", "unknown")
+        return [f"Cursor session started with model: {model}"]
+
+    if event_type == "thinking" and event_subtype == "delta":
+        text = event.get("text", "")
+        if text and emitted_texts is not None:
+            if text not in emitted_texts:
+                emitted_texts.add(text)
+                return _split_transcript_text_into_lines(text.strip())
+        return []
+
+    if event_type == "tool_call":
+        return _format_cursor_tool_call_event_for_human(event)
+
     if event_type == "result":
         return _format_cursor_result_event_for_human(event, emitted_texts)
-    return _format_noisy_cursor_event_for_human_when_it_contains_an_error(event)
+
+    return []
 
 
 def extract_cursor_stream_result_text(raw_output: str) -> str:
     result_text: str | None = None
-    final_assistant_text: str | None = None
+    final_thinking_text: str | None = None
     malformed_lines: list[str] = []
+
     for line in raw_output.splitlines():
         if not line.strip():
             continue
@@ -160,36 +175,66 @@ def extract_cursor_stream_result_text(raw_output: str) -> str:
 
         if event.get("type") == "result" and isinstance(event.get("result"), str):
             result_text = event["result"]
-        if event.get("type") == "assistant":
-            assistant_text = _extract_text_from_cursor_assistant_event(event)
-            if assistant_text:
-                final_assistant_text = assistant_text
+
+        if event.get("type") == "thinking" and event.get("subtype") == "delta":
+            text = event.get("text", "")
+            if text:
+                final_thinking_text = text
 
     if result_text is not None:
         return result_text
-    if final_assistant_text is not None:
-        return final_assistant_text
+    if final_thinking_text is not None:
+        return final_thinking_text
     if malformed_lines:
         raise RuntimeError("Cursor stream-json output contained malformed JSON lines.")
-    raise RuntimeError("Cursor stream-json output did not include a result or assistant text event.")
+    raise RuntimeError("Cursor stream-json output did not include a result or thinking text event.")
 
 
-def _format_cursor_assistant_event_for_human(event: dict[str, Any]) -> list[str]:
-    transcript_lines: list[str] = []
-    for content_block in _extract_cursor_content_blocks(event):
-        if content_block.get("type") == "text" and isinstance(content_block.get("text"), str):
-            transcript_lines.extend(_split_transcript_text_into_lines(content_block["text"]))
-        if content_block.get("type") == "tool_use":
-            transcript_lines.append(_format_cursor_tool_use_block_for_human(content_block))
-    return transcript_lines
+def _format_cursor_tool_call_event_for_human(event: dict[str, Any]) -> list[str]:
+    subtype = event.get("subtype")
+    tool_call = event.get("tool_call", {})
+
+    tool_type, tool_data = _extract_cursor_tool_call_type_and_data(tool_call)
+    if not tool_type:
+        return []
+
+    if subtype == "started":
+        description = tool_data.get("description", "")
+        if tool_type == "shellToolCall":
+            command = tool_data.get("args", {}).get("command", "")
+            if description:
+                return [f"Tool use: Shell ({description})"]
+            return [f"Tool use: Shell ({_shorten_cursor_transcript_value(command)})"]
+        if tool_type == "readToolCall":
+            path = tool_data.get("path", "")
+            return [f"Tool use: Read ({path})"]
+        if tool_type == "writeToolCall":
+            path = tool_data.get("path", "")
+            return [f"Tool use: Write ({path})"]
+        if tool_type == "editToolCall":
+            path = tool_data.get("filePath", "")
+            return [f"Tool use: Edit ({path})"]
+        return [f"Tool use: {tool_type}"]
+
+    if subtype == "completed":
+        result = tool_data.get("result", {})
+        if tool_type == "shellToolCall":
+            exit_code = result.get("failure", {}).get("exitCode")
+            if exit_code is not None and exit_code != 0:
+                stderr = result.get("failure", {}).get("stderr", "")
+                if stderr:
+                    return [f"Tool error (exit {exit_code}): {_shorten_cursor_transcript_value(stderr)}"]
+                return [f"Tool error: exit code {exit_code}"]
+        return []
+
+    return []
 
 
-def _format_cursor_user_event_for_human(event: dict[str, Any]) -> list[str]:
-    transcript_lines: list[str] = []
-    for content_block in _extract_cursor_content_blocks(event):
-        if content_block.get("type") == "tool_result":
-            transcript_lines.extend(_format_cursor_tool_result_block_for_human(content_block))
-    return transcript_lines
+def _extract_cursor_tool_call_type_and_data(tool_call: dict[str, Any]) -> tuple[str | None, dict[str, Any]]:
+    for key in ("shellToolCall", "readToolCall", "writeToolCall", "editToolCall", "grepToolCall", "globToolCall"):
+        if key in tool_call:
+            return key, tool_call[key]
+    return None, {}
 
 
 def _format_cursor_result_event_for_human(

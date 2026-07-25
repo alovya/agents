@@ -129,6 +129,7 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
         prompt = render_agent_prompt(
             repo_path=repo_path,
             selection=selection,
+            python_venv_path=python_venv_path,
         )
         _save_worker_prompt_before_launch(task_path=task_path, prompt=prompt)
         agent_result = _run_agent(
