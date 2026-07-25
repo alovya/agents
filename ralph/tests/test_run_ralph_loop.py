@@ -283,6 +283,59 @@ def test_parse_args_can_skip_ralph_sandbox() -> None:
     assert arguments.skip_ralph_sandbox is True
 
 
+def test_parse_args_requires_agents_md_path_for_cursor_backend() -> None:
+    with pytest.raises(SystemExit) as error:
+        _parse_arguments([
+            "run",
+            "--repo-path",
+            "/tmp/repo",
+            "--ralph-home-path",
+            "/tmp/ralph-home",
+            "--job-name",
+            "example",
+            "--agent-backend",
+            "cursor",
+        ])
+
+    assert "--agents-md-path is required when --agent-backend=cursor" in str(error.value)
+
+
+def test_parse_args_accepts_agents_md_path_for_cursor_backend() -> None:
+    arguments = _parse_arguments([
+        "run",
+        "--repo-path",
+        "/tmp/repo",
+        "--ralph-home-path",
+        "/tmp/ralph-home",
+        "--job-name",
+        "example",
+        "--agent-backend",
+        "cursor",
+        "--agents-md-path",
+        "/path/to/AGENTS.md",
+    ])
+
+    assert arguments.agents_md_path == "/path/to/AGENTS.md"
+
+
+def test_parse_args_accepts_agents_md_path_for_non_cursor_backends() -> None:
+    arguments = _parse_arguments([
+        "run",
+        "--repo-path",
+        "/tmp/repo",
+        "--ralph-home-path",
+        "/tmp/ralph-home",
+        "--job-name",
+        "example",
+        "--agent-backend",
+        "codex",
+        "--agents-md-path",
+        "/path/to/AGENTS.md",
+    ])
+
+    assert arguments.agents_md_path == "/path/to/AGENTS.md"
+
+
 def test_claude_runtime_error_points_at_readable_transcript_then_raw_stream(
     tmp_path: Path,
 ) -> None:

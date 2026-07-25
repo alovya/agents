@@ -130,6 +130,7 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
             repo_path=repo_path,
             selection=selection,
             python_venv_path=python_venv_path,
+            agents_md_path=_resolve_agents_md_path(arguments.agents_md_path),
         )
         _save_worker_prompt_before_launch(task_path=task_path, prompt=prompt)
         agent_result = _run_agent(
@@ -353,6 +354,10 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
     # TODO: Add --codex-model and --claude-model when those backends support model selection.
     run_parser.add_argument("--cursor-model", help="Model ID to pass to the Cursor CLI (e.g. gemini-3.6-flash-high).")
     run_parser.add_argument(
+        "--agents-md-path",
+        help="Path to AGENTS.md file to include in worker prompts. Required when --agent-backend=cursor.",
+    )
+    run_parser.add_argument(
         "--skip-ralph-sandbox",
         action="store_true",
         help=(
@@ -398,11 +403,26 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
     smoke_parser.add_argument("--agent-command")
     smoke_parser.add_argument("--python-venv")
 
-    return parser.parse_args(argv)
+    arguments = parser.parse_args(argv)
+    _validate_agents_md_path_argument(arguments)
+    return arguments
+
+
+def _validate_agents_md_path_argument(arguments: argparse.Namespace) -> None:
+    if getattr(arguments, "command", None) != "run":
+        return
+    if arguments.agent_backend == "cursor" and arguments.agents_md_path is None:
+        raise SystemExit("--agents-md-path is required when --agent-backend=cursor")
 
 
 def _resolve_repo_path(repo_path: str) -> Path:
     return Path(repo_path).expanduser().resolve()
+
+
+def _resolve_agents_md_path(agents_md_path: str | None) -> Path | None:
+    if agents_md_path is None:
+        return None
+    return Path(agents_md_path).expanduser().resolve()
 
 
 def _resolve_ralph_home_path(ralph_home_path: str) -> Path:

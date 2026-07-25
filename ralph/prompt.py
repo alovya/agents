@@ -12,8 +12,10 @@ def render_agent_prompt(
     repo_path: Path,
     selection: TaskSelection,
     python_venv_path: Path | None = None,
+    agents_md_path: Path | None = None,
 ) -> str:
     ntt_command = f"{python_venv_path}/bin/ntt" if python_venv_path else "ntt"
+    agents_md_section = _render_agents_md_section(agents_md_path)
     return WORKER_PROMPT_TEMPLATE.format(
         repo_path=repo_path,
         shared_plan_context=selection.shared_plan_context.strip(),
@@ -26,12 +28,22 @@ def render_agent_prompt(
             selection.ntt_ticket_prefix,
         ),
         ntt_command=ntt_command,
+        agents_md_section=agents_md_section,
     )
+
+
+def _render_agents_md_section(agents_md_path: Path | None) -> str:
+    if agents_md_path is None:
+        return ""
+    agents_md_content = agents_md_path.read_text().strip()
+    return f"\nAgent instructions:\n{agents_md_content}\n"
+
+
 WORKER_PROMPT_TEMPLATE = """You are implementing one Ralph task in a fresh agent session.
 
 You may use only the context in this prompt and the files available in the target repository.
 The full Ralph plan is not available to you.
-
+{agents_md_section}
 Repository:
 {repo_path}
 

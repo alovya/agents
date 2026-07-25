@@ -135,3 +135,42 @@ def test_render_agent_prompt_contains_no_context_read_from_ntt(tmp_path: Path) -
 
     assert "Notion summary" not in prompt
     assert "previous NTT log" not in prompt
+
+
+def test_render_agent_prompt_includes_agents_md_content_when_provided(tmp_path: Path) -> None:
+    ledger = build_example_ledger()
+    selection = TaskSelection(
+        task=ledger["tasks"][0],
+        ntt_ticket_prefix=ledger["ntt_ticket_prefix"],
+        shared_plan_context="Shared context.",
+        active_task_plan_context="First task context.",
+    )
+    agents_md_path = tmp_path / "AGENTS.md"
+    agents_md_path.write_text("Custom agent instructions from AGENTS.md file.")
+
+    prompt = render_agent_prompt(
+        repo_path=tmp_path,
+        selection=selection,
+        agents_md_path=agents_md_path,
+    )
+
+    assert "Agent instructions:" in prompt
+    assert "Custom agent instructions from AGENTS.md file." in prompt
+
+
+def test_render_agent_prompt_omits_agents_md_section_when_not_provided(tmp_path: Path) -> None:
+    ledger = build_example_ledger()
+    selection = TaskSelection(
+        task=ledger["tasks"][0],
+        ntt_ticket_prefix=ledger["ntt_ticket_prefix"],
+        shared_plan_context="Shared context.",
+        active_task_plan_context="First task context.",
+    )
+
+    prompt = render_agent_prompt(
+        repo_path=tmp_path,
+        selection=selection,
+        agents_md_path=None,
+    )
+
+    assert "Agent instructions:" not in prompt
