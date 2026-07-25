@@ -202,7 +202,8 @@ def _build_agent_instructions_links(
         AgentInstructionsLink(
             agent_name=agent_home.agent_name,
             source_path=agents_repo_path / "AGENTS.md",
-            destination_path=agent_home.home_path / "AGENTS.md",
+            destination_path=agent_home.home_path
+            / ("CLAUDE.md" if agent_home.agent_name == "Claude" else "AGENTS.md"),
         )
         for agent_home in agent_homes
     ]
