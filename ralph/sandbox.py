@@ -229,6 +229,7 @@ def build_sensitive_paths_that_workers_must_not_see() -> list[Path]:
         Path.home() / ".aws",
         Path.home() / ".azure",
         Path.home() / ".claude",
+        Path.home() / ".cursor",
         Path.home() / ".config",
         Path.home() / ".cache",
         Path.home() / ".docker",
@@ -241,6 +242,7 @@ def build_sensitive_paths_that_workers_must_not_see() -> list[Path]:
         Path("/workspace/.aws"),
         Path("/workspace/.azure"),
         Path("/workspace/.claude"),
+        Path("/workspace/.cursor"),
         Path("/workspace/.config"),
         Path("/workspace/.cache"),
         Path("/workspace/.codex"),
@@ -263,7 +265,7 @@ def build_credential_environment_variables_that_workers_must_not_receive() -> li
 
 
 def _build_agent_home_environment_variables() -> list[str]:
-    return ["CODEX_HOME", "CLAUDE_CONFIG_DIR"]
+    return ["CODEX_HOME", "CLAUDE_CONFIG_DIR", "CURSOR_CONFIG_DIR"]
 
 
 def _build_shell_assertions_that_unselected_backend_environment_variables_are_absent(
