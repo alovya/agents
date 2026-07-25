@@ -446,6 +446,162 @@ def test_run_agent_can_use_existing_codex_home_without_bubblewrap(
     assert not codex_home_path.joinpath("rules", "default.rules").exists()
 
 
+def test_run_agent_uses_prepared_cursor_worker_home(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    master_cursor_config_dir = tmp_path / "master-cursor-config"
+    repo_path = tmp_path / "target-repo"
+    task_path = tmp_path / "task"
+    output_path = tmp_path / "agent-output.txt"
+    master_cursor_config_dir.mkdir()
+    repo_path.mkdir()
+    task_path.mkdir()
+    monkeypatch.setenv("CURSOR_CONFIG_DIR", str(master_cursor_config_dir))
+
+    observed_worker_agent_backend: dict[str, AgentBackend] = {}
+    observed_worker_settings_existed: list[bool] = []
+
+    def build_bwrap_agent_command_mock(
+        repo_path: Path,
+        agent_backend: AgentBackend,
+        python_venv_path: Path | None,
+        allowed_bash_commands: list[str] | None = None,
+    ) -> list[str]:
+        observed_worker_agent_backend["bwrap"] = agent_backend
+        return ["fake-bwrap-command"]
+
+    def _run_agent_command_mock(
+        command: list[str],
+        prompt: str,
+        output_path: Path,
+        tee_output: bool,
+        agent_backend: AgentBackend,
+    ) -> AgentResult:
+        observed_worker_agent_backend["agent"] = agent_backend
+        observed_worker_settings_existed.append(
+            agent_backend.agent_config_dir.joinpath("settings.json").is_file()
+        )
+        return AgentResult(promise="DONE", output='{"type":"result","result":"<promise>DONE</promise>"}')
+
+    monkeypatch.setattr(
+        "ralph.run_ralph_loop.build_bwrap_agent_command",
+        build_bwrap_agent_command_mock,
+    )
+    monkeypatch.setattr("ralph.run_ralph_loop._run_agent_command", _run_agent_command_mock)
+
+    agent_result = _run_agent(
+        repo_path=repo_path,
+        task={},
+        prompt="Worker prompt",
+        agent_backend_name="cursor",
+        agent_command="cursor",
+        python_venv_path=None,
+        output_path=output_path,
+        tee_output=False,
+        task_path=task_path,
+    )
+
+    worker_cursor_config_dir = observed_worker_agent_backend["agent"].agent_config_dir
+    assert agent_result.promise == "DONE"
+    assert observed_worker_agent_backend["bwrap"] == observed_worker_agent_backend["agent"]
+    assert worker_cursor_config_dir != master_cursor_config_dir
+    assert observed_worker_settings_existed == [False]
+    assert not master_cursor_config_dir.joinpath("settings.json").exists()
+    assert not worker_cursor_config_dir.exists()
+
+
+def test_run_agent_can_use_existing_cursor_home_without_bubblewrap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cursor_config_dir = tmp_path / "cursor-config"
+    repo_path = tmp_path / "target-repo"
+    output_path = tmp_path / "agent-output.txt"
+    cursor_config_dir.mkdir()
+    repo_path.mkdir()
+    monkeypatch.setenv("CURSOR_CONFIG_DIR", str(cursor_config_dir))
+
+    observed_command: list[str] = []
+    observed_agent_backend: list[AgentBackend] = []
+
+    def _run_agent_command_mock(
+        command: list[str],
+        prompt: str,
+        output_path: Path,
+        tee_output: bool,
+        agent_backend: AgentBackend,
+    ) -> AgentResult:
+        observed_command.extend(command)
+        observed_agent_backend.append(agent_backend)
+        return AgentResult(promise="DONE", output='{"type":"result","result":"<promise>DONE</promise>"}')
+
+    monkeypatch.setattr("ralph.run_ralph_loop._run_agent_command", _run_agent_command_mock)
+
+    agent_result = _run_agent(
+        repo_path=repo_path,
+        task={},
+        prompt="Worker prompt",
+        agent_backend_name="cursor",
+        agent_command="/usr/bin/cursor",
+        python_venv_path=None,
+        output_path=output_path,
+        tee_output=False,
+        skip_ralph_sandbox=True,
+    )
+
+    assert agent_result.promise == "DONE"
+    assert observed_agent_backend[0].agent_config_dir == cursor_config_dir
+    assert observed_command == [
+        "/usr/bin/cursor",
+        "--print",
+        "--verbose",
+        "--input-format",
+        "text",
+        "--output-format",
+        "stream-json",
+        "--include-partial-messages",
+        "--include-hook-events",
+        "--permission-mode",
+        "dontAsk",
+        "--allowedTools",
+        "Read",
+        "Glob",
+        "Grep",
+        "Edit",
+        "MultiEdit",
+        "Write",
+        "Bash",
+        "--no-session-persistence",
+        "-p",
+        str(repo_path),
+    ]
+
+
+def test_parse_args_accepts_cursor_backend_for_smoke_test() -> None:
+    run_arguments = _parse_arguments([
+        "run",
+        "--repo-path",
+        "/tmp/repo",
+        "--ralph-home-path",
+        "/tmp/ralph-home",
+        "--job-name",
+        "example",
+        "--agent-backend",
+        "cursor",
+    ])
+    smoke_arguments = _parse_arguments([
+        "smoke-test",
+        "--repo-path",
+        "/tmp/repo",
+        "--agent-backend",
+        "cursor",
+    ])
+
+    assert run_arguments.agent_backend == "cursor"
+    assert smoke_arguments.agent_backend == "cursor"
+
+
 def test_find_ralph_job_uses_explicit_ralph_home(tmp_path: Path) -> None:
     ralph_home_path = tmp_path / "ralph-home"
 
