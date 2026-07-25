@@ -28,6 +28,7 @@ from ralph.agent_backends import (
     run_command_and_save_agent_transcripts,
     select_agent_backend,
 )
+from ralph.claude_backend import build_direct_claude_command
 from ralph.codex_backend import build_direct_codex_command
 from ralph.notion import (
     complete_notion_task_after_accepting_worker,
@@ -350,8 +351,8 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
         "--skip-ralph-sandbox",
         action="store_true",
         help=(
-            "Run Codex directly with writable Git metadata and the existing "
-            "CODEX_HOME instead of Ralph's Bubblewrap sandbox."
+            "Run the agent directly with writable Git metadata and the existing "
+            "config directory instead of Ralph's Bubblewrap sandbox."
         ),
     )
     run_parser.add_argument(
@@ -464,31 +465,41 @@ def _run_agent(
     controller_path: str | None = None,
 ) -> AgentResult:
     _write_text(output_path, "")
-    master_agent_backend = select_agent_backend(
+    agent_backend = select_agent_backend(
         agent_backend_name=agent_backend_name,
         agent_command=agent_command,
     )
     if skip_ralph_sandbox:
-        if master_agent_backend.backend_name != "codex":
-            raise ValueError("--skip-ralph-sandbox requires the Codex agent backend.")
-        if tool_virtual_environment_path is None or controller_path is None:
-            raise ValueError(
-                "Direct Codex workers require the controller tool environment."
-            )
-        return _run_agent_command(
-            command=build_direct_codex_command(
-                agent_backend=master_agent_backend,
-                repo_path=repo_path,
-                tool_virtual_environment_path=tool_virtual_environment_path,
-                controller_path=controller_path,
-            ),
+        return _run_direct_agent(
+            repo_path=repo_path,
             prompt=prompt,
             output_path=output_path,
             tee_output=tee_output,
-            agent_backend=master_agent_backend,
+            agent_backend=agent_backend,
+            tool_virtual_environment_path=tool_virtual_environment_path,
+            controller_path=controller_path,
         )
+    return _run_sandboxed_agent(
+        repo_path=repo_path,
+        prompt=prompt,
+        output_path=output_path,
+        tee_output=tee_output,
+        agent_backend=agent_backend,
+        python_venv_path=python_venv_path,
+        task_path=task_path,
+    )
 
-    with prepare_agent_backend_for_worker(master_agent_backend) as worker_agent_backend:
+
+def _run_sandboxed_agent(
+    repo_path: Path,
+    prompt: str,
+    output_path: Path,
+    tee_output: bool,
+    agent_backend: AgentBackend,
+    python_venv_path: Path | None,
+    task_path: Path | None,
+) -> AgentResult:
+    with prepare_agent_backend_for_worker(agent_backend) as worker_agent_backend:
         command = build_bwrap_agent_command(
             repo_path=repo_path,
             agent_backend=worker_agent_backend,
@@ -505,6 +516,55 @@ def _run_agent(
                 tee_output=tee_output,
                 agent_backend=worker_agent_backend,
             )
+
+
+def _run_direct_agent(
+    repo_path: Path,
+    prompt: str,
+    output_path: Path,
+    tee_output: bool,
+    agent_backend: AgentBackend,
+    tool_virtual_environment_path: Path | None,
+    controller_path: str | None,
+) -> AgentResult:
+    command = _build_direct_agent_command(
+        repo_path=repo_path,
+        agent_backend=agent_backend,
+        tool_virtual_environment_path=tool_virtual_environment_path,
+        controller_path=controller_path,
+    )
+    return _run_agent_command(
+        command=command,
+        prompt=prompt,
+        output_path=output_path,
+        tee_output=tee_output,
+        agent_backend=agent_backend,
+    )
+
+
+def _build_direct_agent_command(
+    repo_path: Path,
+    agent_backend: AgentBackend,
+    tool_virtual_environment_path: Path | None,
+    controller_path: str | None,
+) -> list[str]:
+    if agent_backend.backend_name == "codex":
+        if tool_virtual_environment_path is None or controller_path is None:
+            raise ValueError(
+                "Direct Codex workers require the controller tool environment."
+            )
+        return build_direct_codex_command(
+            agent_backend=agent_backend,
+            repo_path=repo_path,
+            tool_virtual_environment_path=tool_virtual_environment_path,
+            controller_path=controller_path,
+        )
+    if agent_backend.backend_name == "claude":
+        return build_direct_claude_command(
+            agent_backend=agent_backend,
+            repo_path=repo_path,
+        )
+    raise ValueError(f"--skip-ralph-sandbox is not supported for backend: {agent_backend.backend_name}")
 def _run_agent_command(
     command: list[str],
     prompt: str,

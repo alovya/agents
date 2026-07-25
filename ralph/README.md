@@ -184,7 +184,27 @@ CODEX_HOME=<codex-config-dir> python -m ralph.run_ralph_loop run \
   --agent-backend codex
 ```
 
-Claude remains available through the sandboxed path:
+## Run with direct Claude workers
+
+Use direct execution when workers must log to NTT:
+
+```bash
+source /path/to/tool-venv/bin/activate && \
+CLAUDE_CONFIG_DIR=<claude-config-dir> python -m ralph.run_ralph_loop run \
+  --repo-path <repo-path> \
+  --ralph-home-path <ralph-home-path> \
+  --job-name <job-name> \
+  --agent-backend claude \
+  --skip-ralph-sandbox
+```
+
+`--skip-ralph-sandbox` is an explicit execution-mode switch. It gives Claude the
+existing configuration, writable Git metadata, network access, and configured
+NTT credentials.
+
+## Run with sandboxed Claude workers
+
+Without `--skip-ralph-sandbox`, Ralph preserves its Bubblewrap sandbox:
 
 ```bash
 source /path/to/tool-venv/bin/activate && \

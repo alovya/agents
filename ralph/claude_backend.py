@@ -77,6 +77,34 @@ def build_claude_command_tail(allowed_bash_commands: list[str]) -> list[str]:
     return command_tail
 
 
+def build_direct_claude_command(
+    agent_backend: "AgentBackend",
+    repo_path: Path,
+) -> list[str]:
+    return [
+        agent_backend.command_name,
+        "--print",
+        "--verbose",
+        "--input-format",
+        "text",
+        "--output-format",
+        "stream-json",
+        "--include-partial-messages",
+        "--include-hook-events",
+        "--permission-mode",
+        "dontAsk",
+        "--allowedTools",
+        *_build_direct_claude_allowed_tools(),
+        "--no-session-persistence",
+        "-p",
+        str(repo_path),
+    ]
+
+
+def _build_direct_claude_allowed_tools() -> list[str]:
+    return ["Read", "Glob", "Grep", "Edit", "MultiEdit", "Write", "Bash"]
+
+
 def _copy_claude_worker_seed_files(master_claude_config_dir: Path, worker_claude_config_dir: Path) -> None:
     for seed_filename in CLAUDE_WORKER_CONFIG_SEED_FILENAMES:
         master_seed_path = master_claude_config_dir / seed_filename
