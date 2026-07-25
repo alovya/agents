@@ -21,6 +21,13 @@ from ralph.codex_backend import (
     format_codex_stream_event_for_human,
     prepare_codex_worker_home,
 )
+from ralph.cursor_backend import (
+    build_cursor_agent_backend,
+    build_cursor_command_tail,
+    extract_cursor_stream_result_text,
+    format_cursor_stream_event_for_human,
+    prepare_cursor_worker_home,
+)
 
 
 @dataclass(frozen=True)
@@ -71,6 +78,8 @@ def select_agent_backend(
         return build_codex_agent_backend(agent_command)
     if agent_backend_name == "claude":
         return build_claude_agent_backend(agent_command)
+    if agent_backend_name == "cursor":
+        return build_cursor_agent_backend(agent_command)
     raise ValueError(f"Unsupported agent backend: {agent_backend_name}")
 
 
@@ -86,6 +95,11 @@ def prepare_agent_backend_for_worker(master_agent_backend: AgentBackend) -> Iter
             yield worker_agent_backend
         return
 
+    if master_agent_backend.backend_name == "cursor":
+        with prepare_cursor_worker_home(master_agent_backend) as worker_agent_backend:
+            yield worker_agent_backend
+        return
+
     yield master_agent_backend
 
 
@@ -98,6 +112,8 @@ def build_agent_command_tail(
         return build_codex_command_tail(repo_path)
     if agent_backend.backend_name == "claude":
         return build_claude_command_tail(allowed_bash_commands)
+    if agent_backend.backend_name == "cursor":
+        return build_cursor_command_tail(allowed_bash_commands)
     raise ValueError(f"Unsupported agent backend: {agent_backend.backend_name}")
 
 
@@ -106,6 +122,8 @@ def extract_agent_result_text(agent_backend: AgentBackend, raw_output: str) -> s
         return extract_codex_stream_result_text(raw_output)
     if agent_backend.backend_name == "claude":
         return extract_claude_stream_result_text(raw_output)
+    if agent_backend.backend_name == "cursor":
+        return extract_cursor_stream_result_text(raw_output)
     return raw_output
 
 
@@ -119,6 +137,10 @@ def read_default_codex_agent_command() -> str:
 
 def read_default_claude_agent_command() -> str:
     return os.environ.get("RALPH_AGENT_COMMAND", os.environ.get("RALPH_CLAUDE_COMMAND", "claude"))
+
+
+def read_default_cursor_agent_command() -> str:
+    return os.environ.get("RALPH_AGENT_COMMAND", os.environ.get("RALPH_CURSOR_COMMAND", "cursor"))
 
 
 def run_command_and_tee_output(
@@ -165,6 +187,12 @@ def _choose_agent_transcript_strategy(
             human_output_path=output_path,
         )
     if backend_name == "codex":
+        return AgentTranscriptStrategy(
+            backend_name=backend_name,
+            raw_output_path=output_path.with_suffix(".raw.jsonl"),
+            human_output_path=output_path,
+        )
+    if backend_name == "cursor":
         return AgentTranscriptStrategy(
             backend_name=backend_name,
             raw_output_path=output_path.with_suffix(".raw.jsonl"),
@@ -304,10 +332,14 @@ def _format_agent_stream_line_for_human(
     if backend_name == "codex":
         human_lines = format_codex_stream_event_for_human(raw_line)
         return "".join(f"{human_line}\n" for human_line in human_lines)
-    if backend_name != "claude":
-        return raw_line
-
-    human_lines = format_claude_stream_event_for_human(raw_line, emitted_claude_texts)
-    if human_lines:
-        emitted_claude_texts.add("\n".join(human_lines))
-    return "".join(f"{human_line}\n" for human_line in human_lines)
+    if backend_name == "claude":
+        human_lines = format_claude_stream_event_for_human(raw_line, emitted_claude_texts)
+        if human_lines:
+            emitted_claude_texts.add("\n".join(human_lines))
+        return "".join(f"{human_line}\n" for human_line in human_lines)
+    if backend_name == "cursor":
+        human_lines = format_cursor_stream_event_for_human(raw_line, emitted_claude_texts)
+        if human_lines:
+            emitted_claude_texts.add("\n".join(human_lines))
+        return "".join(f"{human_line}\n" for human_line in human_lines)
+    return raw_line
