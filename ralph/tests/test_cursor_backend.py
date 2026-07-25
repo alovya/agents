@@ -1,59 +1,11 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
-from ralph.agent_backends import AgentBackend
 from ralph.cursor_backend import (
-    CURSOR_WORKER_CONFIG_SEED_FILENAMES,
     extract_cursor_stream_result_text,
     format_cursor_stream_event_for_human,
-    prepare_cursor_worker_home,
 )
-
-
-def test_prepare_cursor_worker_home_seeds_config_files_and_skills(tmp_path: Path) -> None:
-    master_cursor_config_dir = tmp_path / "master-cursor-config"
-    external_skill_path = tmp_path / "external-ralph-skill"
-    master_cursor_config_dir.mkdir()
-    external_skill_path.mkdir()
-    _write_cursor_seed_files(master_cursor_config_dir)
-    (master_cursor_config_dir / ".cursor.json").write_text("noisy local state", encoding="utf-8")
-    (master_cursor_config_dir / "history.jsonl").write_text("history", encoding="utf-8")
-    (master_cursor_config_dir / "projects").mkdir()
-    (master_cursor_config_dir / "sessions").mkdir()
-    (master_cursor_config_dir / "skills").mkdir()
-    (master_cursor_config_dir / "skills" / "ralph").symlink_to(external_skill_path)
-    (master_cursor_config_dir / "skills" / "missing").symlink_to(tmp_path / "missing-skill")
-    (external_skill_path / "SKILL.md").write_text("Ralph skill", encoding="utf-8")
-    master_agent_backend = AgentBackend(
-        backend_name="cursor",
-        command_name="cursor",
-        agent_config_dir=master_cursor_config_dir,
-        agent_home_environment_variable="CURSOR_CONFIG_DIR",
-    )
-
-    with prepare_cursor_worker_home(master_agent_backend) as worker_agent_backend:
-        worker_cursor_config_dir = worker_agent_backend.agent_config_dir
-        worker_skill_path = worker_cursor_config_dir / "skills" / "ralph"
-
-        assert worker_agent_backend.backend_name == "cursor"
-        assert worker_agent_backend.command_name == "cursor"
-        assert worker_agent_backend.agent_home_environment_variable == "CURSOR_CONFIG_DIR"
-        assert worker_cursor_config_dir != master_cursor_config_dir
-        assert _read_cursor_seed_files(worker_cursor_config_dir) == _read_cursor_seed_files(
-            master_cursor_config_dir
-        )
-        assert worker_skill_path.is_dir()
-        assert not worker_skill_path.is_symlink()
-        assert (worker_skill_path / "SKILL.md").read_text(encoding="utf-8") == "Ralph skill"
-        assert not (worker_cursor_config_dir / "skills" / "missing").exists()
-        assert not (worker_cursor_config_dir / ".cursor.json").exists()
-        assert not (worker_cursor_config_dir / "history.jsonl").exists()
-        assert not (worker_cursor_config_dir / "projects").exists()
-        assert not (worker_cursor_config_dir / "sessions").exists()
-
-    assert not worker_cursor_config_dir.exists()
 
 
 def test_format_cursor_stream_event_for_human_emits_assistant_text_as_plain_lines() -> None:
@@ -239,15 +191,3 @@ def test_extract_cursor_stream_result_text_falls_back_to_final_assistant_event()
 
 def _serialise_cursor_event(event: dict[str, object]) -> str:
     return json.dumps(event)
-
-
-def _write_cursor_seed_files(cursor_config_dir: Path) -> None:
-    for seed_filename in CURSOR_WORKER_CONFIG_SEED_FILENAMES:
-        (cursor_config_dir / seed_filename).write_text(f"{seed_filename} content", encoding="utf-8")
-
-
-def _read_cursor_seed_files(cursor_config_dir: Path) -> dict[str, str]:
-    return {
-        seed_filename: (cursor_config_dir / seed_filename).read_text(encoding="utf-8")
-        for seed_filename in CURSOR_WORKER_CONFIG_SEED_FILENAMES
-    }

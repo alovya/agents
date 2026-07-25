@@ -146,34 +146,13 @@ python -m ralph.run_ralph_loop validate \
 The target repository must normally be clean. Use `--allow-dirty-start` only
 when deliberately resuming existing uncommitted work.
 
-## Run with direct Codex workers
+## Run a job
 
-Use direct execution when workers must log to NTT:
+Workers run directly against the launching environment: the configured agent
+home, writable Git metadata, network access, and the NTT credentials present in
+the shell. This is required so each worker can log to NTT on its assigned task.
 
-```bash
-source /path/to/tool-venv/bin/activate && \
-CODEX_HOME=<codex-config-dir> python -m ralph.run_ralph_loop run \
-  --repo-path <repo-path> \
-  --ralph-home-path <ralph-home-path> \
-  --job-name <job-name> \
-  --agent-backend codex \
-  --skip-ralph-sandbox
-```
-
-`--skip-ralph-sandbox` is an explicit execution-mode switch. It gives Codex the
-existing configuration, writable Git metadata, network access, and configured
-NTT credentials.
-
-Source the virtual environment and launch Ralph in the same shell command. The
-controller validates that both `python` and `ntt` come from that environment,
-then configures every direct Codex subprocess with the validated `PATH` and
-`VIRTUAL_ENV`. Invoking `/path/to/tool-venv/bin/python` directly is not
-equivalent because it does not activate the environment.
-
-## Run with sandboxed workers
-
-Without `--skip-ralph-sandbox`, Ralph preserves its Bubblewrap sandbox and runs
-the worker visibility smoke test before the loop:
+Run with Codex workers:
 
 ```bash
 source /path/to/tool-venv/bin/activate && \
@@ -184,27 +163,13 @@ CODEX_HOME=<codex-config-dir> python -m ralph.run_ralph_loop run \
   --agent-backend codex
 ```
 
-## Run with direct Claude workers
+Source the virtual environment and launch Ralph in the same shell command. The
+controller validates that both `python` and `ntt` come from that environment,
+then configures every Codex subprocess with the validated `PATH` and
+`VIRTUAL_ENV`. Invoking `/path/to/tool-venv/bin/python` directly is not
+equivalent because it does not activate the environment.
 
-Use direct execution when workers must log to NTT:
-
-```bash
-source /path/to/tool-venv/bin/activate && \
-CLAUDE_CONFIG_DIR=<claude-config-dir> python -m ralph.run_ralph_loop run \
-  --repo-path <repo-path> \
-  --ralph-home-path <ralph-home-path> \
-  --job-name <job-name> \
-  --agent-backend claude \
-  --skip-ralph-sandbox
-```
-
-`--skip-ralph-sandbox` is an explicit execution-mode switch. It gives Claude the
-existing configuration, writable Git metadata, network access, and configured
-NTT credentials.
-
-## Run with sandboxed Claude workers
-
-Without `--skip-ralph-sandbox`, Ralph preserves its Bubblewrap sandbox:
+Run with Claude workers:
 
 ```bash
 source /path/to/tool-venv/bin/activate && \
@@ -214,9 +179,6 @@ CLAUDE_CONFIG_DIR=<claude-config-dir> python -m ralph.run_ralph_loop run \
   --job-name <job-name> \
   --agent-backend claude
 ```
-
-Sandboxed workers cannot log directly to NTT unless their environment is given
-the required network and credentials.
 
 ## Review each slice
 

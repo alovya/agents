@@ -24,7 +24,6 @@ from ralph.agent_backends import (
     AgentBackend,
     AgentResult,
     extract_agent_result_text,
-    prepare_agent_backend_for_worker,
     run_command_and_save_agent_transcripts,
     select_agent_backend,
 )
@@ -41,13 +40,6 @@ from ralph.plan_selection import (
     select_next_task_from_plan_and_ledger,
 )
 from ralph.prompt import render_agent_prompt
-from ralph.sandbox import (
-    agent_permission_setup,
-    build_bwrap_agent_command,
-    reject_worker_visible_path_that_overlaps_hidden_state,
-    resolve_python_venv_path,
-    run_agent_visibility_smoke_test,
-)
 
 
 DEFAULT_MAX_ITERATIONS = 10
@@ -75,15 +67,6 @@ def main(argv: list[str] | None = None) -> None:
     if arguments.command == "validate":
         _validate_ralph_job(arguments)
         return
-    if arguments.command == "smoke-test":
-        run_agent_visibility_smoke_test(
-            repo_path=_resolve_repo_path(arguments.repo_path),
-            agent_backend_name=arguments.agent_backend,
-            agent_command=arguments.agent_command,
-            python_venv_path=resolve_python_venv_path(arguments.python_venv),
-        )
-        print(f"Ralph {arguments.agent_backend} smoke test passed.")
-        return
     raise SystemExit(f"Unknown command: {arguments.command}")
 
 
@@ -91,7 +74,7 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
     tool_virtual_environment_path = _require_controller_tool_virtual_environment()
     controller_path = os.environ["PATH"]
     repo_path = _resolve_repo_path(arguments.repo_path)
-    python_venv_path = resolve_python_venv_path(arguments.python_venv)
+    python_venv_path = _resolve_python_venv_path(arguments.python_venv)
     job = _find_ralph_job(
         job_name=arguments.job_name,
         ralph_home_path=_resolve_ralph_home_path(arguments.ralph_home_path),
@@ -106,13 +89,6 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
         job=job,
         ledger=_read_yaml_file(job.ledger_path),
     )
-    if not arguments.skip_ralph_sandbox:
-        run_agent_visibility_smoke_test(
-            repo_path=repo_path,
-            agent_backend_name=arguments.agent_backend,
-            agent_command=arguments.agent_command,
-            python_venv_path=python_venv_path,
-        )
     for _ in range(arguments.max_iterations):
         ledger = _read_yaml_file(job.ledger_path)
         plan_text = job.plan_path.read_text()
@@ -135,16 +111,12 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
         _save_worker_prompt_before_launch(task_path=task_path, prompt=prompt)
         agent_result = _run_agent(
             repo_path=repo_path,
-            task=selection.task,
             prompt=prompt,
             agent_backend_name=arguments.agent_backend,
             agent_command=arguments.agent_command,
             cursor_model=arguments.cursor_model,
-            python_venv_path=python_venv_path,
             output_path=task_path / "agent-output.txt",
             tee_output=arguments.tee_agent_output,
-            task_path=task_path,
-            skip_ralph_sandbox=arguments.skip_ralph_sandbox,
             tool_virtual_environment_path=tool_virtual_environment_path,
             controller_path=controller_path,
         )
@@ -358,14 +330,6 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
         help="Path to AGENTS.md file to include in worker prompts. Required when --agent-backend=cursor.",
     )
     run_parser.add_argument(
-        "--skip-ralph-sandbox",
-        action="store_true",
-        help=(
-            "Run the agent directly with writable Git metadata and the existing "
-            "config directory instead of Ralph's Bubblewrap sandbox."
-        ),
-    )
-    run_parser.add_argument(
         "--python-venv",
         help="Python venv mounted into agents with its bin directory first on PATH. Defaults to $VIRTUAL_ENV.",
     )
@@ -397,12 +361,6 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
         help="Accept existing uncommitted target repository changes during validation.",
     )
 
-    smoke_parser = subparsers.add_parser("smoke-test", help="Verify the agent sandbox contract.")
-    smoke_parser.add_argument("--repo-path", required=True)
-    smoke_parser.add_argument("--agent-backend", choices=["codex", "claude", "cursor"], default="codex")
-    smoke_parser.add_argument("--agent-command")
-    smoke_parser.add_argument("--python-venv")
-
     arguments = parser.parse_args(argv)
     _validate_agents_md_path_argument(arguments)
     return arguments
@@ -427,6 +385,20 @@ def _resolve_agents_md_path(agents_md_path: str | None) -> Path | None:
 
 def _resolve_ralph_home_path(ralph_home_path: str) -> Path:
     return Path(ralph_home_path).expanduser().resolve()
+
+
+def _resolve_python_venv_path(python_venv: str | None) -> Path | None:
+    if python_venv is None:
+        python_venv = os.environ.get("VIRTUAL_ENV")
+    if python_venv is None:
+        return None
+
+    python_venv_path = Path(python_venv).expanduser().resolve()
+    if not python_venv_path.is_dir():
+        raise FileNotFoundError(f"Python venv does not exist: {python_venv_path}")
+    if not (python_venv_path / "bin" / "python").is_file():
+        raise FileNotFoundError(f"Python venv is missing bin/python: {python_venv_path}")
+    return python_venv_path
 
 
 def _find_ralph_job(job_name: str, ralph_home_path: Path) -> RalphJob:
@@ -462,10 +434,6 @@ def _refuse_unsafe_starting_state(
         raise FileNotFoundError(f"Target repo does not exist: {repo_path}")
     if _is_path_inside(child_path=job.job_path, parent_path=repo_path):
         raise RuntimeError(f"Ralph job path must not be inside target repo: {job.job_path}")
-    reject_worker_visible_path_that_overlaps_hidden_state(
-        path=repo_path,
-        role="Target repo",
-    )
     for control_path_name in PRIVATE_CONTROL_PATH_NAMES:
         if _repo_contains_private_control_path(repo_path, control_path_name):
             raise RuntimeError(f"Refusing to run because {control_path_name} exists under the target repo.")
@@ -477,16 +445,12 @@ def _refuse_unsafe_starting_state(
 
 def _run_agent(
     repo_path: Path,
-    task: dict[str, Any],
     prompt: str,
     agent_backend_name: str,
     agent_command: str | None,
     cursor_model: str | None,
-    python_venv_path: Path | None,
     output_path: Path,
     tee_output: bool,
-    task_path: Path | None = None,
-    skip_ralph_sandbox: bool = False,
     tool_virtual_environment_path: Path | None = None,
     controller_path: str | None = None,
 ) -> AgentResult:
@@ -495,67 +459,7 @@ def _run_agent(
         agent_backend_name=agent_backend_name,
         agent_command=agent_command,
     )
-    if skip_ralph_sandbox:
-        return _run_direct_agent(
-            repo_path=repo_path,
-            prompt=prompt,
-            output_path=output_path,
-            tee_output=tee_output,
-            agent_backend=agent_backend,
-            cursor_model=cursor_model,
-            tool_virtual_environment_path=tool_virtual_environment_path,
-            controller_path=controller_path,
-        )
-    return _run_sandboxed_agent(
-        repo_path=repo_path,
-        prompt=prompt,
-        output_path=output_path,
-        tee_output=tee_output,
-        agent_backend=agent_backend,
-        python_venv_path=python_venv_path,
-        task_path=task_path,
-    )
-
-
-def _run_sandboxed_agent(
-    repo_path: Path,
-    prompt: str,
-    output_path: Path,
-    tee_output: bool,
-    agent_backend: AgentBackend,
-    python_venv_path: Path | None,
-    task_path: Path | None,
-) -> AgentResult:
-    with prepare_agent_backend_for_worker(agent_backend) as worker_agent_backend:
-        command = build_bwrap_agent_command(
-            repo_path=repo_path,
-            agent_backend=worker_agent_backend,
-            python_venv_path=python_venv_path,
-        )
-        with agent_permission_setup(
-            agent_backend=worker_agent_backend,
-            task_path=task_path,
-        ):
-            return _run_agent_command(
-                command=command,
-                prompt=prompt,
-                output_path=output_path,
-                tee_output=tee_output,
-                agent_backend=worker_agent_backend,
-            )
-
-
-def _run_direct_agent(
-    repo_path: Path,
-    prompt: str,
-    output_path: Path,
-    tee_output: bool,
-    agent_backend: AgentBackend,
-    cursor_model: str | None,
-    tool_virtual_environment_path: Path | None,
-    controller_path: str | None,
-) -> AgentResult:
-    command = _build_direct_agent_command(
+    command = _build_worker_agent_command(
         repo_path=repo_path,
         agent_backend=agent_backend,
         cursor_model=cursor_model,
@@ -571,7 +475,7 @@ def _run_direct_agent(
     )
 
 
-def _build_direct_agent_command(
+def _build_worker_agent_command(
     repo_path: Path,
     agent_backend: AgentBackend,
     cursor_model: str | None,
@@ -600,7 +504,9 @@ def _build_direct_agent_command(
             repo_path=repo_path,
             model=cursor_model,
         )
-    raise ValueError(f"--skip-ralph-sandbox is not supported for backend: {agent_backend.backend_name}")
+    raise ValueError(f"Unsupported agent backend: {agent_backend.backend_name}")
+
+
 def _run_agent_command(
     command: list[str],
     prompt: str,

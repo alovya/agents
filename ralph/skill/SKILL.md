@@ -46,11 +46,8 @@ own the exact plan and ledger formats.
 - Keep private Ralph state outside the target repository.
 - Let the planner decide what prior knowledge belongs in future worker context.
 - Never insert NTT reads into the current worker prompt.
-- Use `--skip-ralph-sandbox` only when direct Codex execution is intended, such
-  as when workers need NTT network access and credentials.
-- For direct execution, source `<tool-venv>/bin/activate` and launch Ralph
-  in the same shell command so the controller and workers inherit `ntt`.
-- Preserve the sandboxed path and Claude support when direct execution is not
-  required.
+- Source `<tool-venv>/bin/activate` and launch Ralph in the same shell command
+  so the controller and workers inherit `ntt`, its network access, and its
+  credentials.
 - Use `--ask-for-review` when the user wants to review each completed slice
   before Ralph continues.

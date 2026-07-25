@@ -31,7 +31,6 @@ from ralph.run_ralph_loop import (
     _finish_when_iteration_limit_reaches_complete_job,
     _write_yaml_file,
 )
-from ralph.sandbox import run_agent_visibility_smoke_test
 
 
 def test_direct_script_help_remains_runnable_from_repo_root() -> None:
@@ -52,7 +51,6 @@ def test_direct_script_help_remains_runnable_from_repo_root() -> None:
     assert "Run Ralph task loops with sliced plan context." in completed_process.stdout
     assert "run" in completed_process.stdout
     assert "validate" in completed_process.stdout
-    assert "smoke-test" in completed_process.stdout
 
 
 def test_package_invocation_help_remains_runnable() -> None:
@@ -73,7 +71,6 @@ def test_package_invocation_help_remains_runnable() -> None:
     assert "Run Ralph task loops with sliced plan context." in completed_process.stdout
     assert "run" in completed_process.stdout
     assert "validate" in completed_process.stdout
-    assert "smoke-test" in completed_process.stdout
 
 
 def test_parses_exactly_one_promise() -> None:
@@ -244,7 +241,7 @@ def test_parse_args_accepts_validate_command() -> None:
     assert arguments.repo_path == "/tmp/repo"
 
 
-def test_parse_args_accepts_claude_backend_for_smoke_test() -> None:
+def test_parse_args_accepts_claude_backend() -> None:
     run_arguments = _parse_arguments([
         "run",
         "--repo-path",
@@ -256,31 +253,8 @@ def test_parse_args_accepts_claude_backend_for_smoke_test() -> None:
         "--agent-backend",
         "claude",
     ])
-    smoke_arguments = _parse_arguments([
-        "smoke-test",
-        "--repo-path",
-        "/tmp/repo",
-        "--agent-backend",
-        "claude",
-    ])
 
     assert run_arguments.agent_backend == "claude"
-    assert smoke_arguments.agent_backend == "claude"
-
-
-def test_parse_args_can_skip_ralph_sandbox() -> None:
-    arguments = _parse_arguments([
-        "run",
-        "--repo-path",
-        "/tmp/repo",
-        "--ralph-home-path",
-        "/tmp/ralph-home",
-        "--job-name",
-        "example",
-        "--skip-ralph-sandbox",
-    ])
-
-    assert arguments.skip_ralph_sandbox is True
 
 
 def test_parse_args_requires_agents_md_path_for_cursor_backend() -> None:
@@ -366,72 +340,7 @@ def test_claude_runtime_error_points_at_readable_transcript_then_raw_stream(
     ]
 
 
-def test_run_agent_uses_prepared_codex_worker_home(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    master_codex_home_path = tmp_path / "master-codex-home"
-    repo_path = tmp_path / "target-repo"
-    task_path = tmp_path / "task"
-    output_path = tmp_path / "agent-output.txt"
-    master_codex_home_path.mkdir()
-    repo_path.mkdir()
-    task_path.mkdir()
-    monkeypatch.setenv("CODEX_HOME", str(master_codex_home_path))
-
-    observed_worker_agent_backend: dict[str, AgentBackend] = {}
-    observed_worker_rules_existed: list[bool] = []
-
-    def build_bwrap_agent_command_mock(
-        repo_path: Path,
-        agent_backend: AgentBackend,
-        python_venv_path: Path | None,
-        allowed_bash_commands: list[str] | None = None,
-    ) -> list[str]:
-        observed_worker_agent_backend["bwrap"] = agent_backend
-        return ["fake-bwrap-command"]
-
-    def _run_agent_command_mock(
-        command: list[str],
-        prompt: str,
-        output_path: Path,
-        tee_output: bool,
-        agent_backend: AgentBackend,
-    ) -> AgentResult:
-        observed_worker_agent_backend["agent"] = agent_backend
-        observed_worker_rules_existed.append(
-            agent_backend.agent_config_dir.joinpath("rules", "default.rules").is_file()
-        )
-        return AgentResult(promise="DONE", output="<promise>DONE</promise>")
-
-    monkeypatch.setattr(
-        "ralph.run_ralph_loop.build_bwrap_agent_command",
-        build_bwrap_agent_command_mock,
-    )
-    monkeypatch.setattr("ralph.run_ralph_loop._run_agent_command", _run_agent_command_mock)
-
-    agent_result = _run_agent(
-        repo_path=repo_path,
-        task={},
-        prompt="Worker prompt",
-        agent_backend_name="codex",
-        agent_command="codex",
-        python_venv_path=None,
-        output_path=output_path,
-        tee_output=False,
-        task_path=task_path,
-    )
-
-    worker_codex_home_path = observed_worker_agent_backend["agent"].agent_config_dir
-    assert agent_result.promise == "DONE"
-    assert observed_worker_agent_backend["bwrap"] == observed_worker_agent_backend["agent"]
-    assert worker_codex_home_path != master_codex_home_path
-    assert observed_worker_rules_existed == [False]
-    assert not master_codex_home_path.joinpath("rules", "default.rules").exists()
-    assert not worker_codex_home_path.exists()
-
-
-def test_run_agent_can_use_existing_codex_home_without_bubblewrap(
+def test_run_agent_runs_codex_worker_directly_with_writable_git(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -462,14 +371,12 @@ def test_run_agent_can_use_existing_codex_home_without_bubblewrap(
 
     agent_result = _run_agent(
         repo_path=repo_path,
-        task={},
         prompt="Worker prompt",
         agent_backend_name="codex",
         agent_command="/usr/bin/codex",
-        python_venv_path=None,
+        cursor_model=None,
         output_path=output_path,
         tee_output=False,
-        skip_ralph_sandbox=True,
         tool_virtual_environment_path=tool_virtual_environment_path,
         controller_path=controller_path,
     )
@@ -496,75 +403,9 @@ def test_run_agent_can_use_existing_codex_home_without_bubblewrap(
         "--ephemeral",
         "-",
     ]
-    assert not codex_home_path.joinpath("rules", "default.rules").exists()
 
 
-def test_run_agent_uses_prepared_cursor_worker_home(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    master_cursor_config_dir = tmp_path / "master-cursor-config"
-    repo_path = tmp_path / "target-repo"
-    task_path = tmp_path / "task"
-    output_path = tmp_path / "agent-output.txt"
-    master_cursor_config_dir.mkdir()
-    repo_path.mkdir()
-    task_path.mkdir()
-    monkeypatch.setenv("CURSOR_CONFIG_DIR", str(master_cursor_config_dir))
-
-    observed_worker_agent_backend: dict[str, AgentBackend] = {}
-    observed_worker_settings_existed: list[bool] = []
-
-    def build_bwrap_agent_command_mock(
-        repo_path: Path,
-        agent_backend: AgentBackend,
-        python_venv_path: Path | None,
-        allowed_bash_commands: list[str] | None = None,
-    ) -> list[str]:
-        observed_worker_agent_backend["bwrap"] = agent_backend
-        return ["fake-bwrap-command"]
-
-    def _run_agent_command_mock(
-        command: list[str],
-        prompt: str,
-        output_path: Path,
-        tee_output: bool,
-        agent_backend: AgentBackend,
-    ) -> AgentResult:
-        observed_worker_agent_backend["agent"] = agent_backend
-        observed_worker_settings_existed.append(
-            agent_backend.agent_config_dir.joinpath("settings.json").is_file()
-        )
-        return AgentResult(promise="DONE", output='{"type":"result","result":"<promise>DONE</promise>"}')
-
-    monkeypatch.setattr(
-        "ralph.run_ralph_loop.build_bwrap_agent_command",
-        build_bwrap_agent_command_mock,
-    )
-    monkeypatch.setattr("ralph.run_ralph_loop._run_agent_command", _run_agent_command_mock)
-
-    agent_result = _run_agent(
-        repo_path=repo_path,
-        task={},
-        prompt="Worker prompt",
-        agent_backend_name="cursor",
-        agent_command="cursor",
-        python_venv_path=None,
-        output_path=output_path,
-        tee_output=False,
-        task_path=task_path,
-    )
-
-    worker_cursor_config_dir = observed_worker_agent_backend["agent"].agent_config_dir
-    assert agent_result.promise == "DONE"
-    assert observed_worker_agent_backend["bwrap"] == observed_worker_agent_backend["agent"]
-    assert worker_cursor_config_dir != master_cursor_config_dir
-    assert observed_worker_settings_existed == [False]
-    assert not master_cursor_config_dir.joinpath("settings.json").exists()
-    assert not worker_cursor_config_dir.exists()
-
-
-def test_run_agent_can_use_existing_cursor_home_without_bubblewrap(
+def test_run_agent_runs_cursor_worker_directly_in_the_target_workspace(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -593,14 +434,12 @@ def test_run_agent_can_use_existing_cursor_home_without_bubblewrap(
 
     agent_result = _run_agent(
         repo_path=repo_path,
-        task={},
         prompt="Worker prompt",
         agent_backend_name="cursor",
         agent_command="/usr/bin/cursor",
-        python_venv_path=None,
+        cursor_model="gemini-3.6-flash-high",
         output_path=output_path,
         tee_output=False,
-        skip_ralph_sandbox=True,
     )
 
     assert agent_result.promise == "DONE"
@@ -608,51 +447,14 @@ def test_run_agent_can_use_existing_cursor_home_without_bubblewrap(
     assert observed_command == [
         "/usr/bin/cursor",
         "--print",
-        "--verbose",
-        "--input-format",
-        "text",
         "--output-format",
         "stream-json",
-        "--include-partial-messages",
-        "--include-hook-events",
-        "--permission-mode",
-        "dontAsk",
-        "--allowedTools",
-        "Read",
-        "Glob",
-        "Grep",
-        "Edit",
-        "MultiEdit",
-        "Write",
-        "Bash",
-        "--no-session-persistence",
-        "-p",
+        "--force",
+        "--workspace",
         str(repo_path),
+        "--model",
+        "gemini-3.6-flash-high",
     ]
-
-
-def test_parse_args_accepts_cursor_backend_for_smoke_test() -> None:
-    run_arguments = _parse_arguments([
-        "run",
-        "--repo-path",
-        "/tmp/repo",
-        "--ralph-home-path",
-        "/tmp/ralph-home",
-        "--job-name",
-        "example",
-        "--agent-backend",
-        "cursor",
-    ])
-    smoke_arguments = _parse_arguments([
-        "smoke-test",
-        "--repo-path",
-        "/tmp/repo",
-        "--agent-backend",
-        "cursor",
-    ])
-
-    assert run_arguments.agent_backend == "cursor"
-    assert smoke_arguments.agent_backend == "cursor"
 
 
 def test_find_ralph_job_uses_explicit_ralph_home(tmp_path: Path) -> None:
@@ -814,41 +616,6 @@ def test_validate_rejects_obsolete_notion_task_shape(
         main(_validate_job_arguments(tmp_path / "ralph-home"))
 
 
-def test_smoke_test_resolves_repo_path_before_running_sandbox_check(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    repo_path = tmp_path / "target-repo"
-    repo_path.mkdir()
-    observed_repo_paths: list[Path] = []
-
-    def run_agent_visibility_smoke_test_mock(
-        repo_path: Path,
-        agent_backend_name: str,
-        agent_command: str | None,
-        python_venv_path: Path | None,
-    ) -> None:
-        observed_repo_paths.append(repo_path)
-
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(
-        "ralph.run_ralph_loop.run_agent_visibility_smoke_test",
-        run_agent_visibility_smoke_test_mock,
-    )
-
-    main([
-        "smoke-test",
-        "--repo-path",
-        "target-repo",
-        "--agent-command",
-        "agent-cli",
-    ])
-
-    assert observed_repo_paths == [repo_path]
-    assert capsys.readouterr().out == "Ralph codex smoke test passed.\n"
-
-
 def test_create_task_directory_prefixes_task_id(tmp_path: Path) -> None:
     task_path = _create_task_directory(tmp_path, "R1")
 
@@ -861,23 +628,6 @@ def test_create_task_directory_sanitizes_task_id(tmp_path: Path) -> None:
 
     assert task_path.name.startswith("R-1-cleanup_")
     assert task_path.is_dir()
-
-
-def test_refuse_unsafe_starting_state_rejects_sensitive_repo_mount(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    repo_path = initialise_git_repo(tmp_path / "target-repo")
-    job = create_job_with_ledger(tmp_path, build_example_ledger())
-    sensitive_state_path = repo_path / ".aws"
-    sensitive_state_path.mkdir()
-    monkeypatch.setattr(
-        "ralph.sandbox.build_sensitive_paths_that_workers_must_not_see",
-        lambda: [sensitive_state_path],
-    )
-
-    with pytest.raises(ValueError, match="Target repo must not overlap"):
-        _refuse_unsafe_starting_state(repo_path, job)
 
 
 def test_refuse_unsafe_starting_state_accepts_public_ralph_examples(tmp_path: Path) -> None:

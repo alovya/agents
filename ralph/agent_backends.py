@@ -1,32 +1,24 @@
 from __future__ import annotations
 
-import contextlib
 import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterator
 
 from ralph.claude_backend import (
     build_claude_agent_backend,
-    build_claude_command_tail,
     extract_claude_stream_result_text,
     format_claude_stream_event_for_human,
-    prepare_claude_worker_home,
 )
 from ralph.codex_backend import (
     build_codex_agent_backend,
-    build_codex_command_tail,
     extract_codex_stream_result_text,
     format_codex_stream_event_for_human,
-    prepare_codex_worker_home,
 )
 from ralph.cursor_backend import (
     build_cursor_agent_backend,
-    build_cursor_command_tail,
     extract_cursor_stream_result_text,
     format_cursor_stream_event_for_human,
-    prepare_cursor_worker_home,
 )
 
 
@@ -37,18 +29,11 @@ class AgentResult:
 
 
 @dataclass(frozen=True)
-class AgentHomeMount:
-    host_path: Path
-    worker_path: Path
-
-
-@dataclass(frozen=True)
 class AgentBackend:
     backend_name: str
     command_name: str
     agent_config_dir: Path
     agent_home_environment_variable: str
-    read_only_home_mounts: tuple[AgentHomeMount, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -56,18 +41,6 @@ class AgentTranscriptStrategy:
     backend_name: str
     raw_output_path: Path
     human_output_path: Path
-
-
-ALWAYS_ALLOWED_WORKER_BASH_COMMANDS = [
-    "git status",
-    "git status --short",
-    "git diff",
-    "git diff --staged",
-    "git ls-files",
-    "git add .",
-    "git commit --no-verify -m *",
-    "git rev-parse HEAD",
-]
 
 
 def select_agent_backend(
@@ -81,40 +54,6 @@ def select_agent_backend(
     if agent_backend_name == "cursor":
         return build_cursor_agent_backend(agent_command)
     raise ValueError(f"Unsupported agent backend: {agent_backend_name}")
-
-
-@contextlib.contextmanager
-def prepare_agent_backend_for_worker(master_agent_backend: AgentBackend) -> Iterator[AgentBackend]:
-    if master_agent_backend.backend_name == "codex":
-        with prepare_codex_worker_home(master_agent_backend) as worker_agent_backend:
-            yield worker_agent_backend
-        return
-
-    if master_agent_backend.backend_name == "claude":
-        with prepare_claude_worker_home(master_agent_backend) as worker_agent_backend:
-            yield worker_agent_backend
-        return
-
-    if master_agent_backend.backend_name == "cursor":
-        with prepare_cursor_worker_home(master_agent_backend) as worker_agent_backend:
-            yield worker_agent_backend
-        return
-
-    yield master_agent_backend
-
-
-def build_agent_command_tail(
-    agent_backend: AgentBackend,
-    repo_path: Path,
-    allowed_bash_commands: list[str],
-) -> list[str]:
-    if agent_backend.backend_name == "codex":
-        return build_codex_command_tail(repo_path)
-    if agent_backend.backend_name == "claude":
-        return build_claude_command_tail(allowed_bash_commands)
-    if agent_backend.backend_name == "cursor":
-        return build_cursor_command_tail(allowed_bash_commands)
-    raise ValueError(f"Unsupported agent backend: {agent_backend.backend_name}")
 
 
 def extract_agent_result_text(agent_backend: AgentBackend, raw_output: str) -> str:
