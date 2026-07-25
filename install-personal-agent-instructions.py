@@ -57,11 +57,16 @@ def main() -> None:
             )
 
     for instruction_link in instruction_links:
+        if instruction_link.agent_name == "Cursor":
+            continue
         _install_agent_instructions_link(
             instruction_link=instruction_link,
             dry_run=arguments.dry_run,
             force=arguments.force,
         )
+        
+    if not (arguments.codex_only or arguments.claude_only):
+        _install_cursor_instructions_as_bash_alias(agents_repo_path, arguments.dry_run)
 
 
 def _parse_arguments() -> argparse.Namespace:
@@ -80,7 +85,7 @@ def _parse_arguments() -> argparse.Namespace:
         help="Codex home directory. Defaults to CODEX_HOME; skips Codex if unset.",
     )
     parser.add_argument(
-        "--claude-home",
+        "--claude-config-dir",
         default=os.environ.get("CLAUDE_CONFIG_DIR"),
         help="Claude config directory. Defaults to CLAUDE_CONFIG_DIR; skips Claude if unset.",
     )
@@ -93,6 +98,16 @@ def _parse_arguments() -> argparse.Namespace:
         "--claude-only",
         action="store_true",
         help="Install only Claude skill links.",
+    )
+    parser.add_argument(
+        "--cursor-config-dir",
+        default=os.environ.get("CURSOR_CONFIG_DIR", "~/.cursor"),
+        help="Cursor config directory. Defaults to CURSOR_CONFIG_DIR or ~/.cursor.",
+    )
+    parser.add_argument(
+        "--cursor-only",
+        action="store_true",
+        help="Install only Cursor skill links.",
     )
     return parser.parse_args()
 
@@ -134,15 +149,20 @@ def _raise_for_duplicate_skill_names(skill_directories: list[SkillDirectory]) ->
 
 
 def _find_configured_agent_homes(arguments: argparse.Namespace) -> list[AgentHome]:
-    if arguments.codex_only and arguments.claude_only:
-        raise RuntimeError("Choose at most one of --codex-only and --claude-only.")
+    only_flags = sum([arguments.codex_only, arguments.claude_only, getattr(arguments, "cursor_only", False)])
+    if only_flags > 1:
+        raise RuntimeError("Choose at most one of --codex-only, --claude-only, and --cursor-only.")
 
     selected_agent_homes = []
-    if not arguments.claude_only:
+    if not (arguments.claude_only or getattr(arguments, "cursor_only", False)):
         selected_agent_homes.append(("Codex", "CODEX_HOME", "--codex-home", arguments.codex_home))
-    if not arguments.codex_only:
+    if not (arguments.codex_only or getattr(arguments, "cursor_only", False)):
         selected_agent_homes.append(
-            ("Claude", "CLAUDE_CONFIG_DIR", "--claude-home", arguments.claude_home)
+            ("Claude", "CLAUDE_CONFIG_DIR", "--claude-config-dir", arguments.claude_config_dir)
+        )
+    if not (arguments.codex_only or arguments.claude_only):
+        selected_agent_homes.append(
+            ("Cursor", "CURSOR_CONFIG_DIR", "--cursor-config-dir", arguments.cursor_config_dir)
         )
 
     configured_agent_homes = []
@@ -273,6 +293,26 @@ def _install_agent_instructions_link(
         f"{instruction_link.agent_name}: linked "
         f"{instruction_link.destination_path} -> {instruction_link.source_path}"
     )
+
+
+def _install_cursor_instructions_as_bash_alias(agents_repo_path: Path, dry_run: bool) -> None:
+    bashrc_path = Path("~/.bashrc").expanduser()
+    agents_md_path = agents_repo_path / "AGENTS.md"
+    alias_cmd = f'alias cursor_cli=\'agent "System Instruction: Before doing anything, strictly follow the rules in {agents_md_path}. "''
+
+    if dry_run:
+        print(f"Cursor: would add/update alias cursor_cli in {bashrc_path}")
+        return
+
+    if bashrc_path.exists():
+        text = bashrc_path.read_text(encoding="utf-8")
+        lines = text.splitlines()
+        new_lines = [line for line in lines if not line.startswith("alias cursor_cli=")]
+        new_lines.append(alias_cmd)
+        bashrc_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+    else:
+        bashrc_path.write_text(f"{alias_cmd}\n", encoding="utf-8")
+    print(f"Cursor: added alias cursor_cli to {bashrc_path}")
 
 
 def _replace_existing_path_with_link(
