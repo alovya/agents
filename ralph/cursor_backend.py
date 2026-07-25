@@ -85,28 +85,15 @@ def build_direct_cursor_command(
     command = [
         agent_backend.command_name,
         "--print",
-        "--verbose",
-        "--input-format",
-        "text",
         "--output-format",
         "stream-json",
-        "--include-partial-messages",
-        "--include-hook-events",
-        "--permission-mode",
-        "dontAsk",
-        "--allowedTools",
-        *_build_direct_cursor_allowed_tools(),
-        "--no-session-persistence",
-        "-p",
+        "--force",
+        "--workspace",
         str(repo_path),
     ]
     if model:
         command.extend(["--model", model])
     return command
-
-
-def _build_direct_cursor_allowed_tools() -> list[str]:
-    return ["Read", "Glob", "Grep", "Edit", "MultiEdit", "Write", "Bash"]
 
 
 def _copy_cursor_worker_seed_files(master_cursor_config_dir: Path, worker_cursor_config_dir: Path) -> None:
