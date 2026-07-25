@@ -1,0 +1,1 @@
+Cursor smoke test S1 complete
