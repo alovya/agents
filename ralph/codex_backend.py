@@ -102,6 +102,18 @@ def extract_codex_stream_result_text(raw_output: str) -> str:
 
 
 def format_codex_stream_event_for_human(raw_line: str) -> list[str]:
+    """Format a Codex stream-json event line for human-readable output.
+
+    Example raw input lines (from `codex exec --json`):
+
+        {"type":"thread.started","thread_id":"019f9a54-49e9-7653-90b4-9948dd726128"}
+
+        {"type":"turn.started"}
+
+        {"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Hello!"}}
+
+        {"type":"turn.completed","usage":{"input_tokens":19038,"cached_input_tokens":11008,"output_tokens":6,...}}
+    """
     try:
         event = json.loads(raw_line)
     except json.JSONDecodeError:

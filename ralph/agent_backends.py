@@ -135,12 +135,8 @@ def read_default_codex_agent_command() -> str:
     raise RuntimeError(f"Codex standalone binary does not exist or is not executable: {standalone_codex_path}")
 
 
-def read_default_claude_agent_command() -> str:
-    return os.environ.get("RALPH_AGENT_COMMAND", os.environ.get("RALPH_CLAUDE_COMMAND", "claude"))
-
-
-def read_default_cursor_agent_command() -> str:
-    return os.environ.get("RALPH_AGENT_COMMAND", os.environ.get("RALPH_CURSOR_COMMAND", "agent"))
+DEFAULT_CLAUDE_COMMAND = "claude"
+DEFAULT_CURSOR_COMMAND = "agent"
 
 
 def run_command_and_tee_output(

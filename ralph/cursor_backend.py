@@ -21,13 +21,13 @@ CURSOR_WORKER_CONFIG_SEED_FILENAMES = (
 
 
 def build_cursor_agent_backend(agent_command: str | None) -> "AgentBackend":
-    from ralph.agent_backends import AgentBackend, read_default_cursor_agent_command
+    from ralph.agent_backends import AgentBackend, DEFAULT_CURSOR_COMMAND
     from ralph.codex_backend import require_agent_config_dir_from_environment_variable
 
     agent_config_dir = require_agent_config_dir_from_environment_variable("CURSOR_CONFIG_DIR")
     return AgentBackend(
         backend_name="cursor",
-        command_name=agent_command or read_default_cursor_agent_command(),
+        command_name=agent_command or DEFAULT_CURSOR_COMMAND,
         agent_config_dir=agent_config_dir,
         agent_home_environment_variable="CURSOR_CONFIG_DIR",
     )
@@ -124,6 +124,24 @@ def format_cursor_stream_event_for_human(
     raw_line: str,
     emitted_texts: set[str] | None = None,
 ) -> list[str]:
+    """Format a Cursor stream-json event line for human-readable output.
+
+    Example raw input lines (from `agent --print --output-format stream-json`):
+
+        {"type":"system","subtype":"init","apiKeySource":"login","cwd":"/workspace/agents","session_id":"3ae86715-...","model":"Gemini 3.6 Flash High","permissionMode":"default"}
+
+        {"type":"user","message":{"role":"user","content":[{"type":"text","text":"Say hello"}]},"session_id":"..."}
+
+        {"type":"thinking","subtype":"delta","text":"**Analyzing**\\nI am currently...","session_id":"...","timestamp_ms":1784997722518}
+
+        {"type":"tool_call","subtype":"started","call_id":"0_tool_...","tool_call":{"shellToolCall":{"args":{"command":"git status","workingDirectory":"/workspace/agents",...},"description":"Check git status"},...},"session_id":"..."}
+
+        {"type":"tool_call","subtype":"completed","call_id":"0_tool_...","tool_call":{"shellToolCall":{"result":{"failure":{"exitCode":0,"stdout":"..."},...},...},...},"session_id":"..."}
+
+        {"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hello! How can I help you today?"}]},"session_id":"..."}
+
+        {"type":"result","subtype":"success","duration_ms":4175,"result":"Hello! How can I help you today?","usage":{"inputTokens":14855,"outputTokens":9,...},...}
+    """
     if not raw_line.strip():
         return []
 

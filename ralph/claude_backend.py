@@ -21,13 +21,13 @@ CLAUDE_WORKER_CONFIG_SEED_FILENAMES = (
 
 
 def build_claude_agent_backend(agent_command: str | None) -> "AgentBackend":
-    from ralph.agent_backends import AgentBackend, read_default_claude_agent_command
+    from ralph.agent_backends import AgentBackend, DEFAULT_CLAUDE_COMMAND
     from ralph.codex_backend import require_agent_config_dir_from_environment_variable
 
     agent_config_dir = require_agent_config_dir_from_environment_variable("CLAUDE_CONFIG_DIR")
     return AgentBackend(
         backend_name="claude",
-        command_name=agent_command or read_default_claude_agent_command(),
+        command_name=agent_command or DEFAULT_CLAUDE_COMMAND,
         agent_config_dir=agent_config_dir,
         agent_home_environment_variable="CLAUDE_CONFIG_DIR",
     )
@@ -133,6 +133,18 @@ def format_claude_stream_event_for_human(
     raw_line: str,
     emitted_texts: set[str] | None = None,
 ) -> list[str]:
+    """Format a Claude stream-json event line for human-readable output.
+
+    Example raw input lines (from `claude --print --verbose --output-format stream-json`):
+
+        {"type":"system","subtype":"init","cwd":"/workspace/agents","session_id":"7c57107f-...","model":"claude-opus-4-5","permissionMode":"default",...}
+
+        {"type":"assistant","message":{"model":"claude-opus-4-5-20251101","role":"assistant","content":[{"type":"thinking","thinking":"The user just wants..."},{"type":"text","text":"Hello!"}],"stop_reason":null,...},"session_id":"..."}
+
+        {"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_01...","content":"1\\tfrom __future__..."}]},"session_id":"..."}
+
+        {"type":"result","subtype":"success","result":"Hello! How can I help you today?","duration_ms":2413,"usage":{...},...}
+    """
     if not raw_line.strip():
         return []
 
