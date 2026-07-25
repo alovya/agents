@@ -30,6 +30,7 @@ from ralph.agent_backends import (
 )
 from ralph.claude_backend import build_direct_claude_command
 from ralph.codex_backend import build_direct_codex_command
+from ralph.cursor_backend import build_direct_cursor_command
 from ralph.notion import (
     complete_notion_task_after_accepting_worker,
     materialise_and_validate_notion_task_graph,
@@ -345,7 +346,7 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
     run_parser.add_argument("--ralph-home-path", required=True)
     run_parser.add_argument("--job-name", required=True)
     run_parser.add_argument("--max-iterations", type=int, default=DEFAULT_MAX_ITERATIONS)
-    run_parser.add_argument("--agent-backend", choices=["codex", "claude"], default="codex")
+    run_parser.add_argument("--agent-backend", choices=["codex", "claude", "cursor"], default="codex")
     run_parser.add_argument("--agent-command")
     run_parser.add_argument(
         "--skip-ralph-sandbox",
@@ -389,7 +390,7 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
 
     smoke_parser = subparsers.add_parser("smoke-test", help="Verify the agent sandbox contract.")
     smoke_parser.add_argument("--repo-path", required=True)
-    smoke_parser.add_argument("--agent-backend", choices=["codex", "claude"], default="codex")
+    smoke_parser.add_argument("--agent-backend", choices=["codex", "claude", "cursor"], default="codex")
     smoke_parser.add_argument("--agent-command")
     smoke_parser.add_argument("--python-venv")
 
@@ -561,6 +562,11 @@ def _build_direct_agent_command(
         )
     if agent_backend.backend_name == "claude":
         return build_direct_claude_command(
+            agent_backend=agent_backend,
+            repo_path=repo_path,
+        )
+    if agent_backend.backend_name == "cursor":
+        return build_direct_cursor_command(
             agent_backend=agent_backend,
             repo_path=repo_path,
         )
