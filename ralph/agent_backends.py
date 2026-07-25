@@ -140,7 +140,7 @@ def read_default_claude_agent_command() -> str:
 
 
 def read_default_cursor_agent_command() -> str:
-    return os.environ.get("RALPH_AGENT_COMMAND", os.environ.get("RALPH_CURSOR_COMMAND", "cursor"))
+    return os.environ.get("RALPH_AGENT_COMMAND", os.environ.get("RALPH_CURSOR_COMMAND", "agent"))
 
 
 def run_command_and_tee_output(
