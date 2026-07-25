@@ -300,7 +300,7 @@ def _install_agent_instructions_link(
 def _install_cursor_instructions_as_bash_alias(agents_repo_path: Path, dry_run: bool) -> None:
     bashrc_path = Path("~/.bashrc").expanduser()
     agents_md_path = agents_repo_path / "AGENTS.md"
-    alias_cmd = f'alias cursor_cli=\\\'agent "System Instruction: Before doing anything, strictly follow the rules in {agents_md_path}. "\\\''
+    alias_cmd = f"alias cursor_cli='agent \\"System Instruction: Before doing anything, strictly follow the rules in {agents_md_path}. \\"'"
 
     if dry_run:
         print(f"  would add/update alias cursor_cli in {bashrc_path}")
