@@ -47,26 +47,28 @@ def main() -> None:
     if not skill_directories:
         print(f"No skills found under {agents_repo_path}")
 
-    for skill_directory in skill_directories:
-        for install_target in install_targets:
+    for agent_home in agent_homes:
+        print(f"\n=== {agent_home.agent_name} ===")
+        # Find target and link for this agent
+        install_target = next(t for t in install_targets if t.agent_name == agent_home.agent_name)
+        instruction_link = next(l for l in instruction_links if l.agent_name == agent_home.agent_name)
+        
+        for skill_directory in skill_directories:
             _install_skill_directory(
                 skill_directory=skill_directory,
                 install_target=install_target,
                 dry_run=arguments.dry_run,
                 force=arguments.force,
             )
-
-    for instruction_link in instruction_links:
-        if instruction_link.agent_name == "Cursor":
-            continue
-        _install_agent_instructions_link(
-            instruction_link=instruction_link,
-            dry_run=arguments.dry_run,
-            force=arguments.force,
-        )
-        
-    if not (arguments.codex_only or arguments.claude_only):
-        _install_cursor_instructions_as_bash_alias(agents_repo_path, arguments.dry_run)
+            
+        if agent_home.agent_name == "Cursor":
+            _install_cursor_instructions_as_bash_alias(agents_repo_path, arguments.dry_run)
+        else:
+            _install_agent_instructions_link(
+                instruction_link=instruction_link,
+                dry_run=arguments.dry_run,
+                force=arguments.force,
+            )
 
 
 def _parse_arguments() -> argparse.Namespace:
@@ -213,7 +215,7 @@ def _install_skill_directory(
 ) -> None:
     destination_path = install_target.skills_path / skill_directory.name
     if destination_path.is_symlink() and destination_path.resolve() == skill_directory.source_path.resolve():
-        print(f"{install_target.agent_name}: already linked {destination_path} -> {skill_directory.source_path}")
+        print(f"  already linked {destination_path} -> {skill_directory.source_path}")
         return
 
     if destination_path.exists() or destination_path.is_symlink():
@@ -227,16 +229,16 @@ def _install_skill_directory(
             )
             return
         raise FileExistsError(
-            f"{install_target.agent_name}: refusing to replace existing path: {destination_path}"
+            f"  refusing to replace existing path: {destination_path}"
         )
 
     if dry_run:
-        print(f"{install_target.agent_name}: would link {destination_path} -> {skill_directory.source_path}")
+        print(f"  would link {destination_path} -> {skill_directory.source_path}")
         return
 
     install_target.skills_path.mkdir(parents=True, exist_ok=True)
     destination_path.symlink_to(skill_directory.source_path, target_is_directory=True)
-    print(f"{install_target.agent_name}: linked {destination_path} -> {skill_directory.source_path}")
+    print(f"  linked {destination_path} -> {skill_directory.source_path}")
 
 
 def _install_agent_instructions_link(
@@ -249,7 +251,7 @@ def _install_agent_instructions_link(
         and instruction_link.destination_path.resolve() == instruction_link.source_path.resolve()
     ):
         print(
-            f"{instruction_link.agent_name}: already linked "
+            f"  already linked "
             f"{instruction_link.destination_path} -> {instruction_link.source_path}"
         )
         return
@@ -269,7 +271,7 @@ def _install_agent_instructions_link(
             != instruction_link.source_path.read_text(encoding="utf-8")
         ):
             raise FileExistsError(
-                f"{instruction_link.agent_name}: refusing to replace differing file: "
+                f"  refusing to replace differing file: "
                 f"{instruction_link.destination_path}"
             )
         if dry_run:
@@ -282,7 +284,7 @@ def _install_agent_instructions_link(
 
     if dry_run:
         print(
-            f"{instruction_link.agent_name}: would link "
+            f"  would link "
             f"{instruction_link.destination_path} -> {instruction_link.source_path}"
         )
         return
@@ -298,10 +300,10 @@ def _install_agent_instructions_link(
 def _install_cursor_instructions_as_bash_alias(agents_repo_path: Path, dry_run: bool) -> None:
     bashrc_path = Path("~/.bashrc").expanduser()
     agents_md_path = agents_repo_path / "AGENTS.md"
-    alias_cmd = f'alias cursor_cli=\'agent "System Instruction: Before doing anything, strictly follow the rules in {agents_md_path}. "''
+    alias_cmd = f'alias cursor_cli=\\\'agent "System Instruction: Before doing anything, strictly follow the rules in {agents_md_path}. "\\\''
 
     if dry_run:
-        print(f"Cursor: would add/update alias cursor_cli in {bashrc_path}")
+        print(f"  would add/update alias cursor_cli in {bashrc_path}")
         return
 
     if bashrc_path.exists():
@@ -312,7 +314,7 @@ def _install_cursor_instructions_as_bash_alias(agents_repo_path: Path, dry_run: 
         bashrc_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
     else:
         bashrc_path.write_text(f"{alias_cmd}\n", encoding="utf-8")
-    print(f"Cursor: added alias cursor_cli to {bashrc_path}")
+    print(f"  added alias cursor_cli to {bashrc_path}")
 
 
 def _replace_existing_path_with_link(
@@ -323,13 +325,13 @@ def _replace_existing_path_with_link(
     target_is_directory: bool,
 ) -> None:
     if dry_run:
-        print(f"{agent_name}: would replace {destination_path} with link -> {source_path}")
+        print(f"  would replace {destination_path} with link -> {source_path}")
         return
 
     _remove_existing_destination_path(destination_path)
     destination_path.parent.mkdir(parents=True, exist_ok=True)
     destination_path.symlink_to(source_path, target_is_directory=target_is_directory)
-    print(f"{agent_name}: replaced {destination_path} with link -> {source_path}")
+    print(f"  replaced {destination_path} with link -> {source_path}")
 
 
 def _remove_existing_destination_path(destination_path: Path) -> None:
