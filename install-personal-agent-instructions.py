@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shlex
 import shutil
 import sys
 from dataclasses import dataclass
@@ -300,24 +301,57 @@ def _install_agent_instructions_link(
 def _install_cursor_instructions_as_bash_alias(agents_repo_path: Path, dry_run: bool) -> None:
     bashrc_path = Path("~/.bashrc").expanduser()
     agents_md_path = agents_repo_path / "AGENTS.md"
-    alias_cmd = (
-        f"alias cursor_cli='agent "
-        f'\\"System Instruction: Before doing anything, strictly follow the rules in {agents_md_path}. \\"\''
+    system_instruction = (
+        "System Instruction: Before doing anything, strictly follow the rules in "
+        f"{agents_md_path}. "
+    )
+    quoted_system_instruction = shlex.quote(system_instruction)
+    cursor_cli_block = (
+        "# cursor_cli: wrap `agent` so AGENTS.md rules are sent as prompt text (no --system flag).\n"
+        "# Pass flags and your task like plain `agent` — they run before the instruction, per CLI order.\n"
+        "# Examples:\n"
+        "#   cursor_cli\n"
+        '#   cursor_cli --force "fix the tests"\n'
+        '#   cursor_cli --print "summarise README"\n'
+        "# For subcommands (login, mcp, resume, …) use `agent` directly.\n"
+        "cursor_cli() {\n"
+        f"  local system_instruction={quoted_system_instruction}\n"
+        '  if [ "$#" -eq 0 ]; then\n'
+        '    agent "$system_instruction"\n'
+        "  else\n"
+        '    agent "$@" "$system_instruction"\n'
+        "  fi\n"
+        "}"
     )
 
+    existing_bashrc_text = ""
+    if bashrc_path.exists():
+        existing_bashrc_text = bashrc_path.read_text(encoding="utf-8")
+
+    if _bashrc_already_defines_cursor_cli(existing_bashrc_text):
+        print(f"  cursor_cli already defined in {bashrc_path}; skipping bash wrapper")
+        return
+
     if dry_run:
-        print(f"  would add/update alias cursor_cli in {bashrc_path}")
+        print(f"  would append cursor_cli function and comments to {bashrc_path}")
         return
 
     if bashrc_path.exists():
-        text = bashrc_path.read_text(encoding="utf-8")
-        lines = text.splitlines()
-        new_lines = [line for line in lines if not line.startswith("alias cursor_cli=")]
-        new_lines.append(alias_cmd)
-        bashrc_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+        text = existing_bashrc_text
+        if text and not text.endswith("\n"):
+            text = text + "\n"
+        bashrc_path.write_text(text + cursor_cli_block + "\n", encoding="utf-8")
     else:
-        bashrc_path.write_text(f"{alias_cmd}\n", encoding="utf-8")
-    print(f"  added alias cursor_cli to {bashrc_path}")
+        bashrc_path.write_text(cursor_cli_block + "\n", encoding="utf-8")
+    print(f"  appended cursor_cli function to {bashrc_path}")
+
+
+def _bashrc_already_defines_cursor_cli(bashrc_text: str) -> bool:
+    for line in bashrc_text.splitlines():
+        stripped_line = line.strip()
+        if stripped_line.startswith("cursor_cli()") or stripped_line.startswith("cursor_cli ()"):
+            return True
+    return False
 
 
 def _replace_existing_path_with_link(
