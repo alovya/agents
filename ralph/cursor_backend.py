@@ -80,8 +80,9 @@ def build_cursor_command_tail(allowed_bash_commands: list[str]) -> list[str]:
 def build_direct_cursor_command(
     agent_backend: "AgentBackend",
     repo_path: Path,
+    model: str | None = None,
 ) -> list[str]:
-    return [
+    command = [
         agent_backend.command_name,
         "--print",
         "--verbose",
@@ -99,6 +100,9 @@ def build_direct_cursor_command(
         "-p",
         str(repo_path),
     ]
+    if model:
+        command.extend(["--model", model])
+    return command
 
 
 def _build_direct_cursor_allowed_tools() -> list[str]:

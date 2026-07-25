@@ -137,6 +137,7 @@ def _run_ralph_loop(arguments: argparse.Namespace) -> None:
             prompt=prompt,
             agent_backend_name=arguments.agent_backend,
             agent_command=arguments.agent_command,
+            cursor_model=arguments.cursor_model,
             python_venv_path=python_venv_path,
             output_path=task_path / "agent-output.txt",
             tee_output=arguments.tee_agent_output,
@@ -348,6 +349,8 @@ def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
     run_parser.add_argument("--max-iterations", type=int, default=DEFAULT_MAX_ITERATIONS)
     run_parser.add_argument("--agent-backend", choices=["codex", "claude", "cursor"], default="codex")
     run_parser.add_argument("--agent-command")
+    # TODO: Add --codex-model and --claude-model when those backends support model selection.
+    run_parser.add_argument("--cursor-model", help="Model ID to pass to the Cursor CLI (e.g. gemini-3.6-flash-high).")
     run_parser.add_argument(
         "--skip-ralph-sandbox",
         action="store_true",
@@ -457,6 +460,7 @@ def _run_agent(
     prompt: str,
     agent_backend_name: str,
     agent_command: str | None,
+    cursor_model: str | None,
     python_venv_path: Path | None,
     output_path: Path,
     tee_output: bool,
@@ -477,6 +481,7 @@ def _run_agent(
             output_path=output_path,
             tee_output=tee_output,
             agent_backend=agent_backend,
+            cursor_model=cursor_model,
             tool_virtual_environment_path=tool_virtual_environment_path,
             controller_path=controller_path,
         )
@@ -525,12 +530,14 @@ def _run_direct_agent(
     output_path: Path,
     tee_output: bool,
     agent_backend: AgentBackend,
+    cursor_model: str | None,
     tool_virtual_environment_path: Path | None,
     controller_path: str | None,
 ) -> AgentResult:
     command = _build_direct_agent_command(
         repo_path=repo_path,
         agent_backend=agent_backend,
+        cursor_model=cursor_model,
         tool_virtual_environment_path=tool_virtual_environment_path,
         controller_path=controller_path,
     )
@@ -546,6 +553,7 @@ def _run_direct_agent(
 def _build_direct_agent_command(
     repo_path: Path,
     agent_backend: AgentBackend,
+    cursor_model: str | None,
     tool_virtual_environment_path: Path | None,
     controller_path: str | None,
 ) -> list[str]:
@@ -569,6 +577,7 @@ def _build_direct_agent_command(
         return build_direct_cursor_command(
             agent_backend=agent_backend,
             repo_path=repo_path,
+            model=cursor_model,
         )
     raise ValueError(f"--skip-ralph-sandbox is not supported for backend: {agent_backend.backend_name}")
 def _run_agent_command(
