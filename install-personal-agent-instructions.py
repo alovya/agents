@@ -102,9 +102,9 @@ def _parse_arguments() -> argparse.Namespace:
         help="Install only Claude skill links.",
     )
     parser.add_argument(
-        "--cursor-config-dir",
-        default=os.environ.get("CURSOR_CONFIG_DIR", "~/.cursor"),
-        help="Cursor config directory. Defaults to CURSOR_CONFIG_DIR or ~/.cursor.",
+        "--cursor-home",
+        default=os.environ.get("CURSOR_HOME"),
+        help="Cursor home directory.",
     )
     parser.add_argument(
         "--cursor-only",
@@ -164,7 +164,7 @@ def _find_configured_agent_homes(arguments: argparse.Namespace) -> list[AgentHom
         )
     if not (arguments.codex_only or arguments.claude_only):
         selected_agent_homes.append(
-            ("Cursor", "CURSOR_CONFIG_DIR", "--cursor-config-dir", arguments.cursor_config_dir)
+            ("Cursor", "CURSOR_HOME", "--cursor-home", arguments.cursor_home)
         )
 
     configured_agent_homes = []
@@ -300,7 +300,10 @@ def _install_agent_instructions_link(
 def _install_cursor_instructions_as_bash_alias(agents_repo_path: Path, dry_run: bool) -> None:
     bashrc_path = Path("~/.bashrc").expanduser()
     agents_md_path = agents_repo_path / "AGENTS.md"
-    alias_cmd = f"alias cursor_cli='agent \\"System Instruction: Before doing anything, strictly follow the rules in {agents_md_path}. \\"'"
+    alias_cmd = (
+        f"alias cursor_cli='agent "
+        f'\\"System Instruction: Before doing anything, strictly follow the rules in {agents_md_path}. \\"\''
+    )
 
     if dry_run:
         print(f"  would add/update alias cursor_cli in {bashrc_path}")
