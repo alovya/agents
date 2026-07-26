@@ -32,7 +32,7 @@ def test_main_warns_and_skips_an_agent_when_its_home_is_missing(
     environment[configured_environment_variable] = str(tmp_path / "configured-agent-home")
 
     completed_process = subprocess.run(
-        [sys.executable, "install-personal-agent-instructions.py", "--dry-run"],
+        [sys.executable, "install_personal_agent_instructions.py", "--dry-run"],
         cwd=Path(__file__).resolve().parents[1],
         env=environment,
         capture_output=True,
