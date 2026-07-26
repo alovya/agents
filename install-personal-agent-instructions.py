@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import shlex
 import shutil
 import sys
 from dataclasses import dataclass
@@ -16,20 +15,54 @@ class SkillDirectory:
 
 
 @dataclass(frozen=True)
-class SkillInstallTarget:
-    agent_name: str
-    skills_path: Path
+class AgentVendor:
+    display_name: str
+    home_env_var: str
+    cli_arg_home: str
+    cli_arg_only: str
+    instructions_filename: str | None
+
+
+AGENT_VENDORS = [
+    AgentVendor(
+        display_name="Codex",
+        home_env_var="CODEX_HOME",
+        cli_arg_home="--codex-home",
+        cli_arg_only="--codex-only",
+        instructions_filename="AGENTS.md",
+    ),
+    AgentVendor(
+        display_name="Claude",
+        home_env_var="CLAUDE_CONFIG_DIR",
+        cli_arg_home="--claude-config-dir",
+        cli_arg_only="--claude-only",
+        instructions_filename="CLAUDE.md",
+    ),
+    AgentVendor(
+        display_name="Cursor",
+        home_env_var="CURSOR_HOME",
+        cli_arg_home="--cursor-home",
+        cli_arg_only="--cursor-only",
+        instructions_filename=None,  # Cursor instructions are managed in ~/.bashrc, not via file link
+    ),
+]
 
 
 @dataclass(frozen=True)
 class AgentHome:
-    agent_name: str
+    vendor: AgentVendor
     home_path: Path
 
 
 @dataclass(frozen=True)
+class SkillInstallTarget:
+    vendor: AgentVendor
+    skills_path: Path
+
+
+@dataclass(frozen=True)
 class AgentInstructionsLink:
-    agent_name: str
+    vendor: AgentVendor
     source_path: Path
     destination_path: Path
 
@@ -49,10 +82,9 @@ def main() -> None:
         print(f"No skills found under {agents_repo_path}")
 
     for agent_home in agent_homes:
-        print(f"\n=== {agent_home.agent_name} ===")
+        print(f"\n=== {agent_home.vendor.display_name} ===")
         # Find target and link for this agent
-        install_target = next(t for t in install_targets if t.agent_name == agent_home.agent_name)
-        instruction_link = next(l for l in instruction_links if l.agent_name == agent_home.agent_name)
+        install_target = next(t for t in install_targets if t.vendor.display_name == agent_home.vendor.display_name)
         
         for skill_directory in skill_directories:
             _install_skill_directory(
@@ -62,14 +94,15 @@ def main() -> None:
                 force=arguments.force,
             )
             
-        if agent_home.agent_name == "Cursor":
-            pass # No instructions file for Cursor; cursor_cli alias is managed by install-personal-bashrc-instructions.py
-        else:
+        if agent_home.vendor.instructions_filename is not None:
+            instruction_link = next(l for l in instruction_links if l.vendor.display_name == agent_home.vendor.display_name)
             _install_agent_instructions_link(
                 instruction_link=instruction_link,
                 dry_run=arguments.dry_run,
                 force=arguments.force,
             )
+        else:
+            pass # Instructions handled externally (e.g. cursor_cli alias in bashrc)
 
 
 def _parse_arguments() -> argparse.Namespace:
@@ -82,36 +115,17 @@ def _parse_arguments() -> argparse.Namespace:
         action="store_true",
         help="Replace existing copied files or directories with symlinks.",
     )
-    parser.add_argument(
-        "--codex-home",
-        default=os.environ.get("CODEX_HOME"),
-        help="Codex home directory. Defaults to CODEX_HOME; skips Codex if unset.",
-    )
-    parser.add_argument(
-        "--claude-config-dir",
-        default=os.environ.get("CLAUDE_CONFIG_DIR"),
-        help="Claude config directory. Defaults to CLAUDE_CONFIG_DIR; skips Claude if unset.",
-    )
-    parser.add_argument(
-        "--codex-only",
-        action="store_true",
-        help="Install only Codex skill links.",
-    )
-    parser.add_argument(
-        "--claude-only",
-        action="store_true",
-        help="Install only Claude skill links.",
-    )
-    parser.add_argument(
-        "--cursor-home",
-        default=os.environ.get("CURSOR_HOME"),
-        help="Cursor home directory.",
-    )
-    parser.add_argument(
-        "--cursor-only",
-        action="store_true",
-        help="Install only Cursor skill links.",
-    )
+    for vendor in AGENT_VENDORS:
+        parser.add_argument(
+            vendor.cli_arg_home,
+            default=os.environ.get(vendor.home_env_var),
+            help=f"{vendor.display_name} home directory. Defaults to {vendor.home_env_var}; skips if unset.",
+        )
+        parser.add_argument(
+            vendor.cli_arg_only,
+            action="store_true",
+            help=f"Install only {vendor.display_name} skill links.",
+        )
     return parser.parse_args()
 
 
@@ -152,33 +166,27 @@ def _raise_for_duplicate_skill_names(skill_directories: list[SkillDirectory]) ->
 
 
 def _find_configured_agent_homes(arguments: argparse.Namespace) -> list[AgentHome]:
-    only_flags = sum([arguments.codex_only, arguments.claude_only, getattr(arguments, "cursor_only", False)])
+    only_flags = sum([getattr(arguments, vendor.cli_arg_only.lstrip("-").replace("-", "_")) for vendor in AGENT_VENDORS])
     if only_flags > 1:
-        raise RuntimeError("Choose at most one of --codex-only, --claude-only, and --cursor-only.")
-
-    selected_agent_homes = []
-    if not (arguments.claude_only or getattr(arguments, "cursor_only", False)):
-        selected_agent_homes.append(("Codex", "CODEX_HOME", "--codex-home", arguments.codex_home))
-    if not (arguments.codex_only or getattr(arguments, "cursor_only", False)):
-        selected_agent_homes.append(
-            ("Claude", "CLAUDE_CONFIG_DIR", "--claude-config-dir", arguments.claude_config_dir)
-        )
-    if not (arguments.codex_only or arguments.claude_only):
-        selected_agent_homes.append(
-            ("Cursor", "CURSOR_HOME", "--cursor-home", arguments.cursor_home)
-        )
+        flag_names = ", ".join(v.cli_arg_only for v in AGENT_VENDORS)
+        raise RuntimeError(f"Choose at most one of {flag_names}.")
 
     configured_agent_homes = []
-    for agent_name, environment_variable, option_name, home_path in selected_agent_homes:
+    for vendor in AGENT_VENDORS:
+        is_only_target = getattr(arguments, vendor.cli_arg_only.lstrip("-").replace("-", "_"))
+        if only_flags > 0 and not is_only_target:
+            continue
+            
+        home_path = getattr(arguments, vendor.cli_arg_home.lstrip("-").replace("-", "_"))
         if not home_path:
             print(
-                f"Warning: skipping {agent_name} because {environment_variable} is unset "
-                f"and {option_name} was not provided.",
+                f"Warning: skipping {vendor.display_name} because {vendor.home_env_var} is unset "
+                f"and {vendor.cli_arg_home} was not provided.",
                 file=sys.stderr,
             )
             continue
         configured_agent_homes.append(
-            AgentHome(agent_name=agent_name, home_path=Path(home_path).expanduser())
+            AgentHome(vendor=vendor, home_path=Path(home_path).expanduser())
         )
 
     return configured_agent_homes
@@ -187,7 +195,7 @@ def _find_configured_agent_homes(arguments: argparse.Namespace) -> list[AgentHom
 def _build_skill_install_targets(agent_homes: list[AgentHome]) -> list[SkillInstallTarget]:
     return [
         SkillInstallTarget(
-            agent_name=agent_home.agent_name,
+            vendor=agent_home.vendor,
             skills_path=agent_home.home_path / "skills",
         )
         for agent_home in agent_homes
@@ -200,12 +208,12 @@ def _build_agent_instructions_links(
 ) -> list[AgentInstructionsLink]:
     return [
         AgentInstructionsLink(
-            agent_name=agent_home.agent_name,
+            vendor=agent_home.vendor,
             source_path=agents_repo_path / "AGENTS.md",
-            destination_path=agent_home.home_path
-            / ("CLAUDE.md" if agent_home.agent_name == "Claude" else "AGENTS.md"),
+            destination_path=agent_home.home_path / agent_home.vendor.instructions_filename,
         )
         for agent_home in agent_homes
+        if agent_home.vendor.instructions_filename is not None
     ]
 
 
@@ -225,7 +233,7 @@ def _install_skill_directory(
             _replace_existing_path_with_link(
                 destination_path=destination_path,
                 source_path=skill_directory.source_path,
-                agent_name=install_target.agent_name,
+                agent_name=install_target.vendor.display_name,
                 dry_run=dry_run,
                 target_is_directory=True,
             )
@@ -263,7 +271,7 @@ def _install_agent_instructions_link(
             _replace_existing_path_with_link(
                 destination_path=instruction_link.destination_path,
                 source_path=instruction_link.source_path,
-                agent_name=instruction_link.agent_name,
+                agent_name=instruction_link.vendor.display_name,
                 dry_run=dry_run,
                 target_is_directory=False,
             )
@@ -278,7 +286,7 @@ def _install_agent_instructions_link(
             )
         if dry_run:
             print(
-                f"{instruction_link.agent_name}: would replace identical file with link "
+                f"{instruction_link.vendor.display_name}: would replace identical file with link "
                 f"{instruction_link.destination_path} -> {instruction_link.source_path}"
             )
             return
@@ -294,7 +302,7 @@ def _install_agent_instructions_link(
     instruction_link.destination_path.parent.mkdir(parents=True, exist_ok=True)
     instruction_link.destination_path.symlink_to(instruction_link.source_path)
     print(
-        f"{instruction_link.agent_name}: linked "
+        f"{instruction_link.vendor.display_name}: linked "
         f"{instruction_link.destination_path} -> {instruction_link.source_path}"
     )
 
