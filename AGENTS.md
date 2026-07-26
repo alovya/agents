@@ -248,27 +248,4 @@ Do not explain docs or docstrings through old behaviour, previous mistakes, migr
 
 ## Machine and environment facts
 
-This section states the facts about the workspace environment where agents execute. `~/.bashrc` derives its variables from these facts.
-
-### Tool virtual environment
-
-The shared Python tool virtual environment is located at:
-`/workspace/venv`
-
-If a tool or script requires Python packages not available in the system Python, you must run it from this virtual environment (e.g., `/workspace/venv/bin/python script.py`, or `source /workspace/venv/bin/activate` before running).
-
-### Agent configuration directories
-
-The agent config directories (which contain `skills/`, `settings.json`, and agent-specific state) are located at:
-- Codex: `/workspace/.codex` (`CODEX_HOME`)
-- Claude: `/workspace/.claude` (`CLAUDE_CONFIG_DIR`)
-- Cursor: `/workspace/.cursor` (`CURSOR_CONFIG_DIR`)
-
-*Note: `CURSOR_HOME` is intentionally set to `~/.cursor` because Cursor only discovers skills under the user's `$HOME` directory.*
-
-### Notion Task Tracker (NTT)
-
-The `ntt` CLI is installed globally via `pipx` and is available at:
-`~/.local/bin/ntt`
-
-It does not require activating a virtual environment.
+The machine and environment facts (such as tool paths, virtual environments, and agent configuration directories) are entirely defined by the shell environment. See `~/.bashrc` for the single source of truth regarding `$PATH` and environment variables.

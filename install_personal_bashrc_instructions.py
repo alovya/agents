@@ -7,31 +7,19 @@ from pathlib import Path
 BASHRC_MARKER_START = "# >>> Alovya's bashrc instructions >>>"
 BASHRC_MARKER_END = "# <<< Alovya's bashrc instructions <<<"
 
-WORKSPACE_CHECK_BLOCK = """\
-# >>> Alovya's workspace check >>>
-if [ ! -d /workspace ]; then
-  echo "ERROR: /workspace is required for CODEX_HOME, CLAUDE_CONFIG_DIR, and CURSOR_CONFIG_DIR." >&2
-  return 1 2>/dev/null || exit 1
-fi
-# <<< Alovya's workspace check <<<"""
-
 CONVENIENCE_BASH_BLOCK = """\
 # >>> Alovya's convenience bash functionality >>>
 alias src_bashrc='source $HOME/.bashrc'
 alias ll='ls -l'
+alias cdwayve='cd /workspace/WayveCode'
+alias cdwayve2='cd /workspace/worktrees/WayveCode_2'
+alias cdagents='cd /workspace/agents'
+alias cdntt='cd /workspace/notion_task_tracker'
+alias cdralph='cd /workspace/ralph'
 search_history() {
     history | grep "$1"
 }
 # <<< Alovya's convenience bash functionality <<<"""
-
-ENVIRONMENT_VARIABLES_BLOCK = """\
-# >>> Alovya's environment variables >>>
-# Derived from /workspace/agents/AGENTS.md contract
-export CODEX_HOME="/workspace/.codex"
-export CLAUDE_CONFIG_DIR="/workspace/.claude"
-export CURSOR_CONFIG_DIR="/workspace/.cursor" # Store chats in /workspace since $HOME/ is slow on Coder VM.
-export CURSOR_HOME="$HOME/.cursor" # Cursor only looks for skills in $HOME/.
-# <<< Alovya's environment variables <<<"""
 
 PYTHON_BLOCK = """\
 # >>> Alovya's Python >>>
@@ -53,24 +41,6 @@ new_branch_from_main() {
 }
 # <<< Alovya's git <<<"""
 
-NAVIGATION_BLOCK = """\
-# >>> Alovya's navigation >>>
-alias cdwayve='cd /workspace/WayveCode'
-alias cdwayve2='cd /workspace/worktrees/WayveCode_2'
-alias cdagents='cd /workspace/agents'
-alias cdntt='cd /workspace/notion_task_tracker'
-alias cdralph='cd /workspace/ralph'
-# <<< Alovya's navigation <<<"""
-
-AGENT_ALIASES_AND_PATHS_BLOCK = """\
-# >>> Alovya's agent aliases and paths >>>
-# Prefer local Codex and Claude installs over Wayve repo wrappers.
-export PATH="$CODEX_HOME/packages/standalone/current/bin:$HOME/.local/bin:$PATH"
-
-alias cor='codex resume'
-alias clr='claude --resume'
-# <<< Alovya's agent aliases and paths <<<"""
-
 PRIVATE_ENV_BLOCK = """\
 # >>> Alovya's private env >>>
 # Private environment variables for sensitive info that should only be securely shared, e.g. API access tokens.
@@ -79,23 +49,39 @@ if [ -f "$HOME/.private_env" ]; then
 fi
 # <<< Alovya's private env <<<"""
 
-NVM_BLOCK = """\
-# >>> Alovya's NVM >>>
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \\. "$NVM_DIR/nvm.sh"  # This loads nvm
-[ -s "$NVM_DIR/bash_completion" ] && \\. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
-# <<< Alovya's NVM <<<"""
+AGENT_ENVIRONMENT_VARIABLES_BLOCK = """\
+# >>> Alovya's agent environment variables >>>
+if [ ! -d /workspace ]; then
+  echo "ERROR: /workspace is required for CODEX_HOME, CLAUDE_CONFIG_DIR, and CURSOR_CONFIG_DIR." >&2
+  return 1 2>/dev/null || exit 1
+fi
+
+export CODEX_HOME="/workspace/.codex"
+export CLAUDE_CONFIG_DIR="/workspace/.claude"
+export CURSOR_CONFIG_DIR="/workspace/.cursor" # Store chats in /workspace since $HOME/ is slow on Coder VM.
+export CURSOR_HOME="$HOME/.cursor" # Cursor only looks for skills in $HOME/.
+
+# Prefer local Codex and Claude installs over Wayve repo wrappers.
+export PATH="$CODEX_HOME/packages/standalone/current/bin:$HOME/.local/bin:$PATH"
+# <<< Alovya's agent environment variables <<<"""
+
+AGENT_ALIASES_BLOCK = """\
+# >>> Alovya's agent aliases and paths >>>
+alias cor='codex resume'
+alias clr='claude --resume'
+alias cur='agent resume'
+# <<< Alovya's agent aliases and paths <<<"""
 
 ALL_BLOCKS = [
-    WORKSPACE_CHECK_BLOCK,
+    # General personal configuration
     CONVENIENCE_BASH_BLOCK,
-    ENVIRONMENT_VARIABLES_BLOCK,
     PYTHON_BLOCK,
     GIT_BLOCK,
-    NAVIGATION_BLOCK,
-    AGENT_ALIASES_AND_PATHS_BLOCK,
     PRIVATE_ENV_BLOCK,
-    NVM_BLOCK,
+
+    # Agent-specific configuration
+    AGENT_ENVIRONMENT_VARIABLES_BLOCK,
+    AGENT_ALIASES_BLOCK,
 ]
 
 CUSTOM_CONTENT = "\n\n".join([BASHRC_MARKER_START] + ALL_BLOCKS + [BASHRC_MARKER_END])
