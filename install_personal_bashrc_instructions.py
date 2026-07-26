@@ -70,6 +70,22 @@ AGENT_ALIASES_BLOCK = """\
 alias cor='codex resume'
 alias clr='claude --resume'
 alias cur='agent resume'
+
+# cursor_cli: wrap `agent` so AGENTS.md rules are sent as prompt text (no --system flag).
+# Pass flags and your task like plain `agent` — they run before the instruction, per CLI order.
+# Examples:
+#   cursor_cli
+#   cursor_cli --force "fix the tests"
+#   cursor_cli --print "summarise README"
+# For subcommands (login, mcp, resume, …) use `agent` directly.
+cursor_cli() {
+  local system_instruction="System Instruction: Before doing anything, strictly follow the rules in /workspace/agents/AGENTS.md. "
+  if [ "$#" -eq 0 ]; then
+    agent "$system_instruction"
+  else
+    agent "$@" "$system_instruction"
+  fi
+}
 # <<< Alovya's agent aliases <<<"""
 
 ALL_BLOCKS = [
