@@ -35,26 +35,7 @@ Missing end marker"""
     with pytest.raises(RuntimeError, match="mismatched bashrc block markers"):
         bashrc_module._replace_or_append_block(existing_text, custom_content)
 
-def test_replace_or_append_block_scenario_3_append_after_histtimeformat():
-    existing_text = """export HISTSIZE=1000000
-export HISTTIMEFORMAT="%F %T  "
-# Something the user manually added after
-alias ll='ls -al'"""
-    
-    custom_content = f"{bashrc_module.BASHRC_MARKER_START}\nNew content\n{bashrc_module.BASHRC_MARKER_END}"
-    
-    result = bashrc_module._replace_or_append_block(existing_text, custom_content)
-    
-    expected = f"""export HISTSIZE=1000000
-export HISTTIMEFORMAT="%F %T  "
-
-{bashrc_module.BASHRC_MARKER_START}
-New content
-{bashrc_module.BASHRC_MARKER_END}
-"""
-    assert result == expected
-
-def test_replace_or_append_block_scenario_4_fallback_append():
+def test_replace_or_append_block_scenario_3_fallback_append():
     existing_text = """Just some random text
 without markers or histtimeformat"""
     

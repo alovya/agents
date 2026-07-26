@@ -139,20 +139,7 @@ def _replace_or_append_block(existing_text: str, custom_content: str) -> str:
     if start_idx != -1 or end_idx != -1:
         raise RuntimeError("Found mismatched bashrc block markers. Please clean up ~/.bashrc manually.")
     
-    # Scenario 3: Markers do not exist. We need to append the block.
-    # The user has manual configuration at the top of the file, ending with the HISTTIMEFORMAT export.
-    # We should safely append after this line.
-    hist_idx = -1
-    for i, line in enumerate(lines):
-        if line.startswith('export HISTTIMEFORMAT="%F %T  "'):
-            hist_idx = i
-            break
-            
-    if hist_idx != -1:
-        before = "\n".join(lines[:hist_idx + 1])
-        return before + "\n\n" + custom_content + "\n"
-    
-    # Scenario 4: The HISTTIMEFORMAT line isn't found either. Append to the very end of the file.
+    # Scenario 3: Markers do not exist. Append to the very end of the file.
     return existing_text + ("\n" if not existing_text.endswith("\n") else "") + custom_content + "\n"
 
 
