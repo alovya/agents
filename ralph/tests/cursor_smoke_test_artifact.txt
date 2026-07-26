@@ -1,2 +1,0 @@
-Cursor smoke test S1 complete
-Cursor smoke test S2 complete

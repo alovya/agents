@@ -1,9 +1,0 @@
-Worker AGENTS.md Visibility Probe
-==================================
-
-The instruction to "write code like a story" is visible to this Ralph worker.
-
-The AGENTS.md file at the repository root contains a priority instruction:
-"Explain and write code that humans can understand as easily as reading a story book"
-
-This confirms the worker can read repository-level AGENTS.md instructions.
