@@ -71,7 +71,7 @@ alias cor='codex resume'
 alias clr='claude --resume'
 alias cur='agent resume'
 
-# cursor_cli: wrap `agent` so AGENTS.md rules are sent as prompt text (no --system flag).
+# cursor_cli: wrap `agent` so AGENTS.md rules are sent as prompt text.
 # Pass flags and your task like plain `agent` — they run before the instruction, per CLI order.
 # Examples:
 #   cursor_cli
