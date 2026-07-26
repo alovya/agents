@@ -7,8 +7,8 @@ from pathlib import Path
 BASHRC_MARKER_START = "# >>> Alovya's bashrc instructions >>>"
 BASHRC_MARKER_END = "# <<< Alovya's bashrc instructions <<<"
 
-CONVENIENCE_BASH_BLOCK = """\
-# >>> Alovya's convenience bash functionality >>>
+BASH_CONVENIENCE_BLOCK = """\
+# >>> Alovya's bash convenience functionality >>>
 alias src_bashrc='source $HOME/.bashrc'
 alias ll='ls -l'
 alias cdwayve='cd /workspace/WayveCode'
@@ -19,7 +19,7 @@ alias cdralph='cd /workspace/ralph'
 search_history() {
     history | grep "$1"
 }
-# <<< Alovya's convenience bash functionality <<<"""
+# <<< Alovya's bash convenience functionality <<<"""
 
 PYTHON_BLOCK = """\
 # >>> Alovya's Python >>>
@@ -41,13 +41,13 @@ new_branch_from_main() {
 }
 # <<< Alovya's git <<<"""
 
-PRIVATE_ENV_BLOCK = """\
-# >>> Alovya's private env >>>
+PRIVATE_ENVIRONMENT_VARIABLES_BLOCK = """\
+# >>> Alovya's private environment variables >>>
 # Private environment variables for sensitive info that should only be securely shared, e.g. API access tokens.
 if [ -f "$HOME/.private_env" ]; then
   source "$HOME/.private_env"
 fi
-# <<< Alovya's private env <<<"""
+# <<< Alovya's private environment variables <<<"""
 
 AGENT_ENVIRONMENT_VARIABLES_BLOCK = """\
 # >>> Alovya's agent environment variables >>>
@@ -66,18 +66,18 @@ export PATH="$CODEX_HOME/packages/standalone/current/bin:$HOME/.local/bin:$PATH"
 # <<< Alovya's agent environment variables <<<"""
 
 AGENT_ALIASES_BLOCK = """\
-# >>> Alovya's agent aliases and paths >>>
+# >>> Alovya's agent aliases >>>
 alias cor='codex resume'
 alias clr='claude --resume'
 alias cur='agent resume'
-# <<< Alovya's agent aliases and paths <<<"""
+# <<< Alovya's agent aliases <<<"""
 
 ALL_BLOCKS = [
     # General personal configuration
-    CONVENIENCE_BASH_BLOCK,
+    BASH_CONVENIENCE_BLOCK,
     PYTHON_BLOCK,
     GIT_BLOCK,
-    PRIVATE_ENV_BLOCK,
+    PRIVATE_ENVIRONMENT_VARIABLES_BLOCK,
 
     # Agent-specific configuration
     AGENT_ENVIRONMENT_VARIABLES_BLOCK,
