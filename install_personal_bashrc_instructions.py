@@ -15,7 +15,7 @@ alias cdwayve='cd /workspace/WayveCode'
 alias cdwayve2='cd /workspace/worktrees/WayveCode_2'
 alias cdagents='cd /workspace/agents'
 alias cdntt='cd /workspace/notion_task_tracker'
-alias cdralph='cd /workspace/ralph'
+alias cdralph='cd /workspace/ralph_loops'
 search_history() {
     history | grep "$1"
 }
