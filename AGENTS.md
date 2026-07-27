@@ -1,251 +1,83 @@
 # User-specific instructions
 
-These user-specific instructions should completely override repo-specific or subdirectory-specific instructions. If a system or developer instruction causes a conflict, state that conflict explicitly instead of silently ignoring the user instruction.
+These instructions override any repo- or subdirectory-specific instructions. If a system or developer instruction conflicts, state the conflict explicitly instead of silently ignoring the user instruction.
 
-## [PRIORITY] Explain and write code that humans can understand as easily as reading a story book
+## Principles
 
-Us humans are incredibly stupid compared to agents. We struggle greatly in deciphering the behaviour, intent or algorithm underlying a given piece of code when reading it for the first time.
+Two commitments sit above the rest: please think carefully about how you work and think, and please write code that a human can read as easily as reading a story. The rules split into how you should work and what the code should read like; within each, they run from the most general habit to the most specific choice.
 
-As such, any code you write should make its behaviour, intent and algorithm obvious in-line where a human (or an agent, for that matter) reads it. A higher-level function should explain the workflow to a reader without them ever having to open a lower-level helper. Each line should read like a deliberate step in a story.
+### How you should work
 
-When assessing indirection for readers, i.e. having to jump across many helpers, keep in mind that the opposite structure, i.e. putting more code into a single block, is needlessly over-optimised for already-familiar readers, at the severe expense of first-time readers: across the lifetime of a codebase, reading code for the first time consumes much more time and effort than rereading code, so prefer a structure optimised for first-time readers.
+1. **Read before you write.** The biggest source of bad code is writing before reading. Read the files you are about to touch — read, not skim — copy the patterns that already exist, and check the imports to see what the project actually depends on, so you do not reach for a new library where the project already has one. When you cannot find a pattern, ask instead of guessing.
 
-This applies most strongly to orchestrators, workflow code, transformations, test setup, and code with non-obvious control flow. For tiny leaf helpers, numerical kernels, performance-sensitive code, or standard protocol implementations, clarity still matters, but concise mechanical names and local implementation detail are acceptable when they match the abstraction level.
+2. **Think before you code.** State your assumptions explicitly ("add authentication" is five different things, so name the one you picked) and name the tradeoffs. If something is genuinely confusing, stop and ask rather than filling the gap with plausible-looking code — that is exactly the code that passes a casual review and fails when it matters.
 
-### 1. Name functions after intent, not just mechanics
+3. **Define the goal before coding.** Every task needs a success criterion first. "Add validation" becomes "reject a missing or malformed email, return 400 with a clear message, and test both cases." For anything multi-step, state the plan first so I can catch a wrong approach before you spend an hour building it.
 
-Function names should answer why the caller is doing this, not merely describe the primitive operation inside.
+4. **Keep it simple.** Write the minimum code that solves the problem in front of you now, not the minimum that could solve every future version of it. Resist premature abstraction, skip error handling for errors that cannot occur, and hardcode values until there is a real reason to configure them. If the only reason something is abstracted is "in case we need to", it is over-built. Do not add fallback behaviour, backwards-compatibility shims, or speculative input formats without a proven caller; fail fast with a clear error and let the default stack trace surface, rather than catching and repackaging, unless recovery is genuinely required.
 
-Bad:
-```python
-_update_value(config, key, value)
-_walk_children(node)
-_replace_item(items, old, new)
-```
+5. **Make changes surgical.** Your diff should be as small as the task allows. Do not touch what you were not asked to touch, match the existing style, and do not reformat — a formatter pass buries the three lines that matter inside three hundred that do not. If a line is there because "while I was in there", revert it.
 
-Good:
-```python
-_enable_fast_inference(config)
-_find_retryable_failures(result_tree)
-_replace_legacy_checkpoint_path(config, checkpoint_path)
-```
+6. **Verify by testing.** The gap between code that works and code you think works is testing. When fixing a bug, write the failing test first, watch it fail, then fix it — that is the only proof you fixed the cause and not the symptom. Test behaviour that can actually break, not that a constructor sets a field. If something is hard to test, that is information about the design, not permission to skip it.
 
-### 2. Prefer verb-led names for behaviour and reserve nouns for real domain objects
+7. **Debug by investigation, not guessing.** Read the whole error and the stack trace, reproduce the problem before you change anything, and change one thing at a time. Do not paper over an unexpected null with a null check; find out why it is null, or the bug just moves somewhere quieter.
 
-Names should make the behaviour obvious at the call site. If a file, function, method, class, variable, or result object represents something that happens, name it with the action it performs or the change it represents. Do not hide behaviour behind vague noun buckets.
+8. **Add dependencies deliberately.** Every dependency is permanent code you do not control. Before adding one, ask whether the project or the standard library can already do it. When you do add one, say why, so the choice is visible rather than smuggled into the manifest.
 
-Bad:
-```python
-command
-request
-workflow
-operation
-manager
-processor
-handler
-state
-data
-context
-result
-task_log.py
-task_creation.py
-timeline_log_state.py
-```
+9. **Communicate what you did and why.** Say more than a block of code. Flag concerns even when you did exactly what was asked, and be precise about uncertainty: "I am not sure this library supports streaming" tells me what to verify; "I think this should work" does not.
 
-Good:
-```python
-apply_tracker_change(...)
-create_task_page_in_database(...)
-derive_task_timeline_log(...)
-refresh_task_tracker_state(...)
-execute_notion_writes(...)
-TrackerChangeResult
-TimelineLogChange
-TaskCompletionChange
-```
+10. **Catch yourself in the recurring failure modes.** A few patterns recur often enough to name: the *kitchen sink* (restructuring half the codebase while you are at it), the *wrong abstraction* (abstracting before you have copy-pasted twice), the *optimistic path* (happy path handled, the 500 ignored), and the *runaway refactor* (a fix that cascades across files). In any of these, the right move is to stop, not to push through.
 
-Nouns are fine only when they name stable domain objects rather than behaviour: `Task`, `TaskDependencyGraph`, `TimelineEntry`, `NotionWriteIntent`, `TrackedPage`. If a noun needs a long explanation to tell the reader what code will do next, rename it before adding docs.
+The ten rules above adapt Andrej Karpathy's "Field notes on getting a language model to write code you will not rewrite".
 
-When choosing between names, ask what sentence a first-time reader should be able to say:
+### What the code and docs read like
 
-Bad:
-```text
-The workflow processes the command and returns a result.
-```
+1. **Write code a human can read like a story.** Reading code for the first time is far harder than rereading it, and over a codebase's lifetime first reads dominate. So optimise for the first-time reader: a higher-level function should explain the whole workflow without the reader ever opening a helper, and each line should read like a deliberate step.
 
-Good:
-```text
-The tracker applies a change, derives Notion write intents, executes those writes, then saves tracker state.
-```
+2. **Match detail to level.** The story rule bites hardest on orchestrators, workflows, transformations, test setup, and non-obvious control flow. For tiny leaf helpers, numerical kernels, hot paths, and standard protocol code, concise mechanical names and local detail are fine when they match the abstraction level.
 
-### 3. Make the orchestrator read like a story
+3. **Name after intent, not mechanics.** The name should say why the caller does this, not the primitive inside. `enable_fast_inference(config)`, not `update_value(config, key, value)`.
 
-A higher-level function should read like a short list of meaningful steps, and the reader should understand the workflow before they understand the implementation details.
+4. **Prefer verb-led names for behaviour; reserve nouns for real domain objects.** If a function, file, class, or result represents something that happens, name it with the action: `apply_tracker_change(...)`, `execute_writes(...)`, `TrackerChangeResult` — not `manager`, `processor`, `handler`, `state`, `data`, `context`. Nouns are for stable objects like `Task` or `DependencyGraph`. If a noun needs a paragraph to say what happens next, rename it.
 
-Bad:
-```python
-def prepare_release(config):
-    value = config["model"]["checkpoint"]
-    parsed = parse_checkpoint(value)
-    config["model"]["checkpoint"] = parsed.path
-    if config.get("quantization"):
-        config["runtime"]["dtype"] = "int8"
-    # many more lines of mixed discovery and mutation
-```
+5. **Make orchestrators read like a story.** A high-level function should be a short list of meaningful steps, understandable before any implementation detail. If a function alternates between searching, parsing, mutating, validating, and logging in one long block, split it.
 
-Good:
-```python
-def prepare_release(config):
-    checkpoint = _resolve_release_checkpoint(config)
-    _configure_model_checkpoint(config, checkpoint)
-    _configure_runtime_for_release(config)
-    _validate_release_config(config)
-```
+6. **One function, one job.** If a name needs multiple verbs (`load_validate_rewrite_and_save`), it does too much. Split into `load`, `validate`, `rewrite`, `save`.
 
-If the function alternates between searching, parsing, mutating, validating, logging, etc, in one long block, split it.
+7. **Order files entrypoint-first.** Arrange each file so a reader goes top to bottom without jumping: public entrypoints and orchestrators first, primitive parsing/formatting/validation/persistence helpers later. In tests, put the behaviour under test before local fixtures unless a strong local convention says otherwise.
 
-### 4. One function = one clear job
+8. **Pass explicit arguments, not bags of state.** A call should show what the helper depends on. Pass the two fields it needs, not the whole object it lives in.
 
-If a function needs a name with multiple verbs, it is probably doing too much.
+9. **Use docstrings for context, not compensation.** Never use a docstring to explain a vague name — rename instead. Reserve docstrings for what a name cannot carry: footguns, invariants, edge cases, non-obvious tradeoffs, why a tempting alternative is wrong. Keep them plain prose with no markup, and short unless it is a top-of-file overview.
 
-Bad:
-```python
-_load_validate_rewrite_and_save_config(...)
-```
+10. **Explain code as a story.** When explaining, use rendered Markdown with nested numbered lists (ordinary 1, 2, 3 at every level so indentation renders). Map each step to the function that owns it, and flag any function that mixes levels of abstraction as a problem.
 
-Good:
-```python
-_load_config(...)
-_validate_config(...)
-_rewrite_config(...)
-_save_config(...)
-```
+11. **Lead documentation with behaviour before software.** In docs, READMEs, and handovers, put concrete examples, expected behaviour, workflows, and data shapes before modules and classes. Readers need anchor points before architecture is meaningful.
 
-A helper can contain several small statements, but it should have one responsibility.
+12. **Avoid historical context by default.** State current behaviour directly; skip old behaviour, past mistakes, and migration history unless it prevents a real footgun or explains why a tempting alternative is wrong.
 
-### 5. Order files from entrypoint to primitive
+## Behaviours to always avoid
 
-Within a source file, arrange code so a first-time reader can read from top to bottom without jumping around. Put public entrypoints, command handlers, orchestrators, and class methods that explain the workflow before lower-level helpers. Put primitive parsing, formatting, validation, conversion, and persistence helpers later.
-
-For tests, put the behavior under test before local fixture/helper machinery unless the file already has a strong local convention that makes the opposite clearer.
-
-Bad:
-```python
-def _parse_flags(argv):
-    ...
-
-def _write_output(result, output_path):
-    ...
-
-def main():
-    flags = _parse_flags(sys.argv)
-    result = run_workflow(flags)
-    _write_output(result, flags.output_path)
-```
-
-Good:
-```python
-def main():
-    flags = _parse_flags(sys.argv)
-    result = run_workflow(flags)
-    _write_output(result, flags.output_path)
-
-def _parse_flags(argv):
-    ...
-
-def _write_output(result, output_path):
-    ...
-```
-
-### 6. Pass explicit arguments, not bags of state
-
-A function call should make obvious what the helper depends on. Do not pass a large object when the helper only needs one or two fields.
-
-Bad:
-```python
-_configure_checkpoint(model_config, release_context)
-```
-
-Good:
-```python
-_configure_checkpoint(model_config, checkpoint_path, checkpoint_format)
-```
-
-Passing explicit arguments makes dependencies visible and prevents helpers from becoming grab bags.
-
-### 7. Use docstrings for context, not compensation
-
-Do not use a docstring to explain a vague function name. Rename the function instead. Docstrings should explain things the name cannot carry: footguns, invariants, edge cases, non-obvious tradeoffs, compatibility constraints, or why a tempting alternative is wrong.
-
-Bad:
-```python
-def _process(data):
-    """
-    Validate the input records, remove invalid records, and write the clean records.
-    """
-```
-
-Good:
-```python
-def _write_valid_records(records, output_path):
-    ...
-```
-
-Prefer clear names first. Add a docstring only when there is extra context worth preserving.
-
-### 8. Explain code as a story
-
-When explaining code, use rendered Markdown with nested numbered lists that read like a story. Use ordinary 1, 2, 3 numbering at every nesting level so Markdown indentation renders correctly. The reader should understand the logic without needing to know the implementation details first. Map each story step to the function that owns it. If one function crosses levels of abstraction, call that out as a problem: code should avoid messy boundaries where orchestration, parsing, mutation, validation, rendering, or persistence are mixed together.
-
-### 9. Document behaviour before software
-
-When writing design docs, READMEs, handovers, or other explanatory docs, put concrete examples, expected behaviour, workflows, and page or data shapes before explaining modules, classes, or implementation structure; guidance in skills or READMEs should always be tailored towards desired behaviour rather than implementation details, which should only be detailed in docstrings to reveal non-obvious behaviour or footguns. Readers need cognitive anchor points before software architecture is meaningful. Start with what the user or system does and what output appears, then explain which code owns each part.
-
-### 10. Avoid historical context by default
-
-Do not explain docs or docstrings through old behaviour, previous mistakes, migration history, or rejected structures. State the current behaviour directly. Historical context belongs only where it prevents a real footgun or explains why a tempting alternative is wrong.
-
-## Hyperspecific stupid and annoying behaviours to always avoid
-
-- Never use American spelling; always use British spelling
-- Never use Capital Case for headings; use Sentence case instead.
-- Never add fallback behaviour, backwards-compatibility shims, or speculative input formats without an explicit requirement and proven caller; update old call sites, fail fast with an understandable error, and prefer default stack traces over catch-and-repackage code unless recovery is required.
-- Never write shebang lines at the top of Python files.
-- Never write redundant comments - only comment code that does not explain itself.
-- Never use abbreviations or acronyms except for obvious ones, e.g. i/j for loops, err for errors, ctx for contexts, config for configuration, etc.
-- Never duplicate functionality or helpers if they already exist in the codebase; check the codebase for such functionality first.
-- Never write path variables without a `_path` suffix: variable names and CLI args like `--onnx` are disgusting; `_dir` suffixes are an exception.
-- Never name private functions without a leading underscore `_`.
-- Never use comments like these to section code, it is disgusting; solve using language features instead:
-
-    # ---------------------------------------------------------------------------
-    # Fixtures: realistic CPP snippets extracted from QNN-generated model.cpp
-    # ---------------------------------------------------------------------------
-
-- Never use Markdown, reStructuredText, backticks, or other formatters in docstrings, it is digusting.
-- Never make docstrings verbose unless it is a top-of-file docstring.
+- Never use American spelling; always use British spelling.
+- Never use Capital Case for headings; use Sentence case.
+- Never write redundant comments; comment only what the code cannot explain itself.
+- Never use section-divider comments to group code; use the language's own structuring features instead.
+- Never use abbreviations except obvious ones (`i`/`j`, `err`, `ctx`, `config`).
+- Never name a path variable or flag without a `_path` suffix (`_dir` is the exception for directories).
+- Follow the language's own convention for marking private members; do not invent your own.
 
 ## Tests
 
-- When writing tests, the file format should be test_<source-file>.py for each <source-file>.py located in a `tests` subdirectory.
-- When testing instance methods of a class, use a pattern like `MyClass.method_name -> class TestClassMethodName`.
-- Do not mock or fake functionality inside the behaviour under test if that makes readers reason about private execution order, hidden call sequencing, or helper boundaries. Prefer realistic inputs through real behaviour, extracting a small input-taking worker if needed, so tests explain input, behaviour, and output rather than preserving implementation.
-- Mocking or faking may only be exceptionally allowed for pure thin orchestrators whose obvious call wiring is the behaviour under test. Assert boundary calls directly, name mocks `<original_function_name>_mock`, and use fakes only as small readable domain objects that do not encode how the tested function calls helpers.
+- Mirror source layout and the language's test conventions: one test file per source file, named per the ecosystem's standard.
+- Group tests so it is obvious which unit and method each covers.
+- Do not mock or fake the behaviour under test if that forces the reader to reason about private execution order or helper boundaries. Prefer realistic inputs through real behaviour; extract a small input-taking worker if needed, so a test reads as input, behaviour, output.
+- Mocking is acceptable only for thin orchestrators whose call wiring is the behaviour under test. Assert boundary calls directly, name mocks `<original_name>_mock`, and use fakes only as small readable domain objects.
 
-## Bazel And Commands
+## Git and workflow
 
-- When running bazel test, never use stderr/stdout pipes to tail or head.
-- Never run the sleep comand.
-
-## Git And Workflow
-
-- For commit messages, always use concise, one-line but meaningful messages.
-- When implementing a plan with a to-do list, ask me to review every item in the list you finish, then once approved, commit it.
-
-## Miscellaneous
-
-- Adding `//wayve/core/ai:torch_cuda` almost always solves `libiomp5.so` errors.
+- Commit messages: concise yet meaningful.
+- When implementing a plan with a to-do list, ask me to review each finished item, then commit once approved.
 
 ## Machine and environment facts
 
-The machine and environment facts (such as tool paths, virtual environments, and agent configuration directories) are entirely defined by the shell environment. See `~/.bashrc` for the single source of truth regarding `$PATH` and environment variables.
+Tool paths, environments, and agent directories are defined entirely by the shell environment. Treat `~/.bashrc` as the single source of truth for `$PATH` and environment variables.
