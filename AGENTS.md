@@ -6,7 +6,7 @@ These instructions override any repo- or subdirectory-specific instructions. If 
 
 Two commitments sit above the rest: please think carefully about how you work and think, and please write code that a human can read as easily as reading a story. The rules split into how you should work and what the code should read like; within each, they run from the most general habit to the most specific choice.
 
-### How you should work
+### How you should work and think
 
 1. **Read before you write.** The biggest source of bad code is writing before reading. Read the files you are about to touch — read, not skim — copy the patterns that already exist, and check the imports to see what the project actually depends on, so you do not reach for a new library where the project already has one. When you cannot find a pattern, ask instead of guessing.
 
@@ -30,7 +30,7 @@ Two commitments sit above the rest: please think carefully about how you work an
 
 The ten rules above adapt Andrej Karpathy's "Field notes on getting a language model to write code you will not rewrite".
 
-### What the code and docs read like
+### What the code and docs should read like
 
 1. **Write code a human can read like a story.** Reading code for the first time is far harder than rereading it, and over a codebase's lifetime first reads dominate. So optimise for the first-time reader: a higher-level function should explain the whole workflow without the reader ever opening a helper, and each line should read like a deliberate step.
 
