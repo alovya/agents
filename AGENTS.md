@@ -4,9 +4,9 @@ These instructions override any repo- or subdirectory-specific instructions. If 
 
 ## Principles
 
-Two commitments sit above the rest: please think carefully about how you work and think, and please write code that a human can read as easily as reading a story. The rules split into how you should work and what the code should read like; within each, they run from the most general habit to the most specific choice.
+Two commitments sit above the rest: please think carefully about how you work and reason, and please write code that a human can read as easily as reading a story. The rules split into how you should work and what the code should read like; within each, they run from the most general habit to the most specific choice.
 
-### How you should work and think
+### How you should work and reason
 
 1. **Read before you write.** The biggest source of bad code is writing before reading. Read the files you are about to touch — read, not skim — copy the patterns that already exist, and check the imports to see what the project actually depends on, so you do not reach for a new library where the project already has one. When you cannot find a pattern, ask instead of guessing.
 
