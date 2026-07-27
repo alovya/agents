@@ -71,6 +71,28 @@ alias cor='codex resume'
 alias clr='claude --resume'
 alias cur='agent resume'
 
+# The interactive-only instruction supplement, layered on top of the shared AGENTS.md
+# by the wrappers below. Ralph and other headless callers run the CLIs as direct binary
+# calls (no shell), so they never expand these wrappers and only see the shared AGENTS.md.
+INTERACTIVE_AGENT_INSTRUCTIONS_PATH="/workspace/agents/AGENTS.interactive.md"
+
+# claude_cli: append the interactive supplement to claude's system prompt.
+# The shared AGENTS.md is already read from CLAUDE_CONFIG_DIR. Use bare `claude` for subcommands.
+claude_cli() {
+  claude --append-system-prompt-file "$INTERACTIVE_AGENT_INSTRUCTIONS_PATH" "$@"
+}
+
+# codex_cli: send the interactive supplement to codex as prompt text.
+# Codex has no append flag; the shared AGENTS.md is already read from CODEX_HOME. Use bare `codex` for subcommands.
+codex_cli() {
+  local system_instruction="System Instruction: Also strictly follow the interactive rules in $INTERACTIVE_AGENT_INSTRUCTIONS_PATH. "
+  if [ "$#" -eq 0 ]; then
+    codex "$system_instruction"
+  else
+    codex "$@" "$system_instruction"
+  fi
+}
+
 # cursor_cli: wrap `agent` so AGENTS.md rules are sent as prompt text.
 # Pass flags and your task like plain `agent` — they run before the instruction, per CLI order.
 # Examples:
@@ -79,7 +101,7 @@ alias cur='agent resume'
 #   cursor_cli --print "summarise README"
 # For subcommands (login, mcp, resume, …) use `agent` directly.
 cursor_cli() {
-  local system_instruction="System Instruction: Before doing anything, strictly follow the rules in /workspace/agents/AGENTS.md. "
+  local system_instruction="System Instruction: Before doing anything, strictly follow the rules in /workspace/agents/AGENTS.md and the interactive rules in $INTERACTIVE_AGENT_INSTRUCTIONS_PATH. "
   if [ "$#" -eq 0 ]; then
     agent "$system_instruction"
   else

@@ -73,11 +73,6 @@ The ten rules above adapt Andrej Karpathy's "Field notes on getting a language m
 - Do not mock or fake the behaviour under test if that forces the reader to reason about private execution order or helper boundaries. Prefer realistic inputs through real behaviour; extract a small input-taking worker if needed, so a test reads as input, behaviour, output.
 - Mocking is acceptable only for thin orchestrators whose call wiring is the behaviour under test. Assert boundary calls directly, name mocks `<original_name>_mock`, and use fakes only as small readable domain objects.
 
-## Git and workflow
-
-- Commit messages: concise yet meaningful.
-- When implementing a plan with a to-do list, ask me to review each finished item, then commit once approved.
-
 ## Machine and environment facts
 
 Tool paths, environments, and agent directories are defined entirely by the shell environment. Treat `~/.bashrc` as the single source of truth for `$PATH` and environment variables.
