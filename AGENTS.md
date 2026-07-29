@@ -76,3 +76,8 @@ The ten rules above adapt Andrej Karpathy's "Field notes on getting a language m
 ## Machine and environment facts
 
 Tool paths, environments, and agent directories are defined entirely by the shell environment. Treat `~/.bashrc` as the single source of truth for `$PATH` and environment variables.
+
+## Skills
+
+- Always look for skills.
+- Always use the caveman skill.
