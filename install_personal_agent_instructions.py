@@ -69,7 +69,7 @@ class AgentInstructionsLink:
 
 def main() -> None:
     arguments = _parse_arguments()
-    agents_repo_path = Path(__file__).resolve().parent
+    agents_repo_path = arguments.agents_repo_dir.expanduser()
     skill_directories = _find_skill_directories(agents_repo_path)
     agent_homes = _find_configured_agent_homes(arguments)
     install_targets = _build_skill_install_targets(agent_homes)
@@ -114,6 +114,12 @@ def _parse_arguments() -> argparse.Namespace:
         "--force",
         action="store_true",
         help="Replace existing copied files or directories with symlinks.",
+    )
+    parser.add_argument(
+        "--agents-repo-dir",
+        type=Path,
+        required=True,
+        help="Repository directory containing AGENTS.md and skills.",
     )
     for vendor in AGENT_VENDORS:
         parser.add_argument(
