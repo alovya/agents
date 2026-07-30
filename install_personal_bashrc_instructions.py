@@ -97,14 +97,21 @@ def _build_bash_convenience_block(root_dir: Path, agents_repo_dir: Path, owner_n
 # >>> {owner_name}'s bash convenience functionality >>>
 alias src_bashrc='source $HOME/.bashrc'
 alias ll='ls -l'
+search_history() {{
+    history | grep "$1"
+}}
+
 alias cdwayve='cd {root_dir / "WayveCode"}'
 alias cdwayve2='cd {root_dir / "worktrees" / "WayveCode_2"}'
 alias cdagents='cd {agents_repo_dir}'
 alias cdntt='cd {root_dir / "notion_task_tracker"}'
 alias cdralph='cd {root_dir / "ralph_loops"}'
-search_history() {{
-    history | grep "$1"
-}}
+
+alias open_wayve='cdwayve && code . && cd -'
+alias open_wayve2='cdwayve2 && code . && cd -'
+alias open_agents='cdagents && code . && cd -'
+alias open_ntt='cdntt && code . && cd -'
+alias open_ralph='cdralph && code . && cd -'
 # <<< {owner_name}'s bash convenience functionality <<<"""
 
 
