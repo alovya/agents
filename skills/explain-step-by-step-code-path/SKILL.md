@@ -5,7 +5,7 @@ description: Explain a code path as a high-level, step-by-step story. Use when t
 
 # Explain step-by-step code path
 
-Use this skill to turn code behaviour into a readable story. It is especially useful when the user wants to understand an existing implementation, or when reviewing a PR by comparing what the code did before and what it does after.
+Use this skill to turn code behaviour into a readable story. Be careful to lay out the initial conditions very well too. It is especially useful when the user wants to understand an existing implementation, or when reviewing a PR by comparing what the code did before and what it does after.
 
 ## Workflow
 
