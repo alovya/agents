@@ -1,10 +1,10 @@
 ---
-name: log-verbatim
-description: Reproduce prose the assistant already wrote, word-for-word, into a log, file, or message, reflowing only formatting to fit the destination. Use when the user asks to log, save, or capture something "verbatim", "word-for-word", "as you had it", or "prose only", or to replace an earlier paraphrased or summarised log with the exact wording.
+name: keep-verbatim
+description: Keep agent prose unchanged, word-for-word, verbatim; modify only as needed to fit destination formatting.
 disable-model-invocation: true
 ---
 
-# Log verbatim
+# Keep verbatim
 
 Reproduce prose the assistant already produced, unchanged. The user wants the exact words preserved; only the presentation may adapt to the destination.
 
