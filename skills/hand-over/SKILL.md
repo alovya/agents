@@ -1,12 +1,12 @@
 ---
-name: handover
-description: Handover work to or from another agent.
+name: hand-over
+description: Hand over work to or from another agent.
 disable-model-invocation: true
 ---
 
-# Handover
+# Hand over
 
-Use this skill to handover work to or from another agent.
+Use this skill to hand over work to or from another agent.
 
 ## Instructions
 
