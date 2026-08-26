@@ -1,10 +1,10 @@
 ---
 name: view-diff
-description: Expose an existing commit or set of local committed changes as an unstaged working-tree diff so the user can review it in VS Code Source Control. Use when the user asks to view a git diff in VS Code, says they need Source Control to show a commit's changes, asks to uncommit for review, or asks to expose the appropriate commit for diff review.
+description: View code diff in VSCode source control.
 disable-model-invocation: true
 ---
 
-# View Diff
+# View diff
 
 Make the requested commit visible as ordinary unstaged file changes, without losing its content.
 
