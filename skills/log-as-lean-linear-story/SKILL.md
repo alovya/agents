@@ -1,6 +1,7 @@
 ---
 name: log-as-lean-linear-story
 description: Turn a conversation, investigation, research trail, or collection of questions into one detailed, lean, linear explanation. Use when the user asks to log, document, consolidate, or rewrite a discussion as a coherent story or lifecycle; to preserve every material question or doubt without following chronological question-and-answer order; or to introduce and explain each concept once without redundancy.
+disable-model-invocation: true
 ---
 
 # Log as a lean linear story

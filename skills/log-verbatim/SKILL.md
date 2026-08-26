@@ -1,6 +1,7 @@
 ---
 name: log-verbatim
 description: Reproduce prose the assistant already wrote, word-for-word, into a log, file, or message, reflowing only formatting to fit the destination. Use when the user asks to log, save, or capture something "verbatim", "word-for-word", "as you had it", or "prose only", or to replace an earlier paraphrased or summarised log with the exact wording.
+disable-model-invocation: true
 ---
 
 # Log verbatim

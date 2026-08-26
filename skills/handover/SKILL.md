@@ -1,6 +1,7 @@
 ---
 name: handover
 description: Summarise the current discussion for handover to another agent.
+disable-model-invocation: true
 ---
 
 - Use `$AGENTS_REPO_ROOT/.handovers/` as the handover directory. If `$AGENTS_REPO_ROOT` is unset or empty, stop and ask the user to set it instead of guessing the repository root.

@@ -1,6 +1,7 @@
 ---
 name: explain-step-by-step-code-path
 description: Explain a code path as a high-level, step-by-step story. Use when the user asks to understand how code behaves, asks for a step-by-step code path, or wants PR review help by comparing the code path before and after a change.
+disable-model-invocation: true
 ---
 
 # Explain step-by-step code path

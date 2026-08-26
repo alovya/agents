@@ -1,6 +1,7 @@
 ---
 name: literal-example
 description: Explain a design, error, or code path using a literal, concrete example. Use when the user asks to explain something "with an example", "concretely", or says an explanation is too abstract.
+disable-model-invocation: true
 ---
 
 # Literal example
