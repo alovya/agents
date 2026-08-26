@@ -1,12 +1,12 @@
 ---
-name: give-step-by-step-explanation
-description: Give a step-by-step explanation of a concept, behaviour, problem or error.
+name: write-step-by-step-explanation
+description: Write a step-by-step explanation of a concept, behaviour, problem or error.
 disable-model-invocation: true
 ---
 
-# Give a step-by-step explanation
+# Write a step-by-step explanation
 
-Use this skill to give a step-by-step explanation of a concept, behaviour, problem or error. Use the /make-lean-linear-and-coherent skill.
+Use this skill to write a step-by-step explanation of a concept, behaviour, problem or error. Use the /make-lean-linear-and-coherent skill.
 
 If the explanation involves code, you may wish to use the /clarify-call-stack skill too.
 
