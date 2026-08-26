@@ -1,30 +1,17 @@
 ---
 name: keep-verbatim
-description: Keep agent prose unchanged, word-for-word, verbatim; modify only as needed to fit destination formatting.
+description: Keep agent prose unchanged: word-for-word, verbatim; modify only as needed to fit destination formatting.
 disable-model-invocation: true
 ---
 
-# Keep verbatim
+# Keep prose verbatim
 
-Reproduce prose the assistant already produced, unchanged. The user wants the exact words preserved; only the presentation may adapt to the destination.
+Use this skill to keep the prose produced by an agent completely unchanged: word-for-word, verbatim.
 
-## What verbatim means
+## Principles
 
-1. Copy the wording exactly: same sentences, same order, same terminology. Do not paraphrase, summarise, compress, expand, reorder, "improve", or silently correct it.
-2. Change only presentation to fit the destination. Convert Markdown headings and lists into the destination's block types, wrap inline technical names in backticks where the destination expects it, and split running text into paragraphs. The words inside must not change.
-3. If you genuinely must alter a word, for example a cross-reference that no longer resolves in the new location, flag the change explicitly rather than editing it in silence.
+**Prose must be kept verbatim.** Nothing should change: same words, same sentences, same order, same terminology. Do not paraphrase, summarise, compress, expand, reorder, "improve", or silently "correct" it.
 
-## Prose only
+**Only formatting-related changes are acceptable.** Change the text only to fit the destination's expected formatting style, e.g. convert Markdown headings and lists into the destination's block types, wrap inline technical names in backticks where the destination expects it, split running text into paragraphs, etc; the words inside must not change.
 
-1. Drop conversational scaffolding: greetings, lead-ins such as "here's...", offers such as "want me to...", and questions back to the user.
-2. Keep inline technical names such as paths, functions, flags, and literal values that sit inside sentences; they are part of the prose.
-
-## Source and scope
-
-1. The source is what the assistant already wrote earlier in this conversation, not a fresh composition. Find that passage and reproduce it.
-2. If several passages cover the topic, reproduce the latest, most-corrected wording the user is pointing at; do not merge earlier drafts into it.
-3. When replacing an earlier paraphrased entry in an append-only log, state plainly in the new entry that it is the verbatim version, since the paraphrase remains on the record.
-
-## Writing it
-
-When another skill owns the write, such as a Notion log or a file, use this skill to select and preserve the content and the destination skill to perform the write. Match the destination's structure: for a Notion timeline log, give it a concise title and paragraph blocks, keeping code blocks only if the user kept them.
+**Drop conversational scaffolding.** The only exception to the above is to drop conversational scaffolding: greetings, lead-ins such as "here's...", offers such as "want me to...", and questions back to the user.
