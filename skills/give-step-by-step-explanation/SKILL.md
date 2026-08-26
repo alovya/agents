@@ -6,11 +6,11 @@ disable-model-invocation: true
 
 # Give a step-by-step explanation
 
-Use this skill to give a step-by-step explanation of a concept, behaviour, problem or error. If the explanation involves code, you may wish to use the /clarify-call-stack skill too.
+Use this skill to give a step-by-step explanation of a concept, behaviour, problem or error. Use the /make-lean-linear-and-coherent skill.
+
+If the explanation involves code, you may wish to use the /clarify-call-stack skill too.
 
 ## Principles
-
-**Your explanation should read as easily and linearly as a story.** Your explanation should be readable from top to bottom in linear order without ever having to jump up or down to piece it together - as easily as reading a story.
 
 **Explain in terms of concepts or behaviours, not low-level implementation details.** Your explanation should flow as a sequence of natural concepts, behaviours or actions, not noisy, low-level implementation details.
 
