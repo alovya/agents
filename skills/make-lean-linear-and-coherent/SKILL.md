@@ -12,7 +12,7 @@ Use this skill to turn a chronological conversation or investigation into a lean
 
 **Make it lean.** Lean means that no concept should ever be introduced or discussed more than once, and no detail should ever be included unless it is directly related to the concept at hand being explained. Repetition and redundancy are the enemy.
 
-**Make it linear.** Linear means that concepts are introduced in the right place at the right time, so that the first-time reader can read the document from top to bottom once and understand it in full. Having to re-read sections or jumping up and down to piece the story together is the enemy.
+**Make it linear.** Linear means that concepts are introduced in the right place at the right time, so that the first-time reader can read the document from top to bottom once and understand it in full; use the /lay-out-starting-point skill. Having to re-read sections or jumping up and down to piece the story together is the enemy.
 
 **Make it coherent.** Coherent means that the record should have a unifying, underlying spine or theme: actions performed in steps, an entity's lifecycle, requests followed by responses, inputs becoming outputs, system boundaries being crossed in stages, etc. Random, distracting, out-of-context factoids are the enemy.
 
