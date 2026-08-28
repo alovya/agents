@@ -72,7 +72,7 @@ def test_custom_content_uses_root_dir_for_generated_paths():
         owner_name="tester",
     )
 
-    assert 'alias cdagents=\'cd /src/agents\'' in custom_content
+    assert 'alias cd_agents=\'cd /src/agents\'' in custom_content
     assert 'export CODEX_HOME="/opt/workspace/.codex"' in custom_content
     assert 'export AGENTS_REPO_ROOT="/src/agents"' in custom_content
     assert "$AGENTS_REPO_ROOT/AGENTS.md" in custom_content
@@ -92,6 +92,35 @@ def test_custom_content_defines_wayvecode_directory_and_open_aliases():
     assert "alias open_wayvecode2='cd_wayvecode2 && code . && cd -'" in custom_content
     assert "alias open_wayvecode3='cd_wayvecode3 && code . && cd -'" in custom_content
     assert "alias cdwayve" not in custom_content
+
+
+def test_custom_content_defines_tmux_workbench_directory_and_open_aliases():
+    custom_content = bashrc_module._build_custom_content(
+        root_dir=Path("/opt/workspace"),
+        agents_repo_dir=Path("/src/agents"),
+        owner_name="tester",
+    )
+
+    assert "alias cd_tmux_workbench='cd /opt/workspace/tmux_workbench'" in custom_content
+    assert "alias open_tmux_workbench='cd_tmux_workbench && code . && cd -'" in custom_content
+
+
+def test_custom_content_defines_underscore_directory_aliases_for_other_projects():
+    custom_content = bashrc_module._build_custom_content(
+        root_dir=Path("/opt/workspace"),
+        agents_repo_dir=Path("/src/agents"),
+        owner_name="tester",
+    )
+
+    assert "alias cd_agents='cd /src/agents'" in custom_content
+    assert "alias cd_ntt='cd /opt/workspace/notion_task_tracker'" in custom_content
+    assert "alias cd_ralph='cd /opt/workspace/ralph_loops'" in custom_content
+    assert "alias open_agents='cd_agents && code . && cd -'" in custom_content
+    assert "alias open_ntt='cd_ntt && code . && cd -'" in custom_content
+    assert "alias open_ralph='cd_ralph && code . && cd -'" in custom_content
+    assert "alias cdagents" not in custom_content
+    assert "alias cdntt" not in custom_content
+    assert "alias cdralph" not in custom_content
 
 
 def test_custom_content_uses_owner_name_for_block_labels():

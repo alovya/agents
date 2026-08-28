@@ -104,16 +104,18 @@ search_history() {{
 alias cd_wayvecode='cd {root_dir / "WayveCode"}'
 alias cd_wayvecode2='cd {root_dir / "worktrees" / "WayveCode_2"}'
 alias cd_wayvecode3='cd {root_dir / "worktrees" / "WayveCode_3"}'
-alias cdagents='cd {agents_repo_dir}'
-alias cdntt='cd {root_dir / "notion_task_tracker"}'
-alias cdralph='cd {root_dir / "ralph_loops"}'
+alias cd_tmux_workbench='cd {root_dir / "tmux_workbench"}'
+alias cd_agents='cd {agents_repo_dir}'
+alias cd_ntt='cd {root_dir / "notion_task_tracker"}'
+alias cd_ralph='cd {root_dir / "ralph_loops"}'
 
 alias open_wayvecode='cd_wayvecode && code . && cd -'
 alias open_wayvecode2='cd_wayvecode2 && code . && cd -'
 alias open_wayvecode3='cd_wayvecode3 && code . && cd -'
-alias open_agents='cdagents && code . && cd -'
-alias open_ntt='cdntt && code . && cd -'
-alias open_ralph='cdralph && code . && cd -'
+alias open_tmux_workbench='cd_tmux_workbench && code . && cd -'
+alias open_agents='cd_agents && code . && cd -'
+alias open_ntt='cd_ntt && code . && cd -'
+alias open_ralph='cd_ralph && code . && cd -'
 # <<< {owner_name}'s bash convenience functionality <<<"""
 
 
