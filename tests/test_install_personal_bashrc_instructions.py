@@ -78,6 +78,22 @@ def test_custom_content_uses_root_dir_for_generated_paths():
     assert "$AGENTS_REPO_ROOT/AGENTS.md" in custom_content
 
 
+def test_custom_content_defines_wayvecode_directory_and_open_aliases():
+    custom_content = bashrc_module._build_custom_content(
+        root_dir=Path("/opt/workspace"),
+        agents_repo_dir=Path("/src/agents"),
+        owner_name="tester",
+    )
+
+    assert "alias cd_wayvecode='cd /opt/workspace/WayveCode'" in custom_content
+    assert "alias cd_wayvecode2='cd /opt/workspace/worktrees/WayveCode_2'" in custom_content
+    assert "alias cd_wayvecode3='cd /opt/workspace/worktrees/WayveCode_3'" in custom_content
+    assert "alias open_wayvecode='cd_wayvecode && code . && cd -'" in custom_content
+    assert "alias open_wayvecode2='cd_wayvecode2 && code . && cd -'" in custom_content
+    assert "alias open_wayvecode3='cd_wayvecode3 && code . && cd -'" in custom_content
+    assert "alias cdwayve" not in custom_content
+
+
 def test_custom_content_uses_owner_name_for_block_labels():
     custom_content = bashrc_module._build_custom_content(
         root_dir=Path("/workspace"),
