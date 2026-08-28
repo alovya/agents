@@ -1,7 +1,6 @@
 ---
 name: hand-over
 description: Hand over work to or from another agent.
-disable-model-invocation: true
 ---
 
 # Hand over

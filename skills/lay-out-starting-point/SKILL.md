@@ -1,7 +1,6 @@
 ---
 name: lay-out-starting-point
 description: Tell the user about the starting point or context of something.
-disable-model-invocation: true
 ---
 
 # Lay out the starting point

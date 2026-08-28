@@ -1,7 +1,6 @@
 ---
 name: reread-agents-md
 description: Reread $AGENTS_REPO_ROOT/AGENTS.md. Use when the user asks to reread, reload, or refresh AGENTS.md, or says the instructions may be stale.
-disable-model-invocation: true
 ---
 
 # Reread AGENTS.md

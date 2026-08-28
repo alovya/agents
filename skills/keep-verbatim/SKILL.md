@@ -1,7 +1,6 @@
 ---
 name: keep-verbatim
 description: Keep agent prose unchanged: word-for-word, verbatim; modify only as needed to fit destination formatting.
-disable-model-invocation: true
 ---
 
 # Keep prose verbatim

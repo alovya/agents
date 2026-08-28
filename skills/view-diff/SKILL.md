@@ -1,7 +1,6 @@
 ---
 name: view-diff
 description: View code diff in VSCode source control.
-disable-model-invocation: true
 ---
 
 # View diff

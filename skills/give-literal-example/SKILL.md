@@ -1,7 +1,6 @@
 ---
 name: give-literal-example
 description: Give a literal example about something.
-disable-model-invocation: true
 ---
 
 # Give a literal example

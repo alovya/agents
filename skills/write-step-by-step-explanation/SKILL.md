@@ -1,7 +1,6 @@
 ---
 name: write-step-by-step-explanation
 description: Write a step-by-step explanation of a concept, behaviour, problem or error.
-disable-model-invocation: true
 ---
 
 # Write a step-by-step explanation

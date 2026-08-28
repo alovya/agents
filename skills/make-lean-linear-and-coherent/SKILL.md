@@ -1,7 +1,6 @@
 ---
 name: make-lean-linear-and-coherent
 description: Turn a conversation or investigation into a lean, linear and coherent record that a first-time reader can read from top to bottom without ever having to re-read sections or jump up and down to piece the story together.
-disable-model-invocation: true
 ---
 
 # Make a conversation or investigation lean and linear

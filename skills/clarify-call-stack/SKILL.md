@@ -1,7 +1,6 @@
 ---
 name: clarify-call-stack
 description: Explain a module, command, program, function or error to the user by clarifying its call stack.
-disable-model-invocation: true
 ---
 
 # Clarify the call stack
