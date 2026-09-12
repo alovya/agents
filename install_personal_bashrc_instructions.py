@@ -157,7 +157,7 @@ def _build_agent_environment_variables_block(root_dir: Path, agents_repo_dir: Pa
     return f"""\
 # >>> {owner_name}'s agent environment variables >>>
 if [ ! -d {root_dir} ]; then
-  echo "ERROR: {root_dir} is required for CODEX_HOME, CLAUDE_CONFIG_DIR, and CURSOR_CONFIG_DIR." >&2
+  echo "ERROR: {root_dir} is required for CODEX_HOME, CLAUDE_CONFIG_DIR, CURSOR_CONFIG_DIR, and PI_CODING_AGENT_DIR." >&2
   return 1 2>/dev/null || exit 1
 fi
 
@@ -165,6 +165,7 @@ export CODEX_HOME="{root_dir / '.codex'}"
 export CLAUDE_CONFIG_DIR="{root_dir / '.claude'}"
 export CURSOR_CONFIG_DIR="{root_dir / '.cursor'}" # Store chats in {root_dir} since $HOME/ is slow on Coder VM.
 export CURSOR_HOME="$HOME/.cursor" # Cursor only looks for skills in $HOME/.
+export PI_CODING_AGENT_DIR="{root_dir / '.pi' / 'agent'}"
 export AGENTS_REPO_ROOT="{agents_repo_dir}"
 
 # Prefer local Codex and Claude installs over Wayve repo wrappers.

@@ -39,6 +39,13 @@ AGENT_VENDORS = [
         instructions_filename="CLAUDE.md",
     ),
     AgentVendor(
+        display_name="Pi",
+        home_env_var="PI_CODING_AGENT_DIR",
+        cli_arg_home="--pi-coding-agent-dir",
+        cli_arg_only="--pi-only",
+        instructions_filename="AGENTS.md",
+    ),
+    AgentVendor(
         display_name="Cursor",
         home_env_var="CURSOR_HOME",
         cli_arg_home="--cursor-home",

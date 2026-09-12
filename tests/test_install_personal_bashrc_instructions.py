@@ -74,6 +74,8 @@ def test_custom_content_uses_root_dir_for_generated_paths():
 
     assert 'alias cd_agents=\'cd /src/agents\'' in custom_content
     assert 'export CODEX_HOME="/opt/workspace/.codex"' in custom_content
+    assert 'export PI_CODING_AGENT_DIR="/opt/workspace/.pi/agent"' in custom_content
+    assert "required for CODEX_HOME, CLAUDE_CONFIG_DIR, CURSOR_CONFIG_DIR, and PI_CODING_AGENT_DIR" in custom_content
     assert 'export AGENTS_REPO_ROOT="/src/agents"' in custom_content
     assert "$AGENTS_REPO_ROOT/AGENTS.md" in custom_content
 
