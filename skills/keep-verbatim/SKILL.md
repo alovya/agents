@@ -1,6 +1,6 @@
 ---
 name: keep-verbatim
-description: Keep agent prose unchanged: word-for-word, verbatim; modify only as needed to fit destination formatting.
+description: Keep agent prose unchanged - word-for-word, verbatim; modify only as needed to fit destination formatting.
 ---
 
 # Keep prose verbatim
