@@ -108,8 +108,6 @@ def main() -> None:
                 dry_run=arguments.dry_run,
                 force=arguments.force,
             )
-        else:
-            pass # Instructions handled externally (e.g. cursor_cli alias in bashrc)
 
 
 def _parse_arguments() -> argparse.Namespace:
