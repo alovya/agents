@@ -6,7 +6,6 @@ import {
   GraphDocumentError,
   parseGraphDocumentText,
 } from '../graph/graph-document-json'
-import { decodeGraphSourceParameter } from '../graph/graph-source'
 import { SAMPLE_GRAPH_DOCUMENT } from '../graph/sample-graph'
 
 export type InitialGraphView = {
@@ -49,14 +48,6 @@ export async function fetchGraphFileSource(
   }
 
   return response.text()
-}
-
-export function readInlineGraphSourceFromLocation(): string | null {
-  const encodedGraph = new URLSearchParams(window.location.search).get('graph')
-
-  return encodedGraph === null
-    ? null
-    : decodeGraphSourceParameter(encodedGraph)
 }
 
 export function readGraphFileRouteFromLocation(): string | null {

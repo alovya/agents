@@ -7,7 +7,7 @@ import {
 } from './load-requested-graph'
 
 describe('createInitialGraphView', () => {
-  it('starts from the sample document when no inline source was requested', () => {
+  it('starts from the sample document when no source was requested', () => {
     const initialGraphView = createInitialGraphView(null)
 
     expect(initialGraphView.activeGraph.document).toBe(SAMPLE_GRAPH_DOCUMENT)
@@ -17,20 +17,20 @@ describe('createInitialGraphView', () => {
     expect(initialGraphView.importError).toBeNull()
   })
 
-  it('activates a valid inline document and keeps its source verbatim', () => {
-    const initialGraphView = createInitialGraphView(validInlineGraphSource)
+  it('activates a valid document and keeps its source verbatim', () => {
+    const initialGraphView = createInitialGraphView(validGraphSource)
 
-    expect(initialGraphView.activeGraph.document).toEqual(validInlineDocument)
-    expect(initialGraphView.graphJsonSource).toBe(validInlineGraphSource)
+    expect(initialGraphView.activeGraph.document).toEqual(validGraphDocument)
+    expect(initialGraphView.graphJsonSource).toBe(validGraphSource)
     expect(initialGraphView.importError).toBeNull()
   })
 
-  it('keeps the sample document and reports the validation error for an invalid inline source', () => {
-    const invalidInlineGraphSource = '{"rootId":"root"}'
-    const initialGraphView = createInitialGraphView(invalidInlineGraphSource)
+  it('keeps the sample document and reports the validation error for an invalid source', () => {
+    const invalidGraphSource = '{"rootId":"root"}'
+    const initialGraphView = createInitialGraphView(invalidGraphSource)
 
     expect(initialGraphView.activeGraph.document).toBe(SAMPLE_GRAPH_DOCUMENT)
-    expect(initialGraphView.graphJsonSource).toBe(invalidInlineGraphSource)
+    expect(initialGraphView.graphJsonSource).toBe(invalidGraphSource)
     expect(initialGraphView.importError).toBe(
       'Invalid graph document: nodes is required',
     )
@@ -43,13 +43,13 @@ describe('fetchGraphFileSource', () => {
     const fetch_mock = async () => ({
       ok: true,
       status: 200,
-      text: async () => validInlineGraphSource,
+      text: async () => validGraphSource,
     })
     globalThis.fetch = fetch_mock as unknown as typeof globalThis.fetch
 
     try {
       await expect(fetchGraphFileSource('/__bgexp/graph.json')).resolves.toBe(
-        validInlineGraphSource,
+        validGraphSource,
       )
     } finally {
       globalThis.fetch = originalFetch
@@ -75,7 +75,7 @@ describe('fetchGraphFileSource', () => {
   })
 })
 
-const validInlineDocument: GraphDocument = {
+const validGraphDocument: GraphDocument = {
   rootId: 'root',
   nodes: [
     { id: 'root', label: 'Root', kind: 'composite', parentId: null },
@@ -84,4 +84,5 @@ const validInlineDocument: GraphDocument = {
   ],
   edges: [],
 }
-const validInlineGraphSource = `${JSON.stringify(validInlineDocument)}\n`
+const validGraphSource =
+  '{"rootId":"root","nodes":[{"id":"root","label":"Root","kind":"composite","parentId":null},{"id":"left","label":"Left","kind":"leaf","parentId":"root"},{"id":"right","label":"Right","kind":"leaf","parentId":"root"}],"edges":[]}'

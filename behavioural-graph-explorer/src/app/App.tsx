@@ -33,7 +33,6 @@ import {
   createInitialGraphView,
   fetchGraphFileSource,
   readGraphFileRouteFromLocation,
-  readInlineGraphSourceFromLocation,
 } from './load-requested-graph'
 
 import './App.css'
@@ -52,9 +51,7 @@ const NODE_KIND_LEGEND = [
 ] as const
 
 function App() {
-  const [initialGraphView] = useState(() =>
-    createInitialGraphView(readInlineGraphSourceFromLocation()),
-  )
+  const [initialGraphView] = useState(() => createInitialGraphView(null))
   const [activeGraph, setActiveGraph] = useState<ActiveGraph>(
     initialGraphView.activeGraph,
   )
