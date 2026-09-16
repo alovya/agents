@@ -3,6 +3,18 @@ import type { LayoutEngine, LayoutResult } from './dagre-layout'
 
 export type ApplyLatestLayout = (graph: VisibleGraph) => Promise<void>
 
+export type LaidOutGraph = {
+  graph: VisibleGraph
+  layout: LayoutResult
+}
+
+export function canRenderLayoutForGraph(
+  laidOutGraph: LaidOutGraph | null,
+  visibleGraph: VisibleGraph,
+): laidOutGraph is LaidOutGraph {
+  return laidOutGraph?.graph === visibleGraph
+}
+
 export function createLatestLayoutRunner(
   layoutEngine: LayoutEngine,
   applyLayout: (graph: VisibleGraph, layout: LayoutResult) => void,

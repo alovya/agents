@@ -64,6 +64,71 @@ h1 {
   font-size: 0.72rem;
 }
 
+.graph-import {
+  display: grid;
+  gap: 12px;
+  width: min(1180px, 100%);
+  margin: 0 auto 14px;
+  padding: 14px;
+  border: 1px solid #d8e0ed;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.graph-import__source {
+  display: grid;
+  gap: 6px;
+}
+
+.graph-import__source label,
+.graph-import__actions label {
+  color: #38435a;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.graph-import__source textarea {
+  width: 100%;
+  min-height: 150px;
+  padding: 9px 10px;
+  border: 1px solid #c8d1e1;
+  border-radius: 7px;
+  color: #172033;
+  background: #fbfcfe;
+  font: 0.78rem/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
+  resize: vertical;
+}
+
+.graph-import__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.graph-import__actions button {
+  padding: 7px 10px;
+  border: 1px solid #c8d1e1;
+  border-radius: 7px;
+  color: #38435a;
+  background: #ffffff;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.graph-import__actions button:hover {
+  border-color: #635bce;
+  color: #4f46a5;
+}
+
+.graph-import__status {
+  min-height: 1.1em;
+  margin: 0;
+  color: #b42318;
+  font-size: 0.76rem;
+}
+
 .back-control {
   margin-top: 10px;
   padding: 6px 9px;

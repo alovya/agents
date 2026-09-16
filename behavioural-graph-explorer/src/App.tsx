@@ -8,6 +8,7 @@ import {
 } from '@xyflow/react'
 import type { Node, NodeProps } from '@xyflow/react'
 import { projectVisibleGraph, type VisibleGraph } from './graph'
+import { activateGraphDocument, type ActiveGraph } from './active-graph'
 import {
   DagreLayoutEngine,
   type LayoutResult,
@@ -15,7 +16,6 @@ import {
 import {
   clearSelection,
   clickIntoComposite,
-  createInitialExplorationState,
   expandAllComposites,
   expandComposite,
   expandVisibleComposites,
@@ -27,7 +27,13 @@ import {
   convertToReactFlow,
   type GraphFlowNodeData,
 } from './react-flow-adapter'
-import { createLatestLayoutRunner, type ApplyLatestLayout } from './latest-layout'
+import {
+  canRenderLayoutForGraph,
+  createLatestLayoutRunner,
+  type ApplyLatestLayout,
+} from './latest-layout'
+import { GraphDocumentError, parseGraphDocumentText } from './graph-document-json'
+import { GraphImport } from './graph-import'
 import { SAMPLE_GRAPH_DOCUMENT } from './sample-graph'
 
 import './App.css'
@@ -37,18 +43,27 @@ const graphNodeTypes = {
 }
 
 function App() {
-  const [explorationState, setExplorationState] = useState(() =>
-    createInitialExplorationState(SAMPLE_GRAPH_DOCUMENT),
+  const [activeGraph, setActiveGraph] = useState<ActiveGraph>(() =>
+    activateGraphDocument(SAMPLE_GRAPH_DOCUMENT),
   )
+  const [graphJsonSource, setGraphJsonSource] = useState(() =>
+    JSON.stringify(SAMPLE_GRAPH_DOCUMENT, null, 2),
+  )
+  const [importError, setImportError] = useState<string | null>(null)
   const visibleGraph = useMemo(
     () =>
       projectVisibleGraph(
-        SAMPLE_GRAPH_DOCUMENT,
-        explorationState.currentScopeId,
-        explorationState.expandedNodeIds,
+        activeGraph.document,
+        activeGraph.exploration.currentScopeId,
+        activeGraph.exploration.expandedNodeIds,
       ),
-    [explorationState.currentScopeId, explorationState.expandedNodeIds],
+    [
+      activeGraph.document,
+      activeGraph.exploration.currentScopeId,
+      activeGraph.exploration.expandedNodeIds,
+    ],
   )
+  const explorationState = activeGraph.exploration
   const [laidOutGraph, setLaidOutGraph] = useState<{
     graph: VisibleGraph
     layout: LayoutResult
@@ -62,47 +77,109 @@ function App() {
     )
   }
 
+  const loadGraphDocumentSource = useCallback((source: string) => {
+    try {
+      const document = parseGraphDocumentText(source)
+      setActiveGraph(activateGraphDocument(document))
+      setLaidOutGraph(null)
+      setImportError(null)
+    } catch (error) {
+      if (error instanceof GraphDocumentError) {
+        setImportError(error.message)
+        return
+      }
+
+      throw error
+    }
+  }, [])
+  const handleLoadText = useCallback(() => {
+    loadGraphDocumentSource(graphJsonSource)
+  }, [graphJsonSource, loadGraphDocumentSource])
+  const handleChooseFile = useCallback(
+    async (file: File) => {
+      let source: string
+
+      try {
+        source = await file.text()
+      } catch {
+        setImportError('Could not read graph JSON file.')
+        return
+      }
+
+      setGraphJsonSource(source)
+      loadGraphDocumentSource(source)
+    },
+    [loadGraphDocumentSource],
+  )
   const handleClickInto = useCallback(
     (nodeId: string) => {
-      setExplorationState((state) =>
-        clickIntoComposite(SAMPLE_GRAPH_DOCUMENT, visibleGraph, state, nodeId),
-      )
+      setActiveGraph((graph) => ({
+        ...graph,
+        exploration: clickIntoComposite(
+          activeGraph.document,
+          visibleGraph,
+          graph.exploration,
+          nodeId,
+        ),
+      }))
     },
-    [visibleGraph],
+    [activeGraph.document, visibleGraph],
   )
   const handleExpand = useCallback(
     (nodeId: string) => {
-      setExplorationState((state) =>
-        expandComposite(SAMPLE_GRAPH_DOCUMENT, visibleGraph, state, nodeId),
-      )
+      setActiveGraph((graph) => ({
+        ...graph,
+        exploration: expandComposite(
+          activeGraph.document,
+          visibleGraph,
+          graph.exploration,
+          nodeId,
+        ),
+      }))
     },
-    [visibleGraph],
+    [activeGraph.document, visibleGraph],
   )
   const handleExpandVisible = useCallback(() => {
-    setExplorationState((state) => expandVisibleComposites(visibleGraph, state))
+    setActiveGraph((graph) => ({
+      ...graph,
+      exploration: expandVisibleComposites(visibleGraph, graph.exploration),
+    }))
   }, [visibleGraph])
   const handleExpandAll = useCallback(() => {
-    setExplorationState((state) =>
-      expandAllComposites(SAMPLE_GRAPH_DOCUMENT, state),
-    )
-  }, [])
+    setActiveGraph((graph) => ({
+      ...graph,
+      exploration: expandAllComposites(activeGraph.document, graph.exploration),
+    }))
+  }, [activeGraph.document])
   const handleSelectNode = useCallback(
     (nodeId: string) => {
-      setExplorationState((state) => selectNode(state, visibleGraph, nodeId))
+      setActiveGraph((graph) => ({
+        ...graph,
+        exploration: selectNode(graph.exploration, visibleGraph, nodeId),
+      }))
     },
     [visibleGraph],
   )
   const handleSelectEdge = useCallback(
     (edgeId: string) => {
-      setExplorationState((state) => selectEdge(state, visibleGraph, edgeId))
+      setActiveGraph((graph) => ({
+        ...graph,
+        exploration: selectEdge(graph.exploration, visibleGraph, edgeId),
+      }))
     },
     [visibleGraph],
   )
   const handleClearSelection = useCallback(() => {
-    setExplorationState(clearSelection)
+    setActiveGraph((graph) => ({
+      ...graph,
+      exploration: clearSelection(graph.exploration),
+    }))
   }, [])
   const handleReturn = useCallback(() => {
-    setExplorationState(returnToEnclosingScope)
+    setActiveGraph((graph) => ({
+      ...graph,
+      exploration: returnToEnclosingScope(graph.exploration),
+    }))
   }, [])
 
   useEffect(() => {
@@ -118,7 +195,7 @@ function App() {
     [handleClickInto, handleExpand],
   )
   const flowGraph = useMemo(() => {
-    if (laidOutGraph === null || laidOutGraph.graph !== visibleGraph) {
+    if (!canRenderLayoutForGraph(laidOutGraph, visibleGraph)) {
       return null
     }
 
@@ -145,7 +222,7 @@ function App() {
     laidOutGraph,
     visibleGraph,
   ])
-  const currentScope = SAMPLE_GRAPH_DOCUMENT.nodes.find(
+  const currentScope = activeGraph.document.nodes.find(
     (node) => node.id === explorationState.currentScopeId,
   )
   const selectedNode = visibleGraph.nodes.find(
@@ -158,7 +235,7 @@ function App() {
     (node) => node.kind === 'composite',
   ).length
   const stateAfterExpandAll = expandAllComposites(
-    SAMPLE_GRAPH_DOCUMENT,
+    activeGraph.document,
     explorationState,
   )
   const expandableDescendantCount =
@@ -167,7 +244,7 @@ function App() {
   const isAtRoot = explorationState.scopePath.length === 1
   const scopePathLabels = explorationState.scopePath.map(
     (scopeId) =>
-      SAMPLE_GRAPH_DOCUMENT.nodes.find((node) => node.id === scopeId)?.label ??
+      activeGraph.document.nodes.find((node) => node.id === scopeId)?.label ??
       scopeId,
   )
 
@@ -219,6 +296,14 @@ function App() {
         </div>
       </header>
 
+      <GraphImport
+        source={graphJsonSource}
+        errorMessage={importError}
+        onSourceChange={setGraphJsonSource}
+        onLoadText={handleLoadText}
+        onChooseFile={handleChooseFile}
+      />
+
       <section className="exploration-toolbar" aria-label="Expansion actions">
         <div>
           <span className="exploration-toolbar__label">Expansion</span>
@@ -262,7 +347,7 @@ function App() {
             onPaneClick={handleClearSelection}
             fitView
             fitViewOptions={{ padding: 0.2 }}
-            aria-label="Sample workflow graph"
+            aria-label="Current workflow graph"
           >
             <Background gap={24} size={1} />
             <Controls aria-label="Graph controls" />
