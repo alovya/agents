@@ -1,12 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  Background,
-  Controls,
-  Handle,
-  Position,
-  ReactFlow,
-} from '@xyflow/react'
-import type { Node, NodeProps } from '@xyflow/react'
+import { Background, Controls, ReactFlow } from '@xyflow/react'
+import type { Node } from '@xyflow/react'
 import { DagreRouteEdge } from '../rendering/dagre-edge'
 import { projectVisibleGraph, type VisibleGraph } from '../graph/graph'
 import {
@@ -36,6 +30,7 @@ import {
 } from './apply-latest-layout'
 import { GraphDocumentError, parseGraphDocumentText } from '../graph/graph-document-json'
 import { GraphImport } from '../ui/graph-import'
+import { GraphNodeCard } from '../ui/graph-node-card'
 import { decodeGraphSourceParameter } from '../graph/graph-source'
 import { SAMPLE_GRAPH_DOCUMENT } from '../graph/sample-graph'
 
@@ -48,13 +43,6 @@ const graphNodeTypes = {
 const graphEdgeTypes = {
   dagre: DagreRouteEdge,
 }
-
-const NODE_HANDLE_POSITIONS = [
-  { side: 'top', position: Position.Top },
-  { side: 'right', position: Position.Right },
-  { side: 'bottom', position: Position.Bottom },
-  { side: 'left', position: Position.Left },
-] as const
 
 const NODE_KIND_LEGEND = [
   { label: 'Composite', colour: '#635bce' },
@@ -420,59 +408,6 @@ function App() {
         )}
       </section>
     </main>
-  )
-}
-
-function GraphNodeCard({ data }: NodeProps<Node<GraphFlowNodeData>>) {
-  const isComposite = data.kind === 'composite'
-
-  return (
-    <div className={`graph-node graph-node--${data.kind}`}>
-      {NODE_HANDLE_POSITIONS.map(({ side, position }) => (
-        <Handle
-          key={`target-${side}`}
-          id={`target-${side}`}
-          type="target"
-          position={position}
-        />
-      ))}
-      <strong className="graph-node__label">{data.label}</strong>
-      <span className="graph-node__id">{data.graphNodeId}</span>
-      {isComposite && (
-        <div className="graph-node__actions">
-          {data.canClickInto && (
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation()
-                data.onClickInto?.()
-              }}
-            >
-              Open scope
-            </button>
-          )}
-          {data.canExpand && (
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation()
-                data.onExpand?.()
-              }}
-            >
-              Expand
-            </button>
-          )}
-        </div>
-      )}
-      {NODE_HANDLE_POSITIONS.map(({ side, position }) => (
-        <Handle
-          key={`source-${side}`}
-          id={`source-${side}`}
-          type="source"
-          position={position}
-        />
-      ))}
-    </div>
   )
 }
 
