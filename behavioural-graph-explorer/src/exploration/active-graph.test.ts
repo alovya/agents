@@ -4,7 +4,7 @@ import {
   applyExplorationTransition,
   undoLastViewChange,
 } from './active-graph'
-import { projectVisibleGraph, type GraphDocument } from './graph'
+import { projectVisibleGraph, type GraphDocument } from '../graph/graph'
 import { expandComposite, selectNode } from './exploration'
 
 describe('activateGraphDocument', () => {

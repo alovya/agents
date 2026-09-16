@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 import { MarkerType } from '@xyflow/react'
-import { projectVisibleGraph, type VisibleGraph } from './graph'
+import { projectVisibleGraph, type VisibleGraph } from '../graph/graph'
 import {
   convertToReactFlow,
   GRAPH_ARROWHEAD_SIZE,
   GRAPH_EDGE_COLOUR,
 } from './react-flow-adapter'
-import type { LayoutResult } from './dagre-layout'
-import { SAMPLE_GRAPH_DOCUMENT, SAMPLE_NODE_IDS } from './sample-graph'
+import type { LayoutResult } from '../layout/dagre-layout'
+import { SAMPLE_GRAPH_DOCUMENT, SAMPLE_NODE_IDS } from '../graph/sample-graph'
 
 function layoutFor(graph: ReturnType<typeof projectVisibleGraph>): LayoutResult {
   return {

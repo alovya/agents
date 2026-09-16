@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { projectVisibleGraph } from './graph'
+import { projectVisibleGraph } from '../graph/graph'
 import {
   clearSelection,
   clickIntoComposite,
@@ -14,7 +14,7 @@ import {
 import {
   SAMPLE_GRAPH_DOCUMENT,
   SAMPLE_NODE_IDS,
-} from './sample-graph'
+} from '../graph/sample-graph'
 
 function project(
   state: ReturnType<typeof createInitialExplorationState>,

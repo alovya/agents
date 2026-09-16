@@ -7,18 +7,18 @@ import {
   ReactFlow,
 } from '@xyflow/react'
 import type { Node, NodeProps } from '@xyflow/react'
-import { DagreRouteEdge } from './dagre-edge'
-import { projectVisibleGraph, type VisibleGraph } from './graph'
+import { DagreRouteEdge } from '../rendering/dagre-edge'
+import { projectVisibleGraph, type VisibleGraph } from '../graph/graph'
 import {
   activateGraphDocument,
   applyExplorationTransition,
   type ActiveGraph,
   undoLastViewChange,
-} from './active-graph'
+} from '../exploration/active-graph'
 import {
   DagreLayoutEngine,
   type LayoutResult,
-} from './dagre-layout'
+} from '../layout/dagre-layout'
 import {
   clearSelection,
   clickIntoComposite,
@@ -27,17 +27,17 @@ import {
   expandVisibleComposites,
   selectEdge,
   selectNode,
-} from './exploration'
-import { convertToReactFlow, type GraphFlowNodeData } from './react-flow-adapter'
+} from '../exploration/exploration'
+import { convertToReactFlow, type GraphFlowNodeData } from '../rendering/react-flow-adapter'
 import {
   canRenderLayoutForGraph,
   createLatestLayoutRunner,
   type ApplyLatestLayout,
-} from './latest-layout'
-import { GraphDocumentError, parseGraphDocumentText } from './graph-document-json'
-import { GraphImport } from './graph-import'
-import { decodeGraphSourceParameter } from './graph-source'
-import { SAMPLE_GRAPH_DOCUMENT } from './sample-graph'
+} from './apply-latest-layout'
+import { GraphDocumentError, parseGraphDocumentText } from '../graph/graph-document-json'
+import { GraphImport } from '../ui/graph-import'
+import { decodeGraphSourceParameter } from '../graph/graph-source'
+import { SAMPLE_GRAPH_DOCUMENT } from '../graph/sample-graph'
 
 import './App.css'
 

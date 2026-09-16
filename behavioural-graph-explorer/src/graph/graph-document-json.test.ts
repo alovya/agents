@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { projectVisibleGraph } from './graph'
 import type { GraphDocument } from './graph'
-import { createInitialExplorationState, expandAllComposites } from './exploration'
+import { createInitialExplorationState, expandAllComposites } from '../exploration/exploration'
 import {
   GraphDocumentError,
   parseGraphDocumentText,

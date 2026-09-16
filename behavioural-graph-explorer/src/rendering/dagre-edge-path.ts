@@ -1,4 +1,4 @@
-import type { LayoutPoint } from './dagre-layout'
+import type { LayoutPoint } from '../layout/dagre-layout'
 
 export function createDagreRoutePath(
   points: ReadonlyArray<LayoutPoint>,

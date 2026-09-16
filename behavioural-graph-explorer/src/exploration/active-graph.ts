@@ -1,4 +1,4 @@
-import type { GraphDocument } from './graph'
+import type { GraphDocument } from '../graph/graph'
 import {
   createInitialExplorationState,
   type ExplorationState,

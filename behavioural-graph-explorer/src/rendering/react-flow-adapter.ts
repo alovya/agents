@@ -1,7 +1,7 @@
 import { MarkerType } from '@xyflow/react'
 import type { Edge, Node } from '@xyflow/react'
-import type { GraphNode, NodeKind, VisibleGraph } from './graph'
-import type { LayoutResult } from './dagre-layout'
+import type { GraphNode, NodeKind, VisibleGraph } from '../graph/graph'
+import type { LayoutResult } from '../layout/dagre-layout'
 import type { DagreRouteEdgeData } from './dagre-edge'
 
 export const GRAPH_ARROWHEAD_SIZE = 37.5
