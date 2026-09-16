@@ -16,7 +16,7 @@ export function GraphImport({
   return (
     <section className="graph-import" aria-label="Load graph document">
       <div className="graph-import__source">
-        <label htmlFor="graph-json-source">Graph document JSON</label>
+        <label htmlFor="graph-json-source">Behavioural graph JSON</label>
         <textarea
           id="graph-json-source"
           value={source}

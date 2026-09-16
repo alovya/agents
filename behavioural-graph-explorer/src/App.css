@@ -6,62 +6,16 @@
 }
 
 .app-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 32px;
   width: min(1180px, 100%);
   margin: 0 auto 24px;
 }
 
-.app-kicker {
-  margin: 0 0 8px;
-  color: #4f46a5;
-  font-size: 0.78rem;
-  font-weight: 750;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
 h1 {
   margin: 0;
-  color: #111827;
+  color: #4f46a5;
   font-size: clamp(1.8rem, 4vw, 2.6rem);
   letter-spacing: -0.04em;
   line-height: 1.1;
-}
-
-.app-description {
-  margin: 10px 0 0;
-  color: #5e6a7e;
-}
-
-.app-summary {
-  display: grid;
-  gap: 4px;
-  min-width: 190px;
-  padding: 14px 16px;
-  border: 1px solid #d8e0ed;
-  border-radius: 12px;
-  background: #ffffff;
-  box-shadow: 0 8px 24px rgb(44 62 96 / 8%);
-}
-
-.app-summary__label,
-.app-summary__status {
-  color: #68758a;
-  font-size: 0.78rem;
-}
-
-.app-summary__status {
-  margin-top: 4px;
-  color: #4f46a5;
-  font-weight: 650;
-}
-
-.app-summary__path {
-  color: #7b8799;
-  font-size: 0.72rem;
 }
 
 .graph-import {
@@ -335,10 +289,6 @@ h1 {
   .app-header {
     flex-direction: column;
     gap: 18px;
-  }
-
-  .app-summary {
-    width: 100%;
   }
 
   .graph-panel,

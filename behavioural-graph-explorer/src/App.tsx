@@ -243,15 +243,6 @@ function App() {
     laidOutGraph,
     visibleGraph,
   ])
-  const currentScope = activeGraph.document.nodes.find(
-    (node) => node.id === explorationState.currentScopeId,
-  )
-  const selectedNode = visibleGraph.nodes.find(
-    (node) => node.id === explorationState.selectedNodeId,
-  )
-  const selectedEdge = visibleGraph.edges.find(
-    (edge) => edge.id === explorationState.selectedEdgeId,
-  )
   const visibleCompositeCount = visibleGraph.nodes.filter(
     (node) => node.kind === 'composite',
   ).length
@@ -263,50 +254,11 @@ function App() {
     stateAfterExpandAll.expandedNodeIds.size -
     explorationState.expandedNodeIds.size
   const isAtRoot = explorationState.scopePath.length === 1
-  const scopePathLabels = explorationState.scopePath.map(
-    (scopeId) =>
-      activeGraph.document.nodes.find((node) => node.id === scopeId)?.label ??
-      scopeId,
-  )
 
   return (
     <main className="app-shell">
       <header className="app-header">
-        <div>
-          <p className="app-kicker">Behavioural Graph Explorer</p>
-          <h1>How the explorer works</h1>
-          <p className="app-description">
-            Follow the graph from its complete source through projection, exploration, and rendering.
-          </p>
-        </div>
-        <div className="app-summary" aria-label="Current graph view">
-          <span className="app-summary__label">Scope</span>
-          <strong>{currentScope?.label}</strong>
-          <span className="app-summary__status">
-            {isAtRoot && explorationState.expandedNodeIds.size === 0
-              ? 'Collapsed root'
-              : isAtRoot
-                ? 'Root scope'
-                : 'Enclosed scope'}
-          </span>
-          <span className="app-summary__path">
-            {scopePathLabels.join(' / ')}
-          </span>
-          <span className="app-summary__label">Selection</span>
-          <strong>
-            {selectedNode?.label ??
-              (selectedEdge
-                ? `${selectedEdge.source} → ${selectedEdge.target}`
-                : 'Nothing selected')}
-          </strong>
-          <span className="app-summary__path">
-            {selectedNode
-              ? `Node: ${selectedNode.id}`
-              : selectedEdge
-                ? `Edge: ${selectedEdge.id}`
-                : 'Click a node or edge to select it'}
-          </span>
-        </div>
+        <h1>Behavioural graph explorer</h1>
       </header>
 
       <GraphImport
