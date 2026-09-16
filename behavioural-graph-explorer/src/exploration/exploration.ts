@@ -87,19 +87,6 @@ export function clickIntoComposite(
   return acceptScopeChange(state, nodeId, [...state.scopePath, nodeId])
 }
 
-export function returnToEnclosingScope(
-  state: ExplorationState,
-): ExplorationState {
-  if (state.scopePath.length <= 1) {
-    return state
-  }
-
-  const scopePath = state.scopePath.slice(0, -1)
-  const currentScopeId = scopePath[scopePath.length - 1]
-
-  return acceptScopeChange(state, currentScopeId, scopePath)
-}
-
 export function expandComposite(
   document: GraphDocument,
   graph: VisibleGraph,
