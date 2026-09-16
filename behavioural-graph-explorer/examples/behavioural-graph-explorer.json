@@ -1,0 +1,425 @@
+{
+  "rootId": "bge",
+  "nodes": [
+    {
+      "id": "bge",
+      "label": "Behavioural Graph Explorer",
+      "kind": "composite",
+      "parentId": null,
+      "metadata": {
+        "description": "Read-only exploration of complete behavioural graph documents",
+        "source": ["src/App.tsx", "src/graph.ts", "src/exploration.ts"]
+      }
+    },
+    {
+      "id": "load-document",
+      "label": "Load graph document",
+      "kind": "composite",
+      "parentId": "bge",
+      "metadata": {
+        "inputs": ["pasted JSON", "JSON file"]
+      }
+    },
+    {
+      "id": "receive-graph-source",
+      "label": "Receive graph JSON source",
+      "kind": "leaf",
+      "parentId": "load-document"
+    },
+    {
+      "id": "parse-graph-json",
+      "label": "Parse graph JSON",
+      "kind": "leaf",
+      "parentId": "load-document"
+    },
+    {
+      "id": "validate-graph-document",
+      "label": "Validate graph document",
+      "kind": "leaf",
+      "parentId": "load-document"
+    },
+    {
+      "id": "activate-valid-document",
+      "label": "Activate valid document",
+      "kind": "leaf",
+      "parentId": "load-document"
+    },
+    {
+      "id": "report-load-error",
+      "label": "Report load error",
+      "kind": "leaf",
+      "parentId": "load-document"
+    },
+    {
+      "id": "retain-current-document",
+      "label": "Retain current document",
+      "kind": "leaf",
+      "parentId": "load-document"
+    },
+    {
+      "id": "project-visible-view",
+      "label": "Project visible graph",
+      "kind": "composite",
+      "parentId": "bge",
+      "metadata": {
+        "source": "src/graph.ts"
+      }
+    },
+    {
+      "id": "collect-visible-nodes",
+      "label": "Collect visible representatives",
+      "kind": "leaf",
+      "parentId": "project-visible-view"
+    },
+    {
+      "id": "resolve-visible-representatives",
+      "label": "Resolve edge representatives",
+      "kind": "leaf",
+      "parentId": "project-visible-view"
+    },
+    {
+      "id": "group-summary-edges",
+      "label": "Group visible summary edges",
+      "kind": "leaf",
+      "parentId": "project-visible-view"
+    },
+    {
+      "id": "retain-canonical-cycles",
+      "label": "Retain canonical leaf cycles",
+      "kind": "leaf",
+      "parentId": "project-visible-view"
+    },
+    {
+      "id": "explore-current-view",
+      "label": "Explore current view",
+      "kind": "composite",
+      "parentId": "bge",
+      "metadata": {
+        "source": "src/exploration.ts"
+      }
+    },
+    {
+      "id": "receive-user-action",
+      "label": "Receive user action",
+      "kind": "leaf",
+      "parentId": "explore-current-view"
+    },
+    {
+      "id": "select-node-or-edge",
+      "label": "Select node or edge",
+      "kind": "leaf",
+      "parentId": "explore-current-view"
+    },
+    {
+      "id": "open-composite-scope",
+      "label": "Open composite scope",
+      "kind": "leaf",
+      "parentId": "explore-current-view"
+    },
+    {
+      "id": "expand-one-composite",
+      "label": "Expand one composite",
+      "kind": "leaf",
+      "parentId": "explore-current-view"
+    },
+    {
+      "id": "expand-visible-composites",
+      "label": "Expand visible composites",
+      "kind": "leaf",
+      "parentId": "explore-current-view"
+    },
+    {
+      "id": "expand-all-composites",
+      "label": "Expand all composites",
+      "kind": "leaf",
+      "parentId": "explore-current-view"
+    },
+    {
+      "id": "return-to-enclosing-scope",
+      "label": "Return to enclosing scope",
+      "kind": "leaf",
+      "parentId": "explore-current-view"
+    },
+    {
+      "id": "clear-selection",
+      "label": "Clear selection",
+      "kind": "leaf",
+      "parentId": "explore-current-view"
+    },
+    {
+      "id": "ignore-invalid-action",
+      "label": "Ignore invalid action",
+      "kind": "leaf",
+      "parentId": "explore-current-view"
+    },
+    {
+      "id": "accept-selection-change",
+      "label": "Accept selection change",
+      "kind": "leaf",
+      "parentId": "explore-current-view"
+    },
+    {
+      "id": "accept-scope-or-expansion-change",
+      "label": "Accept scope or expansion change",
+      "kind": "leaf",
+      "parentId": "explore-current-view"
+    },
+    {
+      "id": "render-current-view",
+      "label": "Render current view",
+      "kind": "composite",
+      "parentId": "bge",
+      "metadata": {
+        "source": ["src/dagre-layout.ts", "src/react-flow-adapter.ts", "src/latest-layout.ts"]
+      }
+    },
+    {
+      "id": "request-latest-layout",
+      "label": "Request latest layout",
+      "kind": "leaf",
+      "parentId": "render-current-view"
+    },
+    {
+      "id": "calculate-dagre-layout",
+      "label": "Calculate Dagre layout",
+      "kind": "leaf",
+      "parentId": "render-current-view"
+    },
+    {
+      "id": "discard-stale-layout",
+      "label": "Discard stale layout",
+      "kind": "leaf",
+      "parentId": "render-current-view"
+    },
+    {
+      "id": "accept-latest-layout",
+      "label": "Accept latest layout",
+      "kind": "leaf",
+      "parentId": "render-current-view"
+    },
+    {
+      "id": "convert-to-react-flow",
+      "label": "Convert projection to React Flow",
+      "kind": "leaf",
+      "parentId": "render-current-view"
+    },
+    {
+      "id": "render-interactive-canvas",
+      "label": "Render interactive canvas",
+      "kind": "leaf",
+      "parentId": "render-current-view"
+    },
+    {
+      "id": "pan-and-zoom-canvas",
+      "label": "Pan and zoom canvas",
+      "kind": "leaf",
+      "parentId": "render-current-view"
+    }
+  ],
+  "edges": [
+    {
+      "id": "source-to-parse",
+      "from": "receive-graph-source",
+      "to": "parse-graph-json"
+    },
+    {
+      "id": "parse-to-validate",
+      "from": "parse-graph-json",
+      "to": "validate-graph-document",
+      "label": "valid JSON"
+    },
+    {
+      "id": "parse-to-error",
+      "from": "parse-graph-json",
+      "to": "report-load-error",
+      "label": "invalid JSON"
+    },
+    {
+      "id": "validate-to-activate",
+      "from": "validate-graph-document",
+      "to": "activate-valid-document",
+      "label": "valid document"
+    },
+    {
+      "id": "validate-to-error",
+      "from": "validate-graph-document",
+      "to": "report-load-error",
+      "label": "invalid document"
+    },
+    {
+      "id": "error-to-retain",
+      "from": "report-load-error",
+      "to": "retain-current-document"
+    },
+    {
+      "id": "retain-to-render",
+      "from": "retain-current-document",
+      "to": "render-interactive-canvas"
+    },
+    {
+      "id": "activate-to-project",
+      "from": "activate-valid-document",
+      "to": "collect-visible-nodes"
+    },
+    {
+      "id": "collect-to-resolve",
+      "from": "collect-visible-nodes",
+      "to": "resolve-visible-representatives"
+    },
+    {
+      "id": "resolve-to-group",
+      "from": "resolve-visible-representatives",
+      "to": "group-summary-edges"
+    },
+    {
+      "id": "group-to-cycle",
+      "from": "group-summary-edges",
+      "to": "retain-canonical-cycles"
+    },
+    {
+      "id": "cycle-to-layout-request",
+      "from": "retain-canonical-cycles",
+      "to": "request-latest-layout"
+    },
+    {
+      "id": "layout-request-to-calculate",
+      "from": "request-latest-layout",
+      "to": "calculate-dagre-layout"
+    },
+    {
+      "id": "calculate-to-discard",
+      "from": "calculate-dagre-layout",
+      "to": "discard-stale-layout",
+      "label": "stale request"
+    },
+    {
+      "id": "calculate-to-accept",
+      "from": "calculate-dagre-layout",
+      "to": "accept-latest-layout",
+      "label": "latest request"
+    },
+    {
+      "id": "discard-to-render",
+      "from": "discard-stale-layout",
+      "to": "render-interactive-canvas"
+    },
+    {
+      "id": "accept-layout-to-convert",
+      "from": "accept-latest-layout",
+      "to": "convert-to-react-flow"
+    },
+    {
+      "id": "convert-to-render",
+      "from": "convert-to-react-flow",
+      "to": "render-interactive-canvas"
+    },
+    {
+      "id": "render-to-pan-zoom",
+      "from": "render-interactive-canvas",
+      "to": "pan-and-zoom-canvas"
+    },
+    {
+      "id": "pan-zoom-to-action",
+      "from": "pan-and-zoom-canvas",
+      "to": "receive-user-action"
+    },
+    {
+      "id": "action-to-select",
+      "from": "receive-user-action",
+      "to": "select-node-or-edge",
+      "label": "select"
+    },
+    {
+      "id": "action-to-open",
+      "from": "receive-user-action",
+      "to": "open-composite-scope",
+      "label": "open"
+    },
+    {
+      "id": "action-to-expand-one",
+      "from": "receive-user-action",
+      "to": "expand-one-composite",
+      "label": "expand one"
+    },
+    {
+      "id": "action-to-expand-visible",
+      "from": "receive-user-action",
+      "to": "expand-visible-composites",
+      "label": "expand visible"
+    },
+    {
+      "id": "action-to-expand-all",
+      "from": "receive-user-action",
+      "to": "expand-all-composites",
+      "label": "expand all"
+    },
+    {
+      "id": "action-to-return",
+      "from": "receive-user-action",
+      "to": "return-to-enclosing-scope",
+      "label": "back"
+    },
+    {
+      "id": "action-to-clear",
+      "from": "receive-user-action",
+      "to": "clear-selection",
+      "label": "clear"
+    },
+    {
+      "id": "action-to-ignore",
+      "from": "receive-user-action",
+      "to": "ignore-invalid-action",
+      "label": "invalid action"
+    },
+    {
+      "id": "select-to-accept",
+      "from": "select-node-or-edge",
+      "to": "accept-selection-change"
+    },
+    {
+      "id": "clear-to-accept",
+      "from": "clear-selection",
+      "to": "accept-selection-change"
+    },
+    {
+      "id": "selection-to-convert",
+      "from": "accept-selection-change",
+      "to": "convert-to-react-flow"
+    },
+    {
+      "id": "open-to-accept",
+      "from": "open-composite-scope",
+      "to": "accept-scope-or-expansion-change"
+    },
+    {
+      "id": "expand-one-to-accept",
+      "from": "expand-one-composite",
+      "to": "accept-scope-or-expansion-change"
+    },
+    {
+      "id": "expand-visible-to-accept",
+      "from": "expand-visible-composites",
+      "to": "accept-scope-or-expansion-change"
+    },
+    {
+      "id": "expand-all-to-accept",
+      "from": "expand-all-composites",
+      "to": "accept-scope-or-expansion-change"
+    },
+    {
+      "id": "return-to-accept",
+      "from": "return-to-enclosing-scope",
+      "to": "accept-scope-or-expansion-change"
+    },
+    {
+      "id": "scope-change-to-project",
+      "from": "accept-scope-or-expansion-change",
+      "to": "collect-visible-nodes"
+    },
+    {
+      "id": "ignore-to-render",
+      "from": "ignore-invalid-action",
+      "to": "render-interactive-canvas"
+    }
+  ]
+}
