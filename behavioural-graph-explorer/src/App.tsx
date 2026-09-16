@@ -1,121 +1,117 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Background,
+  Controls,
+  Handle,
+  Position,
+  ReactFlow,
+} from '@xyflow/react'
+import type { Node, NodeProps } from '@xyflow/react'
+import { projectVisibleGraph } from './graph'
+import {
+  DagreLayoutEngine,
+  type LayoutResult,
+} from './dagre-layout'
+import {
+  convertToReactFlow,
+  type GraphFlowNodeData,
+} from './react-flow-adapter'
+import { createLatestLayoutRunner, type ApplyLatestLayout } from './latest-layout'
+import { SAMPLE_GRAPH_DOCUMENT } from './sample-graph'
+
 import './App.css'
 
+const graphNodeTypes = {
+  graph: GraphNodeCard,
+}
+
 function App() {
-  const [count, setCount] = useState(0)
+  const visibleGraph = useMemo(
+    () => projectVisibleGraph(SAMPLE_GRAPH_DOCUMENT, SAMPLE_GRAPH_DOCUMENT.rootId, new Set()),
+    [],
+  )
+  const [layout, setLayout] = useState<LayoutResult | null>(null)
+  const layoutRunnerRef = useRef<ApplyLatestLayout | null>(null)
+
+  if (layoutRunnerRef.current === null) {
+    layoutRunnerRef.current = createLatestLayoutRunner(
+      new DagreLayoutEngine(),
+      (_graph, nextLayout) => setLayout(nextLayout),
+    )
+  }
+
+  useEffect(() => {
+    const layoutRunner = layoutRunnerRef.current
+
+    if (layoutRunner) {
+      void layoutRunner(visibleGraph)
+    }
+  }, [visibleGraph])
+
+  const flowGraph = useMemo(
+    () =>
+      layout === null
+        ? null
+        : convertToReactFlow(visibleGraph, layout, {}),
+    [layout, visibleGraph],
+  )
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
+    <main className="app-shell">
+      <header className="app-header">
         <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
+          <p className="app-kicker">Behavioural Graph Explorer</p>
+          <h1>Sample workflow</h1>
+          <p className="app-description">
+            A read-only view of the workflow&apos;s collapsed root projection.
           </p>
         </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
+        <div className="app-summary" aria-label="Current graph view">
+          <span className="app-summary__label">Scope</span>
+          <strong>Behavioural workflow</strong>
+          <span className="app-summary__status">Collapsed root</span>
         </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+      </header>
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+      <section className="graph-panel" aria-label="Behavioural workflow graph">
+        {flowGraph === null ? (
+          <p className="graph-loading">Calculating graph layout…</p>
+        ) : (
+          <ReactFlow<Node<GraphFlowNodeData>>
+            nodes={flowGraph.nodes}
+            edges={flowGraph.edges}
+            nodeTypes={graphNodeTypes}
+            nodesDraggable={false}
+            nodesConnectable={false}
+            edgesReconnectable={false}
+            fitView
+            fitViewOptions={{ padding: 0.2 }}
+            aria-label="Sample workflow graph"
+          >
+            <Background gap={24} size={1} />
+            <Controls aria-label="Graph controls" />
+          </ReactFlow>
+        )}
+      </section>
+    </main>
+  )
+}
+
+function GraphNodeCard({ data }: NodeProps<Node<GraphFlowNodeData>>) {
+  const isComposite = data.kind === 'composite'
+
+  return (
+    <div className={`graph-node graph-node--${data.kind}`}>
+      <Handle type="target" position={Position.Left} />
+      <div className="graph-node__heading">
+        <span className="graph-node__kind">
+          {isComposite ? 'Composite scope' : 'Leaf behaviour'}
+        </span>
+      </div>
+      <strong className="graph-node__label">{data.label}</strong>
+      <span className="graph-node__id">{data.graphNodeId}</span>
+      <Handle type="source" position={Position.Right} />
+    </div>
   )
 }
 
