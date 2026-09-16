@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { MarkerType } from '@xyflow/react'
-import { projectVisibleGraph } from './graph'
-import { convertToReactFlow } from './react-flow-adapter'
+import { projectVisibleGraph, type VisibleGraph } from './graph'
+import {
+  convertToReactFlow,
+  EDGE_DIRECTION_COLOURS,
+  GRAPH_ARROWHEAD_SIZE,
+} from './react-flow-adapter'
 import type { LayoutResult } from './dagre-layout'
 import { SAMPLE_GRAPH_DOCUMENT, SAMPLE_NODE_IDS } from './sample-graph'
 
@@ -91,7 +95,7 @@ describe('convertToReactFlow', () => {
     expect(leaf.data).not.toHaveProperty('onExpand')
   })
 
-  it('adds directed arrowheads to every converted edge', () => {
+  it('uses smooth-step directed edges', () => {
     const graph = projectVisibleGraph(
       SAMPLE_GRAPH_DOCUMENT,
       SAMPLE_GRAPH_DOCUMENT.rootId,
@@ -99,11 +103,99 @@ describe('convertToReactFlow', () => {
     )
     const flowGraph = convertToReactFlow(graph, layoutFor(graph), {})
 
-    expect(flowGraph.edges.map((edge) => edge.markerEnd)).toEqual([
-      { type: MarkerType.ArrowClosed },
-      { type: MarkerType.ArrowClosed },
-      { type: MarkerType.ArrowClosed },
+    expect(flowGraph.edges.map((edge) => edge.type)).toEqual([
+      'smoothstep',
+      'smoothstep',
+      'smoothstep',
     ])
+    expect(flowGraph.edges.map((edge) => edge.sourceHandle)).toEqual([
+      'source-bottom',
+      'source-right',
+      'source-top',
+    ])
+    expect(flowGraph.edges.map((edge) => edge.targetHandle)).toEqual([
+      'target-bottom',
+      'target-left',
+      'target-top',
+    ])
+    expect(flowGraph.edges.map((edge) => edge.style)).toEqual([
+      { stroke: EDGE_DIRECTION_COLOURS.left },
+      { stroke: EDGE_DIRECTION_COLOURS.right },
+      { stroke: EDGE_DIRECTION_COLOURS.right },
+    ])
+    expect(flowGraph.edges.map((edge) => edge.markerEnd)).toEqual([
+      {
+        type: MarkerType.ArrowClosed,
+        color: EDGE_DIRECTION_COLOURS.left,
+        width: GRAPH_ARROWHEAD_SIZE,
+        height: GRAPH_ARROWHEAD_SIZE,
+        markerUnits: 'userSpaceOnUse',
+      },
+      {
+        type: MarkerType.ArrowClosed,
+        color: EDGE_DIRECTION_COLOURS.right,
+        width: GRAPH_ARROWHEAD_SIZE,
+        height: GRAPH_ARROWHEAD_SIZE,
+        markerUnits: 'userSpaceOnUse',
+      },
+      {
+        type: MarkerType.ArrowClosed,
+        color: EDGE_DIRECTION_COLOURS.right,
+        width: GRAPH_ARROWHEAD_SIZE,
+        height: GRAPH_ARROWHEAD_SIZE,
+        markerUnits: 'userSpaceOnUse',
+      },
+    ])
+  })
+
+  it('chooses top and bottom handles for vertical edges', () => {
+    const graph: VisibleGraph = {
+      nodes: [
+        {
+          id: 'source',
+          label: 'Source',
+          kind: 'leaf',
+          parentId: null,
+        },
+        {
+          id: 'target',
+          label: 'Target',
+          kind: 'leaf',
+          parentId: null,
+        },
+      ],
+      edges: [
+        {
+          id: 'source->target',
+          source: 'source',
+          target: 'target',
+          underlyingEdgeIds: ['source-to-target'],
+        },
+      ],
+    }
+    const flowGraph = convertToReactFlow(
+      graph,
+      {
+        nodePositions: {
+          source: { x: 0, y: 200 },
+          target: { x: 0, y: 0 },
+        },
+      },
+      {},
+    )
+
+    expect(flowGraph.edges[0]).toMatchObject({
+      sourceHandle: 'source-top',
+      targetHandle: 'target-bottom',
+      style: { stroke: EDGE_DIRECTION_COLOURS.top },
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        color: EDGE_DIRECTION_COLOURS.top,
+        width: GRAPH_ARROWHEAD_SIZE,
+        height: GRAPH_ARROWHEAD_SIZE,
+        markerUnits: 'userSpaceOnUse',
+      },
+    })
   })
 
   it('fails clearly when a visible node has no layout position', () => {

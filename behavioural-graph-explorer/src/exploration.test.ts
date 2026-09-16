@@ -558,6 +558,11 @@ describe('exploration state', () => {
       selectedEdgeId: 'execution->preparation',
       projectionRevision: 0,
     })
+    expect(selectEdge(edgeSelected, graph, 'execution->preparation')).toMatchObject({
+      selectedNodeId: null,
+      selectedEdgeId: null,
+      projectionRevision: 0,
+    })
     expect(clearSelection(edgeSelected)).toMatchObject({
       selectedNodeId: null,
       selectedEdgeId: null,

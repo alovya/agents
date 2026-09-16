@@ -47,6 +47,14 @@ export function selectEdge(
     return state
   }
 
+  if (state.selectedEdgeId === edgeId) {
+    return {
+      ...state,
+      selectedNodeId: null,
+      selectedEdgeId: null,
+    }
+  }
+
   return {
     ...state,
     selectedNodeId: null,

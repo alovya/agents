@@ -125,6 +125,32 @@ h1 {
   font-size: 0.76rem;
 }
 
+.edge-direction-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  color: #68758a;
+  font-size: 0.7rem;
+}
+
+.edge-direction-legend__label {
+  font-weight: 700;
+}
+
+.edge-direction-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.edge-direction-legend__swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
 .exploration-toolbar__actions {
   display: flex;
   flex-wrap: wrap;
@@ -279,6 +305,10 @@ h1 {
 
 .react-flow__node.selected .graph-node {
   box-shadow: 0 0 0 3px rgb(99 91 206 / 25%), 0 8px 18px rgb(44 62 96 / 12%);
+}
+
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke-width: 5px;
 }
 
 @media (max-width: 720px) {

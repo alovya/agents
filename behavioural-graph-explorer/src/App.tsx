@@ -30,6 +30,7 @@ import {
 } from './exploration'
 import {
   convertToReactFlow,
+  EDGE_DIRECTION_COLOURS,
   type GraphFlowNodeData,
 } from './react-flow-adapter'
 import {
@@ -47,6 +48,20 @@ const graphNodeTypes = {
   graph: GraphNodeCard,
 }
 
+const NODE_HANDLE_POSITIONS = [
+  { side: 'top', position: Position.Top },
+  { side: 'right', position: Position.Right },
+  { side: 'bottom', position: Position.Bottom },
+  { side: 'left', position: Position.Left },
+] as const
+
+const EDGE_DIRECTION_LEGEND = [
+  { label: 'Right', colour: EDGE_DIRECTION_COLOURS.right },
+  { label: 'Left', colour: EDGE_DIRECTION_COLOURS.left },
+  { label: 'Down', colour: EDGE_DIRECTION_COLOURS.bottom },
+  { label: 'Up', colour: EDGE_DIRECTION_COLOURS.top },
+] as const
+
 function App() {
   const [activeGraph, setActiveGraph] = useState<ActiveGraph>(() =>
     activateGraphDocument(SAMPLE_GRAPH_DOCUMENT),
@@ -55,6 +70,9 @@ function App() {
     JSON.stringify(SAMPLE_GRAPH_DOCUMENT, null, 2),
   )
   const [importError, setImportError] = useState<string | null>(null)
+  const [boldedEdgeIds, setBoldedEdgeIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  )
   const visibleGraph = useMemo(
     () =>
       projectVisibleGraph(
@@ -86,6 +104,7 @@ function App() {
     try {
       const document = parseGraphDocumentText(source)
       setActiveGraph(activateGraphDocument(document))
+      setBoldedEdgeIds(new Set())
       setLaidOutGraph(null)
       setImportError(null)
     } catch (error) {
@@ -177,6 +196,17 @@ function App() {
   )
   const handleSelectEdge = useCallback(
     (edgeId: string) => {
+      setBoldedEdgeIds((edgeIds) => {
+        const nextEdgeIds = new Set(edgeIds)
+
+        if (nextEdgeIds.has(edgeId)) {
+          nextEdgeIds.delete(edgeId)
+        } else {
+          nextEdgeIds.add(edgeId)
+        }
+
+        return nextEdgeIds
+      })
       setActiveGraph((graph) =>
         applyExplorationTransition(
           graph,
@@ -186,6 +216,19 @@ function App() {
     },
     [visibleGraph],
   )
+  const handleClearBoldedEdges = useCallback(() => {
+    const visibleEdgeIds = new Set(
+      visibleGraph.edges.map((edge) => edge.id),
+    )
+
+    setBoldedEdgeIds((edgeIds) => {
+      const remainingEdgeIds = new Set(
+        [...edgeIds].filter((edgeId) => !visibleEdgeIds.has(edgeId)),
+      )
+
+      return remainingEdgeIds.size === edgeIds.size ? edgeIds : remainingEdgeIds
+    })
+  }, [visibleGraph])
   const handleClearSelection = useCallback(() => {
     setActiveGraph((graph) =>
       applyExplorationTransition(graph, clearSelection(graph.exploration)),
@@ -233,12 +276,12 @@ function App() {
       })),
       edges: convertedGraph.edges.map((edge) => ({
         ...edge,
-        selected: edge.id === explorationState.selectedEdgeId,
+        selected: boldedEdgeIds.has(edge.id),
       })),
     }
   }, [
-    explorationState.selectedEdgeId,
     explorationState.selectedNodeId,
+    boldedEdgeIds,
     graphActions,
     laidOutGraph,
     visibleGraph,
@@ -277,6 +320,18 @@ function App() {
             {visibleCompositeCount === 1 ? '' : 's'} · {expandableDescendantCount}{' '}
             available below this scope
           </span>
+          <div className="edge-direction-legend" aria-label="Edge direction legend">
+            <span className="edge-direction-legend__label">Edge direction</span>
+            {EDGE_DIRECTION_LEGEND.map(({ label, colour }) => (
+              <span className="edge-direction-legend__item" key={label}>
+                <span
+                  className="edge-direction-legend__swatch"
+                  style={{ backgroundColor: colour }}
+                />
+                {label}
+              </span>
+            ))}
+          </div>
         </div>
         <div className="exploration-toolbar__actions">
           <button
@@ -285,6 +340,15 @@ function App() {
             disabled={activeGraph.viewHistory.length === 0}
           >
             Undo last view change
+          </button>
+          <button
+            type="button"
+            onClick={handleClearBoldedEdges}
+            disabled={
+              !visibleGraph.edges.some((edge) => boldedEdgeIds.has(edge.id))
+            }
+          >
+            Clear bold arrows
           </button>
           <button
             type="button"
@@ -343,7 +407,14 @@ function GraphNodeCard({ data }: NodeProps<Node<GraphFlowNodeData>>) {
 
   return (
     <div className={`graph-node graph-node--${data.kind}`}>
-      <Handle type="target" position={Position.Left} />
+      {NODE_HANDLE_POSITIONS.map(({ side, position }) => (
+        <Handle
+          key={`target-${side}`}
+          id={`target-${side}`}
+          type="target"
+          position={position}
+        />
+      ))}
       <div className="graph-node__heading">
         <span className="graph-node__kind">
           {isComposite ? 'Composite scope' : 'Leaf behaviour'}
@@ -377,7 +448,14 @@ function GraphNodeCard({ data }: NodeProps<Node<GraphFlowNodeData>>) {
           )}
         </div>
       )}
-      <Handle type="source" position={Position.Right} />
+      {NODE_HANDLE_POSITIONS.map(({ side, position }) => (
+        <Handle
+          key={`source-${side}`}
+          id={`source-${side}`}
+          type="source"
+          position={position}
+        />
+      ))}
     </div>
   )
 }
