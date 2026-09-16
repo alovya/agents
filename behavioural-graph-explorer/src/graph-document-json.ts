@@ -41,18 +41,21 @@ export function parseGraphDocumentText(source: string): GraphDocument {
 
 export function validateGraphDocument(value: unknown): GraphDocument {
   const document = validateObjectShape(value, '', DOCUMENT_FIELDS, [])
-  validateNonEmptyString(document.rootId, 'rootId')
+  const rootId = validateNonEmptyString(document.rootId, 'rootId')
   const nodes = validateArray(document.nodes, 'nodes')
   const edges = validateArray(document.edges, 'edges')
-  const nodeIds = nodes.map((node, index) =>
-    validateNode(node, `nodes[${index}]`).id,
+  const validatedNodes = nodes.map((node, index) =>
+    validateNode(node, `nodes[${index}]`),
   )
-  const edgeIds = edges.map((edge, index) =>
-    validateEdge(edge, `edges[${index}]`).id,
+  const validatedEdges = edges.map((edge, index) =>
+    validateEdge(edge, `edges[${index}]`),
   )
+  const nodeIds = validatedNodes.map((node) => node.id)
+  const edgeIds = validatedEdges.map((edge) => edge.id)
 
   assertUniqueIds(nodeIds, 'nodes')
   assertUniqueIds(edgeIds, 'edges')
+  validateGraphSemantics(rootId, validatedNodes, validatedEdges)
 
   return document as GraphDocument
 }
@@ -94,6 +97,164 @@ function validateEdge(value: unknown, path: string): GraphEdge {
   }
 
   return edge as GraphEdge
+}
+
+function validateGraphSemantics(
+  rootId: string,
+  nodes: readonly GraphNode[],
+  edges: readonly GraphEdge[],
+): void {
+  const nodesById = new Map(nodes.map((node) => [node.id, node]))
+
+  validateRootNode(rootId, nodesById)
+  validateContainmentParents(rootId, nodes, nodesById)
+  validateContainmentReachability(rootId, nodes, nodesById)
+  validateChildCounts(nodes)
+  validateEdgeEndpoints(edges, nodesById)
+}
+
+function validateRootNode(
+  rootId: string,
+  nodesById: ReadonlyMap<string, GraphNode>,
+): void {
+  const root = nodesById.get(rootId)
+
+  if (!root) {
+    fail('rootId', `must name "${rootId}" as an existing node`)
+  }
+
+  if (root.kind !== 'composite') {
+    fail('root', `node "${root.id}" must be composite`)
+  }
+
+  if (root.parentId !== null) {
+    fail('root', `node "${root.id}" parentId must be null`)
+  }
+}
+
+function validateContainmentParents(
+  rootId: string,
+  nodes: readonly GraphNode[],
+  nodesById: ReadonlyMap<string, GraphNode>,
+): void {
+  for (const node of nodes) {
+    if (node.id === rootId) {
+      continue
+    }
+
+    if (node.parentId === null) {
+      fail(
+        'nodes',
+        `node "${node.id}" parentId must be non-null for a non-root node; it is not reachable from root "${rootId}"`,
+      )
+    }
+
+    const parent = nodesById.get(node.parentId)
+
+    if (!parent) {
+      fail(
+        'nodes',
+        `node "${node.id}" parentId "${node.parentId}" must name an existing composite node`,
+      )
+    }
+
+    if (parent.kind !== 'composite') {
+      fail(
+        'nodes',
+        `node "${node.id}" parentId "${parent.id}" must name an existing composite node; parent "${parent.id}" is a leaf and cannot have children`,
+      )
+    }
+  }
+}
+
+function validateContainmentReachability(
+  rootId: string,
+  nodes: readonly GraphNode[],
+  nodesById: ReadonlyMap<string, GraphNode>,
+): void {
+  for (const node of nodes) {
+    const visitedIds = new Set<string>()
+    let currentId = node.id
+
+    while (currentId !== rootId) {
+      if (visitedIds.has(currentId)) {
+        fail('nodes', `node "${currentId}" is part of a containment cycle`)
+      }
+
+      visitedIds.add(currentId)
+      const currentNode = nodesById.get(currentId)
+
+      if (!currentNode || currentNode.parentId === null) {
+        fail(
+          'nodes',
+          `node "${node.id}" is not reachable from root "${rootId}"`,
+        )
+      }
+
+      currentId = currentNode.parentId
+    }
+  }
+}
+
+function validateChildCounts(nodes: readonly GraphNode[]): void {
+  const childCounts = new Map<string, number>()
+
+  for (const node of nodes) {
+    if (node.parentId !== null) {
+      childCounts.set(node.parentId, (childCounts.get(node.parentId) ?? 0) + 1)
+    }
+  }
+
+  for (const node of nodes) {
+    const childCount = childCounts.get(node.id) ?? 0
+
+    if (node.kind === 'composite' && childCount < 2) {
+      fail(
+        'nodes',
+        `composite node "${node.id}" must have at least two direct children (observed ${childCount})`,
+      )
+    }
+
+    if (node.kind === 'leaf' && childCount > 0) {
+      fail(
+        'nodes',
+        `leaf node "${node.id}" must have no direct children (observed ${childCount})`,
+      )
+    }
+  }
+}
+
+function validateEdgeEndpoints(
+  edges: readonly GraphEdge[],
+  nodesById: ReadonlyMap<string, GraphNode>,
+): void {
+  for (const edge of edges) {
+    validateEdgeEndpoint(edge, 'from', nodesById)
+    validateEdgeEndpoint(edge, 'to', nodesById)
+  }
+}
+
+function validateEdgeEndpoint(
+  edge: GraphEdge,
+  endpointField: 'from' | 'to',
+  nodesById: ReadonlyMap<string, GraphNode>,
+): void {
+  const endpointId = edge[endpointField]
+  const endpoint = nodesById.get(endpointId)
+
+  if (!endpoint) {
+    fail(
+      'edges',
+      `edge "${edge.id}" ${endpointField} endpoint "${endpointId}" is unknown`,
+    )
+  }
+
+  if (endpoint.kind !== 'leaf') {
+    fail(
+      'edges',
+      `edge "${edge.id}" ${endpointField} endpoint "${endpointId}" must name a leaf node`,
+    )
+  }
 }
 
 function validateObjectShape(

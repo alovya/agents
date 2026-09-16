@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
+import { projectVisibleGraph } from './graph'
 import type { GraphDocument } from './graph'
+import { createInitialExplorationState, expandAllComposites } from './exploration'
 import {
   GraphDocumentError,
   parseGraphDocumentText,
   validateGraphDocument,
 } from './graph-document-json'
+import { SAMPLE_GRAPH_DOCUMENT, SAMPLE_NODE_IDS } from './sample-graph'
 
 const validDocument: GraphDocument = {
   rootId: 'root',
@@ -300,6 +303,88 @@ const structuralFailures: StructuralFailure[] = [
   },
 ]
 
+type SemanticFailure = {
+  name: string
+  makeValue: () => GraphDocument
+  reason: RegExp
+}
+
+const semanticFailures: SemanticFailure[] = [
+  {
+    name: 'unknown root',
+    makeValue: () => withDocument((document) => setField(document, 'rootId', 'missing-root')),
+    reason: /rootId.*missing-root.*existing node/i,
+  },
+  {
+    name: 'leaf root',
+    makeValue: () => withDocument((document) => setField(document.nodes[0], 'kind', 'leaf')),
+    reason: /root.*composite/i,
+  },
+  {
+    name: 'root with a parent',
+    makeValue: () => withDocument((document) => setField(document.nodes[0], 'parentId', 'branch-a')),
+    reason: /root.*parentId.*null/i,
+  },
+  {
+    name: 'non-root without a parent',
+    makeValue: () => withDocument((document) => setField(document.nodes[3], 'parentId', null)),
+    reason: /a-1.*parentId/i,
+  },
+  {
+    name: 'unknown parent',
+    makeValue: () => withDocument((document) => setField(document.nodes[3], 'parentId', 'missing-parent')),
+    reason: /a-1.*missing-parent/i,
+  },
+  {
+    name: 'leaf parent',
+    makeValue: () => withDocument((document) => setField(document.nodes[3], 'parentId', 'a-2')),
+    reason: /a-1.*a-2.*composite/i,
+  },
+  {
+    name: 'containment cycle',
+    makeValue: () =>
+      withDocument((document) => {
+        setField(document.nodes[1], 'parentId', 'branch-b')
+        setField(document.nodes[2], 'parentId', 'branch-a')
+      }),
+    reason: /containment cycle.*branch-a|branch-a.*containment cycle/i,
+  },
+  {
+    name: 'orphaned subtree',
+    makeValue: () => withDocument((document) => setField(document.nodes[1], 'parentId', null)),
+    reason: /not reachable.*root/i,
+  },
+  {
+    name: 'composite with zero children',
+    makeValue: () =>
+      withDocument((document) => {
+        setField(document.nodes[3], 'parentId', 'branch-b')
+        setField(document.nodes[4], 'parentId', 'branch-b')
+      }),
+    reason: /branch-a.*at least two/i,
+  },
+  {
+    name: 'composite with one child',
+    makeValue: () => withDocument((document) => setField(document.nodes[4], 'parentId', 'branch-b')),
+    reason: /branch-a.*at least two/i,
+  },
+  {
+    name: 'leaf with a child',
+    makeValue: () => withDocument((document) => setField(document.nodes[4], 'parentId', 'a-1')),
+    reason: /a-1.*leaf.*children/i,
+  },
+  {
+    name: 'unknown edge source',
+    makeValue: () => withDocument((document) => setField(document.edges[0], 'from', 'missing-source')),
+    reason: /a-forward.*from.*missing-source/i,
+  },
+  {
+    name: 'composite edge target',
+    makeValue: () => withDocument((document) => setField(document.edges[0], 'to', 'branch-a')),
+    reason: /a-forward.*to.*branch-a.*leaf/i,
+  },
+]
+
 function withDocument(mutate: (document: GraphDocument) => void): GraphDocument {
   const document = structuredClone(validDocument)
   mutate(document)
@@ -350,14 +435,18 @@ describe('validateGraphDocument', () => {
     expect(error.message).toMatch(reason)
   })
 
-  it('accepts every valid node kind', () => {
-    for (const kind of ['leaf', 'composite'] as const) {
-      const document = withDocument((value) =>
-        setField(value.nodes[3], 'kind', kind),
-      )
+  it.each(semanticFailures)('$name', ({ makeValue, reason }) => {
+    const error = captureGraphDocumentError(() =>
+      validateGraphDocument(makeValue()),
+    )
 
-      expect(validateGraphDocument(document)).toBe(document)
-    }
+    expect(error.code).toBe('invalid-document')
+    expect(error.message).toMatch(/^Invalid graph document:/)
+    expect(error.message).toMatch(reason)
+  })
+
+  it('accepts a coherent document containing leaf and composite nodes', () => {
+    expect(validateGraphDocument(validDocument)).toBe(validDocument)
   })
 
   it('accepts zero edges and absent optional fields', () => {
@@ -366,25 +455,22 @@ describe('validateGraphDocument', () => {
     expect(validateGraphDocument(document)).toBe(document)
   })
 
-  it('accepts zero nodes at the shape boundary', () => {
+  it('rejects zero nodes because rootId cannot name an existing node', () => {
     const document = withDocument((value) => setField(value, 'nodes', []))
+    const error = captureGraphDocumentError(() => validateGraphDocument(document))
 
-    expect(validateGraphDocument(document)).toBe(document)
+    expect(error.message).toMatch(/rootId.*existing node/i)
   })
 
-  it('accepts non-empty strings without trimming or normalising them', () => {
+  it('accepts non-empty labels without trimming or normalising them', () => {
     const document = withDocument((value) => {
-      setField(value, 'rootId', ' ')
       setField(value.nodes[0], 'label', '  Root  ')
-      setField(value.nodes[1], 'parentId', ' ')
       setField(value.edges[0], 'label', '  Continue  ')
     })
 
     const accepted = validateGraphDocument(document)
 
-    expect(accepted.rootId).toBe(' ')
     expect(accepted.nodes[0].label).toBe('  Root  ')
-    expect(accepted.nodes[1].parentId).toBe(' ')
     expect(accepted.edges[0].label).toBe('  Continue  ')
   })
 
@@ -430,6 +516,69 @@ describe('validateGraphDocument', () => {
     const parsed = parseGraphDocumentText(JSON.stringify(validDocument))
 
     expect(parsed).toEqual(validDocument)
+  })
+
+  it('round-trips the sample and preserves projection semantics', () => {
+    const accepted = parseGraphDocumentText(JSON.stringify(SAMPLE_GRAPH_DOCUMENT))
+
+    expect(accepted).toEqual(SAMPLE_GRAPH_DOCUMENT)
+
+    const initialState = createInitialExplorationState(accepted)
+    const rootGraph = projectVisibleGraph(
+      accepted,
+      initialState.currentScopeId,
+      initialState.expandedNodeIds,
+    )
+
+    expect(rootGraph.nodes.map((node) => node.id)).toEqual([
+      SAMPLE_NODE_IDS.preparation,
+      SAMPLE_NODE_IDS.execution,
+      SAMPLE_NODE_IDS.report,
+    ])
+    expect(rootGraph.edges).toEqual([
+      {
+        id: 'execution->preparation',
+        source: SAMPLE_NODE_IDS.execution,
+        target: SAMPLE_NODE_IDS.preparation,
+        underlyingEdgeIds: ['run-to-prepare'],
+      },
+      {
+        id: 'execution->report',
+        source: SAMPLE_NODE_IDS.execution,
+        target: SAMPLE_NODE_IDS.report,
+        underlyingEdgeIds: ['record-to-report'],
+      },
+      {
+        id: 'preparation->execution',
+        source: SAMPLE_NODE_IDS.preparation,
+        target: SAMPLE_NODE_IDS.execution,
+        underlyingEdgeIds: ['prepare-to-run'],
+      },
+    ])
+
+    const fullyExpandedState = expandAllComposites(accepted, initialState)
+    const fullyExpandedGraph = projectVisibleGraph(
+      accepted,
+      fullyExpandedState.currentScopeId,
+      fullyExpandedState.expandedNodeIds,
+    )
+
+    expect(fullyExpandedGraph.edges).toEqual(
+      expect.arrayContaining([
+        {
+          id: 'record-result->run-task',
+          source: SAMPLE_NODE_IDS.recordResult,
+          target: SAMPLE_NODE_IDS.runTask,
+          underlyingEdgeIds: ['record-to-run'],
+        },
+        {
+          id: 'run-task->record-result',
+          source: SAMPLE_NODE_IDS.runTask,
+          target: SAMPLE_NODE_IDS.recordResult,
+          underlyingEdgeIds: ['run-to-record'],
+        },
+      ]),
+    )
   })
 
   it('reports malformed JSON with the stable syntax error code and prefix', () => {
