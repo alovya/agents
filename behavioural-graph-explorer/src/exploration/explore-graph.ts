@@ -1,4 +1,4 @@
-import type { GraphDocument, VisibleGraph } from '../graph/graph'
+import type { GraphDocument, VisibleGraph } from '../graph/graph-document'
 
 export type ExplorationState = {
   currentScopeId: string

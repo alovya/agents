@@ -5,8 +5,9 @@ import {
   type ActiveGraph,
   undoLastViewChange,
 } from './active-graph'
-import { projectVisibleGraph, type GraphDocument } from '../graph/graph'
-import { clickIntoComposite, expandComposite, selectNode } from './exploration'
+import { projectVisibleGraph } from '../graph/project-visible-graph'
+import type { GraphDocument } from '../graph/graph-document'
+import { clickIntoComposite, expandComposite, selectNode } from './explore-graph'
 import {
   SAMPLE_GRAPH_DOCUMENT,
   SAMPLE_NODE_IDS,

@@ -3,7 +3,7 @@ import type {
   GraphEdge,
   GraphMetadata,
   GraphNode,
-} from './graph'
+} from './graph-document'
 
 const DOCUMENT_FIELDS = ['rootId', 'nodes', 'edges'] as const
 const NODE_REQUIRED_FIELDS = ['id', 'label', 'kind', 'parentId'] as const

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Background, Controls, ReactFlow } from '@xyflow/react'
 import type { Node } from '@xyflow/react'
 import { DagreRouteEdge } from '../rendering/dagre-edge'
-import { projectVisibleGraph } from '../graph/graph'
+import { projectVisibleGraph } from '../graph/project-visible-graph'
 import {
   activateGraphDocument,
   applyExplorationTransition,
@@ -18,7 +18,7 @@ import {
   expandVisibleComposites,
   selectEdge,
   selectNode,
-} from '../exploration/exploration'
+} from '../exploration/explore-graph'
 import { convertToReactFlow, type GraphFlowNodeData } from '../rendering/react-flow-adapter'
 import {
   canRenderLayoutForGraph,

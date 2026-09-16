@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { projectVisibleGraph } from '../graph/graph'
+import { projectVisibleGraph } from '../graph/project-visible-graph'
 import {
   clearSelection,
   clickIntoComposite,
@@ -9,7 +9,7 @@ import {
   expandVisibleComposites,
   selectEdge,
   selectNode,
-} from './exploration'
+} from './explore-graph'
 import {
   SAMPLE_GRAPH_DOCUMENT,
   SAMPLE_NODE_IDS,

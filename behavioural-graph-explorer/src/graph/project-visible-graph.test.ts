@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { GraphDocument } from './graph'
-import { projectVisibleGraph } from './graph'
+import type { GraphDocument } from './graph-document'
+import { projectVisibleGraph } from './project-visible-graph'
 
 type ExpectedEdge = {
   id: string

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { MarkerType } from '@xyflow/react'
-import { projectVisibleGraph, type VisibleGraph } from '../graph/graph'
+import { projectVisibleGraph } from '../graph/project-visible-graph'
+import type { VisibleGraph } from '../graph/graph-document'
 import {
   convertToReactFlow,
   GRAPH_ARROWHEAD_SIZE,

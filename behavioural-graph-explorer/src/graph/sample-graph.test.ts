@@ -3,7 +3,7 @@ import {
   SAMPLE_GRAPH_DOCUMENT,
   SAMPLE_NODE_IDS,
 } from './sample-graph'
-import { projectVisibleGraph } from './graph'
+import { projectVisibleGraph } from './project-visible-graph'
 
 describe('SAMPLE_GRAPH_DOCUMENT', () => {
   it('has the collapsed root projection in direct-child order', () => {

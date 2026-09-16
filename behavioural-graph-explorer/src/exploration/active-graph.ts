@@ -1,8 +1,8 @@
-import type { GraphDocument } from '../graph/graph'
+import type { GraphDocument } from '../graph/graph-document'
 import {
   createInitialExplorationState,
   type ExplorationState,
-} from './exploration'
+} from './explore-graph'
 
 export type ViewSnapshot = {
   currentScopeId: string

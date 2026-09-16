@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { projectVisibleGraph, type GraphDocument, type VisibleGraph } from '../graph/graph'
-import { createInitialExplorationState } from '../exploration/exploration'
+import { projectVisibleGraph } from '../graph/project-visible-graph'
+import type { GraphDocument, VisibleGraph } from '../graph/graph-document'
+import { createInitialExplorationState } from '../exploration/explore-graph'
 import type { LayoutEngine, LayoutResult } from '../layout/dagre-layout'
 import {
   canRenderLayoutForGraph,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { GraphDocument } from '../graph/graph'
+import type { GraphDocument } from '../graph/graph-document'
 import { SAMPLE_GRAPH_DOCUMENT } from '../graph/sample-graph'
 import {
   createInitialGraphView,

@@ -1,6 +1,6 @@
 import { MarkerType } from '@xyflow/react'
 import type { Edge, Node } from '@xyflow/react'
-import type { GraphNode, NodeKind, VisibleGraph } from '../graph/graph'
+import type { GraphNode, NodeKind, VisibleGraph } from '../graph/graph-document'
 import type { LayoutResult } from '../layout/dagre-layout'
 import type { DagreRouteEdgeData } from './dagre-edge'
 

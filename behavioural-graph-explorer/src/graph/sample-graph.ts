@@ -1,4 +1,4 @@
-import type { GraphDocument } from './graph'
+import type { GraphDocument } from './graph-document'
 
 export const SAMPLE_NODE_IDS = {
   root: 'root',

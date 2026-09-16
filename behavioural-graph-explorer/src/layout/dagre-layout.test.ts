@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { projectVisibleGraph } from '../graph/graph'
+import { projectVisibleGraph } from '../graph/project-visible-graph'
 import { DagreLayoutEngine } from './dagre-layout'
-import type { VisibleGraph } from '../graph/graph'
+import type { VisibleGraph } from '../graph/graph-document'
 import { SAMPLE_GRAPH_DOCUMENT } from '../graph/sample-graph'
 
 const initialGraph = projectVisibleGraph(

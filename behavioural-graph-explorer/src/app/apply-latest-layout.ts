@@ -1,4 +1,4 @@
-import type { VisibleGraph } from '../graph/graph'
+import type { VisibleGraph } from '../graph/graph-document'
 import type { LayoutEngine, LayoutResult } from '../layout/dagre-layout'
 
 export type ApplyLatestLayout = (graph: VisibleGraph) => Promise<void>

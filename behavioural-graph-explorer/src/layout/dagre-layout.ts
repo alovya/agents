@@ -1,5 +1,5 @@
 import dagre from 'dagre'
-import type { VisibleGraph } from '../graph/graph'
+import type { VisibleGraph } from '../graph/graph-document'
 
 export const GRAPH_NODE_WIDTH = 220
 export const GRAPH_NODE_HEIGHT = 96
