@@ -103,16 +103,16 @@ describe('exploration state', () => {
         underlyingEdgeIds: ['record-to-report'],
       },
       {
-        id: 'preparation-checks->prepare-input',
+        id: 'preparation-checks->execution',
         source: SAMPLE_NODE_IDS.preparationChecks,
-        target: SAMPLE_NODE_IDS.preparationInput,
-        underlyingEdgeIds: ['validate-preparation'],
-      },
-      {
-        id: 'prepare-input->execution',
-        source: SAMPLE_NODE_IDS.preparationInput,
         target: SAMPLE_NODE_IDS.execution,
         underlyingEdgeIds: ['prepare-to-run'],
+      },
+      {
+        id: 'prepare-input->preparation-checks',
+        source: SAMPLE_NODE_IDS.preparationInput,
+        target: SAMPLE_NODE_IDS.preparationChecks,
+        underlyingEdgeIds: ['validate-preparation'],
       },
     ])
   })
@@ -144,16 +144,16 @@ describe('exploration state', () => {
     ])
     expect(project(expandedOnce).edges).toEqual([
       {
-        id: 'preparation-checks->prepare-input',
+        id: 'preparation-checks->run-task',
         source: SAMPLE_NODE_IDS.preparationChecks,
-        target: SAMPLE_NODE_IDS.preparationInput,
-        underlyingEdgeIds: ['validate-preparation'],
-      },
-      {
-        id: 'prepare-input->run-task',
-        source: SAMPLE_NODE_IDS.preparationInput,
         target: SAMPLE_NODE_IDS.runTask,
         underlyingEdgeIds: ['prepare-to-run'],
+      },
+      {
+        id: 'prepare-input->preparation-checks',
+        source: SAMPLE_NODE_IDS.preparationInput,
+        target: SAMPLE_NODE_IDS.preparationChecks,
+        underlyingEdgeIds: ['validate-preparation'],
       },
       {
         id: 'record-result->report',
@@ -229,10 +229,16 @@ describe('exploration state', () => {
     ])
     expect(project(expandedState).edges).toEqual([
       {
-        id: 'prepare-input->run-task',
-        source: SAMPLE_NODE_IDS.preparationInput,
+        id: 'normalise-input->run-task',
+        source: SAMPLE_NODE_IDS.normaliseInput,
         target: SAMPLE_NODE_IDS.runTask,
         underlyingEdgeIds: ['prepare-to-run'],
+      },
+      {
+        id: 'prepare-input->validate-input',
+        source: SAMPLE_NODE_IDS.preparationInput,
+        target: SAMPLE_NODE_IDS.validateInput,
+        underlyingEdgeIds: ['validate-preparation'],
       },
       {
         id: 'record-result->report',
@@ -259,10 +265,10 @@ describe('exploration state', () => {
         underlyingEdgeIds: ['run-to-record'],
       },
       {
-        id: 'validate-input->prepare-input',
+        id: 'validate-input->normalise-input',
         source: SAMPLE_NODE_IDS.validateInput,
-        target: SAMPLE_NODE_IDS.preparationInput,
-        underlyingEdgeIds: ['validate-preparation'],
+        target: SAMPLE_NODE_IDS.normaliseInput,
+        underlyingEdgeIds: ['validate-to-normalise'],
       },
     ])
 
@@ -311,10 +317,16 @@ describe('exploration state', () => {
     ])
     expect(project(expandedState).edges).toEqual([
       {
-        id: 'validate-input->prepare-input',
-        source: SAMPLE_NODE_IDS.validateInput,
-        target: SAMPLE_NODE_IDS.preparationInput,
+        id: 'prepare-input->validate-input',
+        source: SAMPLE_NODE_IDS.preparationInput,
+        target: SAMPLE_NODE_IDS.validateInput,
         underlyingEdgeIds: ['validate-preparation'],
+      },
+      {
+        id: 'validate-input->normalise-input',
+        source: SAMPLE_NODE_IDS.validateInput,
+        target: SAMPLE_NODE_IDS.normaliseInput,
+        underlyingEdgeIds: ['validate-to-normalise'],
       },
     ])
     expect(expandedState.projectionRevision).toBe(2)
@@ -356,9 +368,9 @@ describe('exploration state', () => {
     ])
     expect(project(enteredState).edges).toEqual([
       {
-        id: 'preparation-checks->prepare-input',
-        source: SAMPLE_NODE_IDS.preparationChecks,
-        target: SAMPLE_NODE_IDS.preparationInput,
+        id: 'prepare-input->preparation-checks',
+        source: SAMPLE_NODE_IDS.preparationInput,
+        target: SAMPLE_NODE_IDS.preparationChecks,
         underlyingEdgeIds: ['validate-preparation'],
       },
     ])
@@ -397,10 +409,16 @@ describe('exploration state', () => {
     ])
     expect(project(expandedState).edges).toEqual([
       {
-        id: 'validate-input->prepare-input',
-        source: SAMPLE_NODE_IDS.validateInput,
-        target: SAMPLE_NODE_IDS.preparationInput,
+        id: 'prepare-input->validate-input',
+        source: SAMPLE_NODE_IDS.preparationInput,
+        target: SAMPLE_NODE_IDS.validateInput,
         underlyingEdgeIds: ['validate-preparation'],
+      },
+      {
+        id: 'validate-input->normalise-input',
+        source: SAMPLE_NODE_IDS.validateInput,
+        target: SAMPLE_NODE_IDS.normaliseInput,
+        underlyingEdgeIds: ['validate-to-normalise'],
       },
     ])
 
@@ -496,16 +514,22 @@ describe('exploration state', () => {
         underlyingEdgeIds: ['record-to-report'],
       },
       {
-        id: 'prepare-input->execution',
-        source: SAMPLE_NODE_IDS.preparationInput,
+        id: 'normalise-input->execution',
+        source: SAMPLE_NODE_IDS.normaliseInput,
         target: SAMPLE_NODE_IDS.execution,
         underlyingEdgeIds: ['prepare-to-run'],
       },
       {
-        id: 'validate-input->prepare-input',
-        source: SAMPLE_NODE_IDS.validateInput,
-        target: SAMPLE_NODE_IDS.preparationInput,
+        id: 'prepare-input->validate-input',
+        source: SAMPLE_NODE_IDS.preparationInput,
+        target: SAMPLE_NODE_IDS.validateInput,
         underlyingEdgeIds: ['validate-preparation'],
+      },
+      {
+        id: 'validate-input->normalise-input',
+        source: SAMPLE_NODE_IDS.validateInput,
+        target: SAMPLE_NODE_IDS.normaliseInput,
+        underlyingEdgeIds: ['validate-to-normalise'],
       },
     ])
   })

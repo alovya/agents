@@ -18,61 +18,61 @@ export const SAMPLE_GRAPH_DOCUMENT: GraphDocument = {
   nodes: [
     {
       id: SAMPLE_NODE_IDS.root,
-      label: 'Behavioural workflow',
+      label: 'Behavioural Graph Explorer',
       kind: 'composite',
       parentId: null,
     },
     {
       id: SAMPLE_NODE_IDS.preparation,
-      label: 'Preparation',
+      label: 'Build visible graph',
       kind: 'composite',
       parentId: SAMPLE_NODE_IDS.root,
     },
     {
       id: SAMPLE_NODE_IDS.preparationInput,
-      label: 'Prepare input',
+      label: 'Receive complete graph',
       kind: 'leaf',
       parentId: SAMPLE_NODE_IDS.preparation,
     },
     {
       id: SAMPLE_NODE_IDS.preparationChecks,
-      label: 'Preparation checks',
+      label: 'Project visible graph',
       kind: 'composite',
       parentId: SAMPLE_NODE_IDS.preparation,
     },
     {
       id: SAMPLE_NODE_IDS.validateInput,
-      label: 'Validate input',
+      label: 'Resolve visible representatives',
       kind: 'leaf',
       parentId: SAMPLE_NODE_IDS.preparationChecks,
     },
     {
       id: SAMPLE_NODE_IDS.normaliseInput,
-      label: 'Normalise input',
+      label: 'Group summary edges',
       kind: 'leaf',
       parentId: SAMPLE_NODE_IDS.preparationChecks,
     },
     {
       id: SAMPLE_NODE_IDS.execution,
-      label: 'Execution',
+      label: 'Explore current view',
       kind: 'composite',
       parentId: SAMPLE_NODE_IDS.root,
     },
     {
       id: SAMPLE_NODE_IDS.runTask,
-      label: 'Run task',
+      label: 'Select node or edge',
       kind: 'leaf',
       parentId: SAMPLE_NODE_IDS.execution,
     },
     {
       id: SAMPLE_NODE_IDS.recordResult,
-      label: 'Record result',
+      label: 'Apply exploration action',
       kind: 'leaf',
       parentId: SAMPLE_NODE_IDS.execution,
     },
     {
       id: SAMPLE_NODE_IDS.report,
-      label: 'Report',
+      label: 'Render current view',
       kind: 'leaf',
       parentId: SAMPLE_NODE_IDS.root,
     },
@@ -80,7 +80,7 @@ export const SAMPLE_GRAPH_DOCUMENT: GraphDocument = {
   edges: [
     {
       id: 'prepare-to-run',
-      from: SAMPLE_NODE_IDS.preparationInput,
+      from: SAMPLE_NODE_IDS.normaliseInput,
       to: SAMPLE_NODE_IDS.runTask,
     },
     {
@@ -95,8 +95,13 @@ export const SAMPLE_GRAPH_DOCUMENT: GraphDocument = {
     },
     {
       id: 'validate-preparation',
+      from: SAMPLE_NODE_IDS.preparationInput,
+      to: SAMPLE_NODE_IDS.validateInput,
+    },
+    {
+      id: 'validate-to-normalise',
       from: SAMPLE_NODE_IDS.validateInput,
-      to: SAMPLE_NODE_IDS.preparationInput,
+      to: SAMPLE_NODE_IDS.normaliseInput,
     },
     {
       id: 'run-to-record',

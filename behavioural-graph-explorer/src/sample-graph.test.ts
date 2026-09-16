@@ -49,9 +49,9 @@ describe('SAMPLE_GRAPH_DOCUMENT', () => {
     ])
     expect(graph.edges).toEqual([
       {
-        id: 'preparation-checks->prepare-input',
-        source: SAMPLE_NODE_IDS.preparationChecks,
-        target: SAMPLE_NODE_IDS.preparationInput,
+        id: 'prepare-input->preparation-checks',
+        source: SAMPLE_NODE_IDS.preparationInput,
+        target: SAMPLE_NODE_IDS.preparationChecks,
         underlyingEdgeIds: ['validate-preparation'],
       },
     ])
@@ -78,10 +78,16 @@ describe('SAMPLE_GRAPH_DOCUMENT', () => {
     ])
     expect(graph.edges).toEqual([
       {
-        id: 'prepare-input->run-task',
-        source: SAMPLE_NODE_IDS.preparationInput,
+        id: 'normalise-input->run-task',
+        source: SAMPLE_NODE_IDS.normaliseInput,
         target: SAMPLE_NODE_IDS.runTask,
         underlyingEdgeIds: ['prepare-to-run'],
+      },
+      {
+        id: 'prepare-input->validate-input',
+        source: SAMPLE_NODE_IDS.preparationInput,
+        target: SAMPLE_NODE_IDS.validateInput,
+        underlyingEdgeIds: ['validate-preparation'],
       },
       {
         id: 'record-result->report',
@@ -108,10 +114,10 @@ describe('SAMPLE_GRAPH_DOCUMENT', () => {
         underlyingEdgeIds: ['run-to-record'],
       },
       {
-        id: 'validate-input->prepare-input',
+        id: 'validate-input->normalise-input',
         source: SAMPLE_NODE_IDS.validateInput,
-        target: SAMPLE_NODE_IDS.preparationInput,
-        underlyingEdgeIds: ['validate-preparation'],
+        target: SAMPLE_NODE_IDS.normaliseInput,
+        underlyingEdgeIds: ['validate-to-normalise'],
       },
     ])
 

@@ -176,9 +176,9 @@ function App() {
       <header className="app-header">
         <div>
           <p className="app-kicker">Behavioural Graph Explorer</p>
-          <h1>Sample workflow</h1>
+          <h1>How the explorer works</h1>
           <p className="app-description">
-            Explore the read-only workflow by opening scopes or expanding composites.
+            Follow the graph from its complete source through projection, exploration, and rendering.
           </p>
         </div>
         <div className="app-summary" aria-label="Current graph view">
