@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Background,
   Controls,
@@ -7,11 +7,20 @@ import {
   ReactFlow,
 } from '@xyflow/react'
 import type { Node, NodeProps } from '@xyflow/react'
-import { projectVisibleGraph } from './graph'
+import { projectVisibleGraph, type VisibleGraph } from './graph'
 import {
   DagreLayoutEngine,
   type LayoutResult,
 } from './dagre-layout'
+import {
+  clearSelection,
+  clickIntoComposite,
+  createInitialExplorationState,
+  expandComposite,
+  returnToEnclosingScope,
+  selectEdge,
+  selectNode,
+} from './exploration'
 import {
   convertToReactFlow,
   type GraphFlowNodeData,
@@ -26,19 +35,65 @@ const graphNodeTypes = {
 }
 
 function App() {
-  const visibleGraph = useMemo(
-    () => projectVisibleGraph(SAMPLE_GRAPH_DOCUMENT, SAMPLE_GRAPH_DOCUMENT.rootId, new Set()),
-    [],
+  const [explorationState, setExplorationState] = useState(() =>
+    createInitialExplorationState(SAMPLE_GRAPH_DOCUMENT),
   )
-  const [layout, setLayout] = useState<LayoutResult | null>(null)
+  const visibleGraph = useMemo(
+    () =>
+      projectVisibleGraph(
+        SAMPLE_GRAPH_DOCUMENT,
+        explorationState.currentScopeId,
+        explorationState.expandedNodeIds,
+      ),
+    [explorationState.currentScopeId, explorationState.expandedNodeIds],
+  )
+  const [laidOutGraph, setLaidOutGraph] = useState<{
+    graph: VisibleGraph
+    layout: LayoutResult
+  } | null>(null)
   const layoutRunnerRef = useRef<ApplyLatestLayout | null>(null)
 
   if (layoutRunnerRef.current === null) {
     layoutRunnerRef.current = createLatestLayoutRunner(
       new DagreLayoutEngine(),
-      (_graph, nextLayout) => setLayout(nextLayout),
+      (graph, layout) => setLaidOutGraph({ graph, layout }),
     )
   }
+
+  const handleClickInto = useCallback(
+    (nodeId: string) => {
+      setExplorationState((state) =>
+        clickIntoComposite(SAMPLE_GRAPH_DOCUMENT, visibleGraph, state, nodeId),
+      )
+    },
+    [visibleGraph],
+  )
+  const handleExpand = useCallback(
+    (nodeId: string) => {
+      setExplorationState((state) =>
+        expandComposite(SAMPLE_GRAPH_DOCUMENT, visibleGraph, state, nodeId),
+      )
+    },
+    [visibleGraph],
+  )
+  const handleSelectNode = useCallback(
+    (nodeId: string) => {
+      setExplorationState((state) => selectNode(state, visibleGraph, nodeId))
+    },
+    [visibleGraph],
+  )
+  const handleSelectEdge = useCallback(
+    (edgeId: string) => {
+      setExplorationState((state) => selectEdge(state, visibleGraph, edgeId))
+    },
+    [visibleGraph],
+  )
+  const handleClearSelection = useCallback(() => {
+    setExplorationState(clearSelection)
+  }, [])
+  const handleReturn = useCallback(() => {
+    setExplorationState(returnToEnclosingScope)
+  }, [])
 
   useEffect(() => {
     const layoutRunner = layoutRunnerRef.current
@@ -46,15 +101,44 @@ function App() {
     if (layoutRunner) {
       void layoutRunner(visibleGraph)
     }
-  }, [visibleGraph])
+  }, [explorationState.projectionRevision, visibleGraph])
 
-  const flowGraph = useMemo(
-    () =>
-      layout === null
-        ? null
-        : convertToReactFlow(visibleGraph, layout, {}),
-    [layout, visibleGraph],
+  const graphActions = useMemo(
+    () => ({ onClickInto: handleClickInto, onExpand: handleExpand }),
+    [handleClickInto, handleExpand],
   )
+  const flowGraph = useMemo(() => {
+    if (laidOutGraph === null || laidOutGraph.graph !== visibleGraph) {
+      return null
+    }
+
+    const convertedGraph = convertToReactFlow(
+      visibleGraph,
+      laidOutGraph.layout,
+      graphActions,
+    )
+
+    return {
+      nodes: convertedGraph.nodes.map((node) => ({
+        ...node,
+        selected: node.id === explorationState.selectedNodeId,
+      })),
+      edges: convertedGraph.edges.map((edge) => ({
+        ...edge,
+        selected: edge.id === explorationState.selectedEdgeId,
+      })),
+    }
+  }, [
+    explorationState.selectedEdgeId,
+    explorationState.selectedNodeId,
+    graphActions,
+    laidOutGraph,
+    visibleGraph,
+  ])
+  const currentScope = SAMPLE_GRAPH_DOCUMENT.nodes.find(
+    (node) => node.id === explorationState.currentScopeId,
+  )
+  const isAtRoot = explorationState.scopePath.length === 1
 
   return (
     <main className="app-shell">
@@ -63,13 +147,27 @@ function App() {
           <p className="app-kicker">Behavioural Graph Explorer</p>
           <h1>Sample workflow</h1>
           <p className="app-description">
-            A read-only view of the workflow&apos;s collapsed root projection.
+            Explore the read-only workflow by opening scopes or expanding composites.
           </p>
         </div>
         <div className="app-summary" aria-label="Current graph view">
           <span className="app-summary__label">Scope</span>
-          <strong>Behavioural workflow</strong>
-          <span className="app-summary__status">Collapsed root</span>
+          <strong>{currentScope?.label}</strong>
+          <span className="app-summary__status">
+            {isAtRoot && explorationState.expandedNodeIds.size === 0
+              ? 'Collapsed root'
+              : isAtRoot
+                ? 'Root scope'
+                : 'Enclosed scope'}
+          </span>
+          <button
+            type="button"
+            className="back-control"
+            onClick={handleReturn}
+            disabled={isAtRoot}
+          >
+            Back to enclosing scope
+          </button>
         </div>
       </header>
 
@@ -84,6 +182,9 @@ function App() {
             nodesDraggable={false}
             nodesConnectable={false}
             edgesReconnectable={false}
+            onNodeClick={(_, node) => handleSelectNode(node.id)}
+            onEdgeClick={(_, edge) => handleSelectEdge(edge.id)}
+            onPaneClick={handleClearSelection}
             fitView
             fitViewOptions={{ padding: 0.2 }}
             aria-label="Sample workflow graph"
@@ -110,6 +211,32 @@ function GraphNodeCard({ data }: NodeProps<Node<GraphFlowNodeData>>) {
       </div>
       <strong className="graph-node__label">{data.label}</strong>
       <span className="graph-node__id">{data.graphNodeId}</span>
+      {isComposite && (
+        <div className="graph-node__actions">
+          {data.canClickInto && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation()
+                data.onClickInto?.()
+              }}
+            >
+              Open scope
+            </button>
+          )}
+          {data.canExpand && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation()
+                data.onExpand?.()
+              }}
+            >
+              Expand
+            </button>
+          )}
+        </div>
+      )}
       <Handle type="source" position={Position.Right} />
     </div>
   )

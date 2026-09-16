@@ -59,6 +59,23 @@ h1 {
   font-weight: 650;
 }
 
+.back-control {
+  margin-top: 10px;
+  padding: 6px 9px;
+  border: 1px solid #c8d1e1;
+  border-radius: 7px;
+  color: #38435a;
+  background: #ffffff;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.back-control:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .graph-panel {
   position: relative;
   width: min(1180px, 100%);
@@ -81,9 +98,10 @@ h1 {
 }
 
 .graph-node {
+  position: relative;
   width: 220px;
   height: 96px;
-  padding: 14px 18px;
+  padding: 10px 14px;
   border: 2px solid;
   border-radius: 12px;
   background: #ffffff;
@@ -100,7 +118,7 @@ h1 {
 }
 
 .graph-node__heading {
-  margin-bottom: 6px;
+  margin-bottom: 3px;
 }
 
 .graph-node__kind {
@@ -134,10 +152,40 @@ h1 {
 }
 
 .graph-node__id {
-  margin-top: 4px;
+  margin-top: 2px;
   color: #7b8799;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 0.7rem;
+}
+
+.graph-node__actions {
+  position: absolute;
+  right: 12px;
+  bottom: 7px;
+  left: 12px;
+  display: flex;
+  gap: 5px;
+}
+
+.graph-node__actions button {
+  padding: 3px 6px;
+  border: 1px solid #c8d1e1;
+  border-radius: 5px;
+  color: #38435a;
+  background: #ffffff;
+  cursor: pointer;
+  font-size: 0.65rem;
+  font-weight: 650;
+}
+
+.graph-node__actions button:hover,
+.back-control:not(:disabled):hover {
+  border-color: #635bce;
+  color: #4f46a5;
+}
+
+.react-flow__node.selected .graph-node {
+  box-shadow: 0 0 0 3px rgb(99 91 206 / 25%), 0 8px 18px rgb(44 62 96 / 12%);
 }
 
 @media (max-width: 720px) {
