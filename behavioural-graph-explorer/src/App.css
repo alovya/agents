@@ -59,6 +59,11 @@ h1 {
   font-weight: 650;
 }
 
+.app-summary__path {
+  color: #7b8799;
+  font-size: 0.72rem;
+}
+
 .back-control {
   margin-top: 10px;
   padding: 6px 9px;
@@ -69,6 +74,63 @@ h1 {
   cursor: pointer;
   font-size: 0.78rem;
   font-weight: 650;
+}
+
+.exploration-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: min(1180px, 100%);
+  margin: 0 auto 14px;
+  padding: 12px 14px;
+  border: 1px solid #d8e0ed;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.exploration-toolbar__label,
+.exploration-toolbar__status {
+  display: block;
+}
+
+.exploration-toolbar__label {
+  color: #38435a;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.exploration-toolbar__status {
+  margin-top: 2px;
+  color: #68758a;
+  font-size: 0.76rem;
+}
+
+.exploration-toolbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.exploration-toolbar__actions button {
+  padding: 7px 10px;
+  border: 1px solid #c8d1e1;
+  border-radius: 7px;
+  color: #38435a;
+  background: #ffffff;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.exploration-toolbar__actions button:hover:not(:disabled) {
+  border-color: #635bce;
+  color: #4f46a5;
+}
+
+.exploration-toolbar__actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .back-control:disabled {

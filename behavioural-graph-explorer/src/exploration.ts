@@ -108,6 +108,34 @@ export function expandComposite(
   return acceptExpansionChange(state, expandedNodeIds)
 }
 
+export function expandVisibleComposites(
+  graph: VisibleGraph,
+  state: ExplorationState,
+): ExplorationState {
+  const visibleCompositeIds = graph.nodes
+    .filter((node) => node.kind === 'composite')
+    .map((node) => node.id)
+
+  return addExpansionIds(state, visibleCompositeIds)
+}
+
+export function expandAllComposites(
+  document: GraphDocument,
+  state: ExplorationState,
+): ExplorationState {
+  const nodesById = new Map(document.nodes.map((node) => [node.id, node]))
+  const compositeDescendantIds = document.nodes
+    .filter(
+      (node) =>
+        node.kind === 'composite' &&
+        node.id !== state.currentScopeId &&
+        isDescendantOfScope(node.id, state.currentScopeId, nodesById),
+    )
+    .map((node) => node.id)
+
+  return addExpansionIds(state, compositeDescendantIds)
+}
+
 function isVisibleComposite(
   document: GraphDocument,
   graph: VisibleGraph,
@@ -136,6 +164,23 @@ function acceptScopeChange(
   }
 }
 
+function addExpansionIds(
+  state: ExplorationState,
+  candidateIds: readonly string[],
+): ExplorationState {
+  const expandedNodeIds = new Set(state.expandedNodeIds)
+
+  for (const candidateId of candidateIds) {
+    expandedNodeIds.add(candidateId)
+  }
+
+  if (expandedNodeIds.size === state.expandedNodeIds.size) {
+    return state
+  }
+
+  return acceptExpansionChange(state, expandedNodeIds)
+}
+
 function acceptExpansionChange(
   state: ExplorationState,
   expandedNodeIds: ReadonlySet<string>,
@@ -147,4 +192,22 @@ function acceptExpansionChange(
     selectedEdgeId: null,
     projectionRevision: state.projectionRevision + 1,
   }
+}
+
+function isDescendantOfScope(
+  nodeId: string,
+  scopeId: string,
+  nodesById: ReadonlyMap<string, GraphDocument['nodes'][number]>,
+): boolean {
+  let parentId = nodesById.get(nodeId)?.parentId ?? null
+
+  while (parentId !== null) {
+    if (parentId === scopeId) {
+      return true
+    }
+
+    parentId = nodesById.get(parentId)?.parentId ?? null
+  }
+
+  return false
 }

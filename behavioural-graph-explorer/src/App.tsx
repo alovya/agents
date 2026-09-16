@@ -16,7 +16,9 @@ import {
   clearSelection,
   clickIntoComposite,
   createInitialExplorationState,
+  expandAllComposites,
   expandComposite,
+  expandVisibleComposites,
   returnToEnclosingScope,
   selectEdge,
   selectNode,
@@ -76,6 +78,14 @@ function App() {
     },
     [visibleGraph],
   )
+  const handleExpandVisible = useCallback(() => {
+    setExplorationState((state) => expandVisibleComposites(visibleGraph, state))
+  }, [visibleGraph])
+  const handleExpandAll = useCallback(() => {
+    setExplorationState((state) =>
+      expandAllComposites(SAMPLE_GRAPH_DOCUMENT, state),
+    )
+  }, [])
   const handleSelectNode = useCallback(
     (nodeId: string) => {
       setExplorationState((state) => selectNode(state, visibleGraph, nodeId))
@@ -138,7 +148,28 @@ function App() {
   const currentScope = SAMPLE_GRAPH_DOCUMENT.nodes.find(
     (node) => node.id === explorationState.currentScopeId,
   )
+  const selectedNode = visibleGraph.nodes.find(
+    (node) => node.id === explorationState.selectedNodeId,
+  )
+  const selectedEdge = visibleGraph.edges.find(
+    (edge) => edge.id === explorationState.selectedEdgeId,
+  )
+  const visibleCompositeCount = visibleGraph.nodes.filter(
+    (node) => node.kind === 'composite',
+  ).length
+  const stateAfterExpandAll = expandAllComposites(
+    SAMPLE_GRAPH_DOCUMENT,
+    explorationState,
+  )
+  const expandableDescendantCount =
+    stateAfterExpandAll.expandedNodeIds.size -
+    explorationState.expandedNodeIds.size
   const isAtRoot = explorationState.scopePath.length === 1
+  const scopePathLabels = explorationState.scopePath.map(
+    (scopeId) =>
+      SAMPLE_GRAPH_DOCUMENT.nodes.find((node) => node.id === scopeId)?.label ??
+      scopeId,
+  )
 
   return (
     <main className="app-shell">
@@ -160,6 +191,23 @@ function App() {
                 ? 'Root scope'
                 : 'Enclosed scope'}
           </span>
+          <span className="app-summary__path">
+            {scopePathLabels.join(' / ')}
+          </span>
+          <span className="app-summary__label">Selection</span>
+          <strong>
+            {selectedNode?.label ??
+              (selectedEdge
+                ? `${selectedEdge.source} → ${selectedEdge.target}`
+                : 'Nothing selected')}
+          </strong>
+          <span className="app-summary__path">
+            {selectedNode
+              ? `Node: ${selectedNode.id}`
+              : selectedEdge
+                ? `Edge: ${selectedEdge.id}`
+                : 'Click a node or edge to select it'}
+          </span>
           <button
             type="button"
             className="back-control"
@@ -170,6 +218,33 @@ function App() {
           </button>
         </div>
       </header>
+
+      <section className="exploration-toolbar" aria-label="Expansion actions">
+        <div>
+          <span className="exploration-toolbar__label">Expansion</span>
+          <span className="exploration-toolbar__status">
+            {visibleCompositeCount} visible composite
+            {visibleCompositeCount === 1 ? '' : 's'} · {expandableDescendantCount}{' '}
+            available below this scope
+          </span>
+        </div>
+        <div className="exploration-toolbar__actions">
+          <button
+            type="button"
+            onClick={handleExpandVisible}
+            disabled={visibleCompositeCount === 0}
+          >
+            Expand one level
+          </button>
+          <button
+            type="button"
+            onClick={handleExpandAll}
+            disabled={stateAfterExpandAll === explorationState}
+          >
+            Expand all
+          </button>
+        </div>
+      </section>
 
       <section className="graph-panel" aria-label="Behavioural workflow graph">
         {flowGraph === null ? (

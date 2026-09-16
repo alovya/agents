@@ -1,32 +1,33 @@
-# React + TypeScript + Vite
+# Behavioural Graph Explorer
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+A read-only Vite React application for exploring a complete in-code behavioural graph.
 
-Currently, two official plugins are available:
+## Install
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Development
+
+```bash
+npm run dev
+```
+
+Open the local URL printed by Vite.
+
+## Test and build
+
+```bash
+npm test
+npm run lint
+npm run build
+```
+
+## Interaction
+
+- The application starts with the root scope collapsed. Composite scopes and leaf behaviours use distinct cards, and each card is 220×96 pixels.
+- Select a node or directed edge to inspect the current selection. Click the canvas background to clear selection.
+- Use **Open scope** on a composite to enter it. **Back to enclosing scope** returns to the previous navigation entry and is disabled at the root.
+- Use **Expand** for one composite, **Expand one level** for all composites currently visible, or **Expand all** for every composite below the current scope.
+- The graph is read-only. Use the React Flow controls or pointer gestures to pan and zoom.
