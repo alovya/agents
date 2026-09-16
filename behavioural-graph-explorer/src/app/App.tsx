@@ -2,17 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Background, Controls, ReactFlow } from '@xyflow/react'
 import type { Node } from '@xyflow/react'
 import { DagreRouteEdge } from '../rendering/dagre-edge'
-import { projectVisibleGraph, type VisibleGraph } from '../graph/graph'
+import { projectVisibleGraph } from '../graph/graph'
 import {
   activateGraphDocument,
   applyExplorationTransition,
   type ActiveGraph,
   undoLastViewChange,
 } from '../exploration/active-graph'
-import {
-  DagreLayoutEngine,
-  type LayoutResult,
-} from '../layout/dagre-layout'
+import { DagreLayoutEngine } from '../layout/dagre-layout'
 import {
   clearSelection,
   clickIntoComposite,
@@ -27,12 +24,17 @@ import {
   canRenderLayoutForGraph,
   createLatestLayoutRunner,
   type ApplyLatestLayout,
+  type LaidOutGraph,
 } from './apply-latest-layout'
 import { GraphDocumentError, parseGraphDocumentText } from '../graph/graph-document-json'
 import { GraphImport } from '../ui/graph-import'
 import { GraphNodeCard } from '../ui/graph-node-card'
-import { decodeGraphSourceParameter } from '../graph/graph-source'
-import { SAMPLE_GRAPH_DOCUMENT } from '../graph/sample-graph'
+import {
+  createInitialGraphView,
+  fetchGraphFileSource,
+  readGraphFileRouteFromLocation,
+  readInlineGraphSourceFromLocation,
+} from './load-requested-graph'
 
 import './App.css'
 
@@ -50,15 +52,17 @@ const NODE_KIND_LEGEND = [
 ] as const
 
 function App() {
-  const [initialAppState] = useState(createInitialAppState)
+  const [initialGraphView] = useState(() =>
+    createInitialGraphView(readInlineGraphSourceFromLocation()),
+  )
   const [activeGraph, setActiveGraph] = useState<ActiveGraph>(
-    initialAppState.activeGraph,
+    initialGraphView.activeGraph,
   )
   const [graphJsonSource, setGraphJsonSource] = useState(
-    initialAppState.graphJsonSource,
+    initialGraphView.graphJsonSource,
   )
   const [importError, setImportError] = useState<string | null>(
-    initialAppState.importError,
+    initialGraphView.importError,
   )
   const [boldedEdgeIds, setBoldedEdgeIds] = useState<ReadonlySet<string>>(
     () => new Set(),
@@ -77,10 +81,7 @@ function App() {
     ],
   )
   const explorationState = activeGraph.exploration
-  const [laidOutGraph, setLaidOutGraph] = useState<{
-    graph: VisibleGraph
-    layout: LayoutResult
-  } | null>(null)
+  const [laidOutGraph, setLaidOutGraph] = useState<LaidOutGraph | null>(null)
   const layoutRunnerRef = useRef<ApplyLatestLayout | null>(null)
 
   if (layoutRunnerRef.current === null) {
@@ -107,20 +108,13 @@ function App() {
     }
   }, [])
   useEffect(() => {
-    const graphFilePath = readGraphFilePathFromLocation()
+    const graphFileRoute = readGraphFileRouteFromLocation()
 
-    if (graphFilePath === null) return
+    if (graphFileRoute === null) return
 
     let isCancelled = false
 
-    void fetch(graphFilePath)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`Could not load graph JSON file (${response.status}).`)
-        }
-
-        return response.text()
-      })
+    void fetchGraphFileSource(graphFileRoute)
       .then((source) => {
         if (isCancelled) return
 
@@ -409,54 +403,6 @@ function App() {
       </section>
     </main>
   )
-}
-
-function createInitialAppState(): {
-  activeGraph: ActiveGraph
-  graphJsonSource: string
-  importError: string | null
-} {
-  const graphJsonSource = readGraphSourceFromLocation()
-
-  if (graphJsonSource === null) {
-    return {
-      activeGraph: activateGraphDocument(SAMPLE_GRAPH_DOCUMENT),
-      graphJsonSource: JSON.stringify(SAMPLE_GRAPH_DOCUMENT, null, 2),
-      importError: null,
-    }
-  }
-
-  try {
-    return {
-      activeGraph: activateGraphDocument(
-        parseGraphDocumentText(graphJsonSource),
-      ),
-      graphJsonSource,
-      importError: null,
-    }
-  } catch (error) {
-    if (error instanceof GraphDocumentError) {
-      return {
-        activeGraph: activateGraphDocument(SAMPLE_GRAPH_DOCUMENT),
-        graphJsonSource,
-        importError: error.message,
-      }
-    }
-
-    throw error
-  }
-}
-
-function readGraphSourceFromLocation(): string | null {
-  const encodedGraph = new URLSearchParams(window.location.search).get('graph')
-
-  return encodedGraph === null
-    ? null
-    : decodeGraphSourceParameter(encodedGraph)
-}
-
-function readGraphFilePathFromLocation(): string | null {
-  return new URLSearchParams(window.location.search).get('graphFile')
 }
 
 export default App
