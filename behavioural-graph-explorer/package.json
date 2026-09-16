@@ -3,8 +3,12 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "bin": {
+    "bgexp": "./bin/bgexp.mjs"
+  },
   "scripts": {
     "dev": "vite",
+    "bgexp": "node ./bin/bgexp.mjs",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",

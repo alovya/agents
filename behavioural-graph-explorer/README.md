@@ -181,6 +181,26 @@ npm run dev
 
 Open the local URL printed by Vite.
 
+### Launch from the command line
+
+After installing dependencies, link the checked-out app once:
+
+```bash
+npm link
+```
+
+Then launch it from any directory with:
+
+```bash
+bgexp
+```
+
+`bgexp` starts Vite in source mode and opens the app in the default browser. It does not require a production build or a committed `dist/` directory. You can also run it without linking from the project directory:
+
+```bash
+npm run bgexp
+```
+
 ### Test, lint, and build
 
 ```bash
