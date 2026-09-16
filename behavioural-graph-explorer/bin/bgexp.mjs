@@ -11,12 +11,17 @@ const commandArguments = process.argv.slice(2)
 const graphPathArgument = commandArguments[0]?.startsWith('-')
   ? undefined
   : commandArguments.shift()
-const graphSource = graphPathArgument
-  ? await readFile(resolve(process.cwd(), graphPathArgument), 'utf8')
-  : undefined
-const graphUrlPath = graphSource === undefined
+const graphFilePath = graphPathArgument === undefined
   ? undefined
-  : `/?graph=${Buffer.from(graphSource, 'utf8').toString('base64url')}`
+  : resolve(process.cwd(), graphPathArgument)
+
+if (graphFilePath !== undefined) {
+  await readFile(graphFilePath, 'utf8')
+}
+
+const graphUrlPath = graphFilePath === undefined
+  ? undefined
+  : '/?graphFile=/__bgexp/graph.json'
 const viteArguments = [
   viteEntryPath,
   '--host',
@@ -27,6 +32,10 @@ const viteArguments = [
 ]
 const viteProcess = spawn(process.execPath, viteArguments, {
   cwd: packageRootPath,
+  env: {
+    ...process.env,
+    BGEXP_GRAPH_FILE_PATH: graphFilePath ?? '',
+  },
   stdio: 'inherit',
 })
 

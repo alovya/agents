@@ -201,7 +201,7 @@ Pass a graph document path to load it when the app opens:
 bgexp path/to/graph.json
 ```
 
-`bgexp` starts Vite in source mode and opens the app in the default browser. It does not require a production build or a committed `dist/` directory. You can also run it without linking from the project directory:
+The file is served through a short local route rather than embedded in the browser URL, so large graph documents do not trigger HTTP 431 errors. `bgexp` starts Vite in source mode and opens the app in the default browser. It does not require a production build or a committed `dist/` directory. You can also run it without linking from the project directory:
 
 ```bash
 npm run bgexp

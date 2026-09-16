@@ -119,6 +119,41 @@ function App() {
       throw error
     }
   }, [])
+  useEffect(() => {
+    const graphFilePath = readGraphFilePathFromLocation()
+
+    if (graphFilePath === null) return
+
+    let isCancelled = false
+
+    void fetch(graphFilePath)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Could not load graph JSON file (${response.status}).`)
+        }
+
+        return response.text()
+      })
+      .then((source) => {
+        if (isCancelled) return
+
+        setGraphJsonSource(source)
+        loadGraphDocumentSource(source)
+      })
+      .catch((error: unknown) => {
+        if (isCancelled) return
+
+        setImportError(
+          error instanceof Error
+            ? error.message
+            : 'Could not load graph JSON file.',
+        )
+      })
+
+    return () => {
+      isCancelled = true
+    }
+  }, [loadGraphDocumentSource])
   const handleLoadText = useCallback(() => {
     loadGraphDocumentSource(graphJsonSource)
   }, [graphJsonSource, loadGraphDocumentSource])
@@ -501,6 +536,10 @@ function readGraphSourceFromLocation(): string | null {
   return encodedGraph === null
     ? null
     : decodeGraphSourceParameter(encodedGraph)
+}
+
+function readGraphFilePathFromLocation(): string | null {
+  return new URLSearchParams(window.location.search).get('graphFile')
 }
 
 export default App
