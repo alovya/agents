@@ -229,6 +229,7 @@ h1 {
 
 .graph-node--leaf {
   border-color: #1d9a72;
+  background: #f1fbf7;
 }
 
 .graph-node--composite {
@@ -236,24 +237,8 @@ h1 {
   background: #f7f6ff;
 }
 
-.graph-node__heading {
-  margin-bottom: 3px;
-}
-
-.graph-node__kind {
-  color: #68758a;
-  font-size: 0.68rem;
-  font-weight: 750;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.graph-node--leaf .graph-node__kind {
-  color: #147755;
-}
-
-.graph-node--composite .graph-node__kind {
-  color: #4f46a5;
+.node-type-legend {
+  margin-top: 4px;
 }
 
 .graph-node__label,

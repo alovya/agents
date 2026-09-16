@@ -62,6 +62,11 @@ const EDGE_DIRECTION_LEGEND = [
   { label: 'Up', colour: EDGE_DIRECTION_COLOURS.top },
 ] as const
 
+const NODE_KIND_LEGEND = [
+  { label: 'Composite', colour: '#635bce' },
+  { label: 'Leaf', colour: '#1d9a72' },
+] as const
+
 function App() {
   const [activeGraph, setActiveGraph] = useState<ActiveGraph>(() =>
     activateGraphDocument(SAMPLE_GRAPH_DOCUMENT),
@@ -332,6 +337,18 @@ function App() {
               </span>
             ))}
           </div>
+          <div className="edge-direction-legend node-type-legend" aria-label="Node type legend">
+            <span className="edge-direction-legend__label">Node type</span>
+            {NODE_KIND_LEGEND.map(({ label, colour }) => (
+              <span className="edge-direction-legend__item" key={label}>
+                <span
+                  className="edge-direction-legend__swatch"
+                  style={{ backgroundColor: colour }}
+                />
+                {label}
+              </span>
+            ))}
+          </div>
         </div>
         <div className="exploration-toolbar__actions">
           <button
@@ -415,11 +432,6 @@ function GraphNodeCard({ data }: NodeProps<Node<GraphFlowNodeData>>) {
           position={position}
         />
       ))}
-      <div className="graph-node__heading">
-        <span className="graph-node__kind">
-          {isComposite ? 'Composite scope' : 'Leaf behaviour'}
-        </span>
-      </div>
       <strong className="graph-node__label">{data.label}</strong>
       <span className="graph-node__id">{data.graphNodeId}</span>
       {isComposite && (
