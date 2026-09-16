@@ -3,8 +3,8 @@ import { MarkerType } from '@xyflow/react'
 import { projectVisibleGraph, type VisibleGraph } from './graph'
 import {
   convertToReactFlow,
-  EDGE_DIRECTION_COLOURS,
   GRAPH_ARROWHEAD_SIZE,
+  GRAPH_EDGE_COLOUR,
 } from './react-flow-adapter'
 import type { LayoutResult } from './dagre-layout'
 import { SAMPLE_GRAPH_DOCUMENT, SAMPLE_NODE_IDS } from './sample-graph'
@@ -13,6 +13,15 @@ function layoutFor(graph: ReturnType<typeof projectVisibleGraph>): LayoutResult 
   return {
     nodePositions: Object.fromEntries(
       graph.nodes.map((node, index) => [node.id, { x: index * 260, y: 40 }]),
+    ),
+    edgeRoutes: Object.fromEntries(
+      graph.edges.map((edge) => [
+        edge.id,
+        [
+          { x: 0, y: 88 },
+          { x: 100, y: 88 },
+        ],
+      ]),
     ),
   }
 }
@@ -95,7 +104,7 @@ describe('convertToReactFlow', () => {
     expect(leaf.data).not.toHaveProperty('onExpand')
   })
 
-  it('uses smooth-step directed edges', () => {
+  it('uses Dagre routes for directed edges', () => {
     const graph = projectVisibleGraph(
       SAMPLE_GRAPH_DOCUMENT,
       SAMPLE_GRAPH_DOCUMENT.rootId,
@@ -104,9 +113,9 @@ describe('convertToReactFlow', () => {
     const flowGraph = convertToReactFlow(graph, layoutFor(graph), {})
 
     expect(flowGraph.edges.map((edge) => edge.type)).toEqual([
-      'smoothstep',
-      'smoothstep',
-      'smoothstep',
+      'dagre',
+      'dagre',
+      'dagre',
     ])
     expect(flowGraph.edges.map((edge) => edge.sourceHandle)).toEqual([
       'source-bottom',
@@ -119,28 +128,28 @@ describe('convertToReactFlow', () => {
       'target-top',
     ])
     expect(flowGraph.edges.map((edge) => edge.style)).toEqual([
-      { stroke: EDGE_DIRECTION_COLOURS.left },
-      { stroke: EDGE_DIRECTION_COLOURS.right },
-      { stroke: EDGE_DIRECTION_COLOURS.right },
+      { stroke: GRAPH_EDGE_COLOUR },
+      { stroke: GRAPH_EDGE_COLOUR },
+      { stroke: GRAPH_EDGE_COLOUR },
     ])
     expect(flowGraph.edges.map((edge) => edge.markerEnd)).toEqual([
       {
         type: MarkerType.ArrowClosed,
-        color: EDGE_DIRECTION_COLOURS.left,
+        color: GRAPH_EDGE_COLOUR,
         width: GRAPH_ARROWHEAD_SIZE,
         height: GRAPH_ARROWHEAD_SIZE,
         markerUnits: 'userSpaceOnUse',
       },
       {
         type: MarkerType.ArrowClosed,
-        color: EDGE_DIRECTION_COLOURS.right,
+        color: GRAPH_EDGE_COLOUR,
         width: GRAPH_ARROWHEAD_SIZE,
         height: GRAPH_ARROWHEAD_SIZE,
         markerUnits: 'userSpaceOnUse',
       },
       {
         type: MarkerType.ArrowClosed,
-        color: EDGE_DIRECTION_COLOURS.right,
+        color: GRAPH_EDGE_COLOUR,
         width: GRAPH_ARROWHEAD_SIZE,
         height: GRAPH_ARROWHEAD_SIZE,
         markerUnits: 'userSpaceOnUse',
@@ -180,6 +189,12 @@ describe('convertToReactFlow', () => {
           source: { x: 0, y: 200 },
           target: { x: 0, y: 0 },
         },
+        edgeRoutes: {
+          'source->target': [
+            { x: 110, y: 200 },
+            { x: 110, y: 0 },
+          ],
+        },
       },
       {},
     )
@@ -187,10 +202,10 @@ describe('convertToReactFlow', () => {
     expect(flowGraph.edges[0]).toMatchObject({
       sourceHandle: 'source-top',
       targetHandle: 'target-bottom',
-      style: { stroke: EDGE_DIRECTION_COLOURS.top },
+      style: { stroke: GRAPH_EDGE_COLOUR },
       markerEnd: {
         type: MarkerType.ArrowClosed,
-        color: EDGE_DIRECTION_COLOURS.top,
+        color: GRAPH_EDGE_COLOUR,
         width: GRAPH_ARROWHEAD_SIZE,
         height: GRAPH_ARROWHEAD_SIZE,
         markerUnits: 'userSpaceOnUse',
@@ -206,7 +221,11 @@ describe('convertToReactFlow', () => {
     )
 
     expect(() =>
-      convertToReactFlow(graph, { nodePositions: {} }, {}),
+      convertToReactFlow(
+        graph,
+        { nodePositions: {}, edgeRoutes: {} },
+        {},
+      ),
     ).toThrow(`Missing layout position for visible node: ${SAMPLE_NODE_IDS.preparation}`)
   })
 })

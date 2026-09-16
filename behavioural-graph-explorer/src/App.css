@@ -125,7 +125,7 @@ h1 {
   font-size: 0.76rem;
 }
 
-.edge-direction-legend {
+.graph-legend {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -135,17 +135,17 @@ h1 {
   font-size: 0.7rem;
 }
 
-.edge-direction-legend__label {
+.graph-legend__label {
   font-weight: 700;
 }
 
-.edge-direction-legend__item {
+.graph-legend__item {
   display: inline-flex;
   align-items: center;
   gap: 4px;
 }
 
-.edge-direction-legend__swatch {
+.graph-legend__swatch {
   width: 10px;
   height: 10px;
   border-radius: 50%;

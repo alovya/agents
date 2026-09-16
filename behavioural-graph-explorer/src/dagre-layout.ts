@@ -4,10 +4,12 @@ import type { VisibleGraph } from './graph'
 export const GRAPH_NODE_WIDTH = 220
 export const GRAPH_NODE_HEIGHT = 96
 
-export type NodePosition = { x: number; y: number }
+export type LayoutPoint = { x: number; y: number }
+export type NodePosition = LayoutPoint
 
 export type LayoutResult = {
   nodePositions: Readonly<Record<string, NodePosition>>
+  edgeRoutes: Readonly<Record<string, ReadonlyArray<LayoutPoint>>>
 }
 
 export interface LayoutEngine {
@@ -34,6 +36,7 @@ export class DagreLayoutEngine implements LayoutEngine {
     dagre.layout(dagreGraph)
 
     const nodePositions: Record<string, NodePosition> = {}
+    const edgeRoutes: Record<string, ReadonlyArray<LayoutPoint>> = {}
 
     for (const graphNode of graph.nodes) {
       const dagreNode = dagreGraph.node(graphNode.id)
@@ -52,6 +55,16 @@ export class DagreLayoutEngine implements LayoutEngine {
       }
     }
 
-    return { nodePositions }
+    for (const graphEdge of graph.edges) {
+      const dagreEdge = dagreGraph.edge(graphEdge.source, graphEdge.target)
+
+      if (dagreEdge === undefined || dagreEdge.points.length < 2) {
+        throw new Error(`Dagre did not produce a route for edge: ${graphEdge.id}`)
+      }
+
+      edgeRoutes[graphEdge.id] = dagreEdge.points.map(({ x, y }) => ({ x, y }))
+    }
+
+    return { nodePositions, edgeRoutes }
   }
 }

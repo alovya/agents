@@ -2,15 +2,10 @@ import { MarkerType } from '@xyflow/react'
 import type { Edge, Node } from '@xyflow/react'
 import type { GraphNode, NodeKind, VisibleGraph } from './graph'
 import type { LayoutResult } from './dagre-layout'
+import type { DagreRouteEdgeData } from './dagre-edge'
 
 export const GRAPH_ARROWHEAD_SIZE = 37.5
-
-export const EDGE_DIRECTION_COLOURS = {
-  top: '#CC79A7',
-  right: '#0072B2',
-  bottom: '#009E73',
-  left: '#D55E00',
-} as const
+export const GRAPH_EDGE_COLOUR = '#526174'
 
 export type GraphFlowNodeData = {
   graphNodeId: string
@@ -31,7 +26,7 @@ export function convertToReactFlow(
   graph: VisibleGraph,
   layout: LayoutResult,
   actions: GraphNodeActions,
-): { nodes: Node<GraphFlowNodeData>[]; edges: Edge[] } {
+): { nodes: Node<GraphFlowNodeData>[]; edges: Edge<DagreRouteEdgeData>[] } {
   const nodes = graph.nodes.map((graphNode) => {
     const position = layout.nodePositions[graphNode.id]
 
@@ -60,19 +55,24 @@ export function convertToReactFlow(
         candidate.target === graphEdge.source,
     )
     const handles = chooseEdgeHandles(graphEdge, reverseEdge, sourceSide)
-    const colour = EDGE_DIRECTION_COLOURS[sourceSide]
+    const route = layout.edgeRoutes[graphEdge.id]
+
+    if (route === undefined) {
+      throw new Error(`Missing layout route for visible edge: ${graphEdge.id}`)
+    }
 
     return {
       id: graphEdge.id,
       source: graphEdge.source,
       target: graphEdge.target,
-      type: 'smoothstep' as const,
+      type: 'dagre' as const,
       sourceHandle: handles.sourceHandle,
       targetHandle: handles.targetHandle,
-      style: { stroke: colour },
+      data: { route },
+      style: { stroke: GRAPH_EDGE_COLOUR },
       markerEnd: {
         type: MarkerType.ArrowClosed,
-        color: colour,
+        color: GRAPH_EDGE_COLOUR,
         width: GRAPH_ARROWHEAD_SIZE,
         height: GRAPH_ARROWHEAD_SIZE,
         markerUnits: 'userSpaceOnUse',

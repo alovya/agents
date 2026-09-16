@@ -17,12 +17,25 @@ describe('DagreLayoutEngine', () => {
     expect(Object.keys(layout.nodePositions)).toEqual(
       initialGraph.nodes.map((node) => node.id),
     )
+    expect(Object.keys(layout.edgeRoutes)).toEqual(
+      initialGraph.edges.map((edge) => edge.id),
+    )
     for (const node of initialGraph.nodes) {
       const position = layout.nodePositions[node.id]
 
       expect(position).toBeDefined()
       expect(Number.isFinite(position?.x)).toBe(true)
       expect(Number.isFinite(position?.y)).toBe(true)
+    }
+    for (const edge of initialGraph.edges) {
+      const route = layout.edgeRoutes[edge.id]
+
+      expect(route).toBeDefined()
+      expect(route?.length).toBeGreaterThanOrEqual(2)
+      for (const point of route ?? []) {
+        expect(Number.isFinite(point.x)).toBe(true)
+        expect(Number.isFinite(point.y)).toBe(true)
+      }
     }
   })
 
@@ -36,6 +49,7 @@ describe('DagreLayoutEngine', () => {
 
     await expect(new DagreLayoutEngine().layout(isolatedGraph)).resolves.toEqual({
       nodePositions: { isolated: { x: 0, y: 0 } },
+      edgeRoutes: {},
     })
   })
 
@@ -56,5 +70,6 @@ describe('DagreLayoutEngine', () => {
 
     expect(Object.keys(layout.nodePositions)).toEqual([initialGraph.nodes[2].id])
     expect(layout.nodePositions[initialGraph.nodes[0].id]).toBeUndefined()
+    expect(layout.edgeRoutes).toEqual({})
   })
 })

@@ -19,8 +19,14 @@ const graphB: VisibleGraph = {
   ],
   edges: [],
 }
-const layoutA: LayoutResult = { nodePositions: { A: { x: 1, y: 2 } } }
-const layoutB: LayoutResult = { nodePositions: { B: { x: 3, y: 4 } } }
+const layoutA: LayoutResult = {
+  nodePositions: { A: { x: 1, y: 2 } },
+  edgeRoutes: {},
+}
+const layoutB: LayoutResult = {
+  nodePositions: { B: { x: 3, y: 4 } },
+  edgeRoutes: {},
+}
 
 type Deferred<T> = {
   promise: Promise<T>
@@ -93,9 +99,11 @@ describe('createLatestLayoutRunner', () => {
     const deferredNew = defer<LayoutResult>()
     const oldLayout: LayoutResult = {
       nodePositions: { left: { x: 1, y: 2 }, right: { x: 3, y: 4 } },
+      edgeRoutes: {},
     }
     const newLayout: LayoutResult = {
       nodePositions: { left: { x: 5, y: 6 }, right: { x: 7, y: 8 } },
+      edgeRoutes: {},
     }
     const layoutEngine: LayoutEngine = {
       layout: (graph) =>

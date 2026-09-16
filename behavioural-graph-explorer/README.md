@@ -191,4 +191,4 @@ npm run build
 
 ## Architecture
 
-BGE keeps the accepted flat `GraphDocument` as the source of truth. It projects the nodes and canonical leaf edges visible in the current scope, derives summary edges for collapsed descendants, lays out that projection with Dagre, and renders it with React Flow. Exploration state remains separate from the document, so loading a document can reset scope, expansion, and selection without making the graph editable.
+BGE keeps the accepted flat `GraphDocument` as the source of truth. It projects the nodes and canonical leaf edges visible in the current scope, derives summary edges for collapsed descendants, lays out that projection with Dagre, carries Dagre's computed edge routes into a custom React Flow edge, and renders it with React Flow. Exploration state remains separate from the document, so loading a document can reset scope, expansion, and selection without making the graph editable.

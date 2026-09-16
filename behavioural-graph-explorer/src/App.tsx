@@ -7,6 +7,7 @@ import {
   ReactFlow,
 } from '@xyflow/react'
 import type { Node, NodeProps } from '@xyflow/react'
+import { DagreRouteEdge } from './dagre-edge'
 import { projectVisibleGraph, type VisibleGraph } from './graph'
 import {
   activateGraphDocument,
@@ -28,11 +29,7 @@ import {
   selectEdge,
   selectNode,
 } from './exploration'
-import {
-  convertToReactFlow,
-  EDGE_DIRECTION_COLOURS,
-  type GraphFlowNodeData,
-} from './react-flow-adapter'
+import { convertToReactFlow, type GraphFlowNodeData } from './react-flow-adapter'
 import {
   canRenderLayoutForGraph,
   createLatestLayoutRunner,
@@ -48,18 +45,15 @@ const graphNodeTypes = {
   graph: GraphNodeCard,
 }
 
+const graphEdgeTypes = {
+  dagre: DagreRouteEdge,
+}
+
 const NODE_HANDLE_POSITIONS = [
   { side: 'top', position: Position.Top },
   { side: 'right', position: Position.Right },
   { side: 'bottom', position: Position.Bottom },
   { side: 'left', position: Position.Left },
-] as const
-
-const EDGE_DIRECTION_LEGEND = [
-  { label: 'Right', colour: EDGE_DIRECTION_COLOURS.right },
-  { label: 'Left', colour: EDGE_DIRECTION_COLOURS.left },
-  { label: 'Down', colour: EDGE_DIRECTION_COLOURS.bottom },
-  { label: 'Up', colour: EDGE_DIRECTION_COLOURS.top },
 ] as const
 
 const NODE_KIND_LEGEND = [
@@ -325,24 +319,12 @@ function App() {
             {visibleCompositeCount === 1 ? '' : 's'} · {expandableDescendantCount}{' '}
             available below this scope
           </span>
-          <div className="edge-direction-legend" aria-label="Edge direction legend">
-            <span className="edge-direction-legend__label">Edge direction</span>
-            {EDGE_DIRECTION_LEGEND.map(({ label, colour }) => (
-              <span className="edge-direction-legend__item" key={label}>
-                <span
-                  className="edge-direction-legend__swatch"
-                  style={{ backgroundColor: colour }}
-                />
-                {label}
-              </span>
-            ))}
-          </div>
-          <div className="edge-direction-legend node-type-legend" aria-label="Node type legend">
-            <span className="edge-direction-legend__label">Node type</span>
+          <div className="graph-legend node-type-legend" aria-label="Node type legend">
+            <span className="graph-legend__label">Node type</span>
             {NODE_KIND_LEGEND.map(({ label, colour }) => (
-              <span className="edge-direction-legend__item" key={label}>
+              <span className="graph-legend__item" key={label}>
                 <span
-                  className="edge-direction-legend__swatch"
+                  className="graph-legend__swatch"
                   style={{ backgroundColor: colour }}
                 />
                 {label}
@@ -400,6 +382,7 @@ function App() {
             nodes={flowGraph.nodes}
             edges={flowGraph.edges}
             nodeTypes={graphNodeTypes}
+            edgeTypes={graphEdgeTypes}
             nodesDraggable={false}
             nodesConnectable={false}
             edgesReconnectable={false}
