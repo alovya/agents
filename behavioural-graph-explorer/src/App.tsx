@@ -8,7 +8,12 @@ import {
 } from '@xyflow/react'
 import type { Node, NodeProps } from '@xyflow/react'
 import { projectVisibleGraph, type VisibleGraph } from './graph'
-import { activateGraphDocument, type ActiveGraph } from './active-graph'
+import {
+  activateGraphDocument,
+  applyExplorationTransition,
+  type ActiveGraph,
+  undoLastViewChange,
+} from './active-graph'
 import {
   DagreLayoutEngine,
   type LayoutResult,
@@ -113,73 +118,89 @@ function App() {
   )
   const handleClickInto = useCallback(
     (nodeId: string) => {
-      setActiveGraph((graph) => ({
-        ...graph,
-        exploration: clickIntoComposite(
-          activeGraph.document,
-          visibleGraph,
-          graph.exploration,
-          nodeId,
+      setActiveGraph((graph) =>
+        applyExplorationTransition(
+          graph,
+          clickIntoComposite(
+            activeGraph.document,
+            visibleGraph,
+            graph.exploration,
+            nodeId,
+          ),
         ),
-      }))
+      )
     },
     [activeGraph.document, visibleGraph],
   )
   const handleExpand = useCallback(
     (nodeId: string) => {
-      setActiveGraph((graph) => ({
-        ...graph,
-        exploration: expandComposite(
-          activeGraph.document,
-          visibleGraph,
-          graph.exploration,
-          nodeId,
+      setActiveGraph((graph) =>
+        applyExplorationTransition(
+          graph,
+          expandComposite(
+            activeGraph.document,
+            visibleGraph,
+            graph.exploration,
+            nodeId,
+          ),
         ),
-      }))
+      )
     },
     [activeGraph.document, visibleGraph],
   )
   const handleExpandVisible = useCallback(() => {
-    setActiveGraph((graph) => ({
-      ...graph,
-      exploration: expandVisibleComposites(visibleGraph, graph.exploration),
-    }))
+    setActiveGraph((graph) =>
+      applyExplorationTransition(
+        graph,
+        expandVisibleComposites(visibleGraph, graph.exploration),
+      ),
+    )
   }, [visibleGraph])
   const handleExpandAll = useCallback(() => {
-    setActiveGraph((graph) => ({
-      ...graph,
-      exploration: expandAllComposites(activeGraph.document, graph.exploration),
-    }))
+    setActiveGraph((graph) =>
+      applyExplorationTransition(
+        graph,
+        expandAllComposites(activeGraph.document, graph.exploration),
+      ),
+    )
   }, [activeGraph.document])
   const handleSelectNode = useCallback(
     (nodeId: string) => {
-      setActiveGraph((graph) => ({
-        ...graph,
-        exploration: selectNode(graph.exploration, visibleGraph, nodeId),
-      }))
+      setActiveGraph((graph) =>
+        applyExplorationTransition(
+          graph,
+          selectNode(graph.exploration, visibleGraph, nodeId),
+        ),
+      )
     },
     [visibleGraph],
   )
   const handleSelectEdge = useCallback(
     (edgeId: string) => {
-      setActiveGraph((graph) => ({
-        ...graph,
-        exploration: selectEdge(graph.exploration, visibleGraph, edgeId),
-      }))
+      setActiveGraph((graph) =>
+        applyExplorationTransition(
+          graph,
+          selectEdge(graph.exploration, visibleGraph, edgeId),
+        ),
+      )
     },
     [visibleGraph],
   )
   const handleClearSelection = useCallback(() => {
-    setActiveGraph((graph) => ({
-      ...graph,
-      exploration: clearSelection(graph.exploration),
-    }))
+    setActiveGraph((graph) =>
+      applyExplorationTransition(graph, clearSelection(graph.exploration)),
+    )
   }, [])
   const handleReturn = useCallback(() => {
-    setActiveGraph((graph) => ({
-      ...graph,
-      exploration: returnToEnclosingScope(graph.exploration),
-    }))
+    setActiveGraph((graph) =>
+      applyExplorationTransition(
+        graph,
+        returnToEnclosingScope(graph.exploration),
+      ),
+    )
+  }, [])
+  const handleUndo = useCallback(() => {
+    setActiveGraph(undoLastViewChange)
   }, [])
 
   useEffect(() => {
@@ -285,14 +306,6 @@ function App() {
                 ? `Edge: ${selectedEdge.id}`
                 : 'Click a node or edge to select it'}
           </span>
-          <button
-            type="button"
-            className="back-control"
-            onClick={handleReturn}
-            disabled={isAtRoot}
-          >
-            Back to enclosing scope
-          </button>
         </div>
       </header>
 
@@ -304,7 +317,7 @@ function App() {
         onChooseFile={handleChooseFile}
       />
 
-      <section className="exploration-toolbar" aria-label="Expansion actions">
+      <section className="exploration-toolbar" aria-label="View actions">
         <div>
           <span className="exploration-toolbar__label">Expansion</span>
           <span className="exploration-toolbar__status">
@@ -314,6 +327,21 @@ function App() {
           </span>
         </div>
         <div className="exploration-toolbar__actions">
+          <button
+            type="button"
+            onClick={handleUndo}
+            disabled={activeGraph.viewHistory.length === 0}
+          >
+            Undo last view change
+          </button>
+          <button
+            type="button"
+            className="back-control"
+            onClick={handleReturn}
+            disabled={isAtRoot}
+          >
+            Back to enclosing scope
+          </button>
           <button
             type="button"
             onClick={handleExpandVisible}

@@ -177,6 +177,10 @@ h1 {
   gap: 8px;
 }
 
+.exploration-toolbar__actions .back-control {
+  margin-top: 0;
+}
+
 .exploration-toolbar__actions button {
   padding: 7px 10px;
   border: 1px solid #c8d1e1;
