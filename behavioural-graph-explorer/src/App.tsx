@@ -25,7 +25,6 @@ import {
   expandAllComposites,
   expandComposite,
   expandVisibleComposites,
-  returnToEnclosingScope,
   selectEdge,
   selectNode,
 } from './exploration'
@@ -272,14 +271,6 @@ function App() {
       applyExplorationTransition(graph, clearSelection(graph.exploration)),
     )
   }, [])
-  const handleReturn = useCallback(() => {
-    setActiveGraph((graph) =>
-      applyExplorationTransition(
-        graph,
-        returnToEnclosingScope(graph.exploration),
-      ),
-    )
-  }, [])
   const handleUndo = useCallback(() => {
     setActiveGraph(undoLastViewChange)
   }, [])
@@ -334,7 +325,6 @@ function App() {
   const expandableDescendantCount =
     stateAfterExpandAll.expandedNodeIds.size -
     explorationState.expandedNodeIds.size
-  const isAtRoot = explorationState.scopePath.length === 1
 
   return (
     <main className="app-shell">
@@ -387,14 +377,6 @@ function App() {
             }
           >
             Clear bold arrows
-          </button>
-          <button
-            type="button"
-            className="back-control"
-            onClick={handleReturn}
-            disabled={isAtRoot}
-          >
-            Back to enclosing scope
           </button>
           <button
             type="button"

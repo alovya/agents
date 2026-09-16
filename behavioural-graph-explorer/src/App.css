@@ -83,18 +83,6 @@ h1 {
   font-size: 0.76rem;
 }
 
-.back-control {
-  margin-top: 10px;
-  padding: 6px 9px;
-  border: 1px solid #c8d1e1;
-  border-radius: 7px;
-  color: #38435a;
-  background: #ffffff;
-  cursor: pointer;
-  font-size: 0.78rem;
-  font-weight: 650;
-}
-
 .exploration-toolbar {
   display: flex;
   align-items: center;
@@ -157,10 +145,6 @@ h1 {
   gap: 8px;
 }
 
-.exploration-toolbar__actions .back-control {
-  margin-top: 0;
-}
-
 .exploration-toolbar__actions button {
   padding: 7px 10px;
   border: 1px solid #c8d1e1;
@@ -178,11 +162,6 @@ h1 {
 }
 
 .exploration-toolbar__actions button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-.back-control:disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
@@ -282,8 +261,7 @@ h1 {
   font-weight: 650;
 }
 
-.graph-node__actions button:hover,
-.back-control:not(:disabled):hover {
+.graph-node__actions button:hover {
   border-color: #635bce;
   color: #4f46a5;
 }
