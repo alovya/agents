@@ -195,6 +195,12 @@ Then launch it from any directory with:
 bgexp
 ```
 
+Pass a graph document path to load it when the app opens:
+
+```bash
+bgexp path/to/graph.json
+```
+
 `bgexp` starts Vite in source mode and opens the app in the default browser. It does not require a production build or a committed `dist/` directory. You can also run it without linking from the project directory:
 
 ```bash

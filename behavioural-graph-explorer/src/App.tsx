@@ -37,6 +37,7 @@ import {
 } from './latest-layout'
 import { GraphDocumentError, parseGraphDocumentText } from './graph-document-json'
 import { GraphImport } from './graph-import'
+import { decodeGraphSourceParameter } from './graph-source'
 import { SAMPLE_GRAPH_DOCUMENT } from './sample-graph'
 
 import './App.css'
@@ -62,13 +63,16 @@ const NODE_KIND_LEGEND = [
 ] as const
 
 function App() {
-  const [activeGraph, setActiveGraph] = useState<ActiveGraph>(() =>
-    activateGraphDocument(SAMPLE_GRAPH_DOCUMENT),
+  const [initialAppState] = useState(createInitialAppState)
+  const [activeGraph, setActiveGraph] = useState<ActiveGraph>(
+    initialAppState.activeGraph,
   )
-  const [graphJsonSource, setGraphJsonSource] = useState(() =>
-    JSON.stringify(SAMPLE_GRAPH_DOCUMENT, null, 2),
+  const [graphJsonSource, setGraphJsonSource] = useState(
+    initialAppState.graphJsonSource,
   )
-  const [importError, setImportError] = useState<string | null>(null)
+  const [importError, setImportError] = useState<string | null>(
+    initialAppState.importError,
+  )
   const [boldedEdgeIds, setBoldedEdgeIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   )
@@ -453,6 +457,50 @@ function GraphNodeCard({ data }: NodeProps<Node<GraphFlowNodeData>>) {
       ))}
     </div>
   )
+}
+
+function createInitialAppState(): {
+  activeGraph: ActiveGraph
+  graphJsonSource: string
+  importError: string | null
+} {
+  const graphJsonSource = readGraphSourceFromLocation()
+
+  if (graphJsonSource === null) {
+    return {
+      activeGraph: activateGraphDocument(SAMPLE_GRAPH_DOCUMENT),
+      graphJsonSource: JSON.stringify(SAMPLE_GRAPH_DOCUMENT, null, 2),
+      importError: null,
+    }
+  }
+
+  try {
+    return {
+      activeGraph: activateGraphDocument(
+        parseGraphDocumentText(graphJsonSource),
+      ),
+      graphJsonSource,
+      importError: null,
+    }
+  } catch (error) {
+    if (error instanceof GraphDocumentError) {
+      return {
+        activeGraph: activateGraphDocument(SAMPLE_GRAPH_DOCUMENT),
+        graphJsonSource,
+        importError: error.message,
+      }
+    }
+
+    throw error
+  }
+}
+
+function readGraphSourceFromLocation(): string | null {
+  const encodedGraph = new URLSearchParams(window.location.search).get('graph')
+
+  return encodedGraph === null
+    ? null
+    : decodeGraphSourceParameter(encodedGraph)
 }
 
 export default App
