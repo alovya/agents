@@ -28,9 +28,9 @@ export function GraphImport({
         <button type="button" onClick={onLoadText}>
           Load JSON
         </button>
-        <label htmlFor="graph-json-file">Choose JSON file</label>
         <input
           id="graph-json-file"
+          className="graph-import__file-input"
           type="file"
           accept="application/json,.json"
           onChange={(event) => {
@@ -38,6 +38,12 @@ export function GraphImport({
             if (file) onChooseFile(file)
           }}
         />
+        <label
+          className="graph-import__file-button"
+          htmlFor="graph-json-file"
+        >
+          Choose JSON file
+        </label>
       </div>
       <p className="graph-import__status" role="status" aria-live="polite">
         {errorMessage}

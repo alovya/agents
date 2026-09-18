@@ -1,13 +1,15 @@
 .app-shell {
   display: flex;
   flex-direction: column;
+  width: 100%;
+  height: 100vh;
   min-height: 100vh;
-  padding: 32px;
+  padding: 20px;
 }
 
 .app-header {
-  width: min(1180px, 100%);
-  margin: 0 auto 24px;
+  width: 100%;
+  margin: 0 0 24px;
 }
 
 h1 {
@@ -21,12 +23,54 @@ h1 {
 .graph-import {
   display: grid;
   gap: 12px;
-  width: min(1180px, 100%);
-  margin: 0 auto 14px;
+  width: 100%;
+  margin: 0 0 14px;
   padding: 14px;
   border: 1px solid #d8e0ed;
   border-radius: 10px;
   background: #ffffff;
+}
+
+.viewer-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  gap: 14px;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+}
+
+.viewer-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.viewer-sidebar .graph-import {
+  margin: 0;
+}
+
+.viewer-sidebar .exploration-toolbar {
+  align-items: stretch;
+  flex-direction: column;
+  justify-content: flex-start;
+  margin: 0;
+}
+
+.viewer-sidebar .graph-legend {
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+.viewer-sidebar .exploration-toolbar__actions {
+  flex-direction: column;
+}
+
+.viewer-sidebar .exploration-toolbar__actions button {
+  width: 100%;
 }
 
 .graph-import__source {
@@ -34,8 +78,7 @@ h1 {
   gap: 6px;
 }
 
-.graph-import__source label,
-.graph-import__actions label {
+.graph-import__source label {
   color: #38435a;
   font-size: 0.78rem;
   font-weight: 750;
@@ -60,7 +103,8 @@ h1 {
   gap: 8px;
 }
 
-.graph-import__actions button {
+.graph-import__actions button,
+.graph-import__file-button {
   padding: 7px 10px;
   border: 1px solid #c8d1e1;
   border-radius: 7px;
@@ -71,16 +115,42 @@ h1 {
   font-weight: 650;
 }
 
-.graph-import__actions button:hover {
+.graph-import__file-button {
+  display: inline-flex;
+  align-items: center;
+}
+
+.graph-import__actions button:hover,
+.graph-import__file-button:hover {
   border-color: #1d4ed8;
   color: #1d4ed8;
 }
 
+.graph-import__file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.graph-import__file-input:focus-visible + .graph-import__file-button {
+  outline: 2px solid #1d4ed8;
+  outline-offset: 2px;
+}
+
 .graph-import__status {
-  min-height: 1.1em;
   margin: 0;
   color: #b42318;
   font-size: 0.76rem;
+}
+
+.graph-import__status:empty {
+  display: none;
 }
 
 .exploration-toolbar {
@@ -88,24 +158,17 @@ h1 {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  width: min(1180px, 100%);
-  margin: 0 auto 14px;
+  width: 100%;
+  margin: 0 0 14px;
   padding: 12px 14px;
   border: 1px solid #d8e0ed;
   border-radius: 10px;
   background: #ffffff;
 }
 
-.exploration-toolbar__label,
 .exploration-toolbar__scope,
 .exploration-toolbar__status {
   display: block;
-}
-
-.exploration-toolbar__label {
-  color: #38435a;
-  font-size: 0.78rem;
-  font-weight: 750;
 }
 
 .exploration-toolbar__scope {
@@ -195,11 +258,11 @@ h1 {
   position: relative;
   display: flex;
   flex-direction: column;
-  width: min(1180px, 100%);
-  height: 620px;
-  min-height: 620px;
+  width: 100%;
+  height: auto;
+  min-height: 0;
   flex: 1;
-  margin: 0 auto;
+  margin: 0;
   overflow: hidden;
   border: 1px solid #d8e0ed;
   border-radius: 16px;
@@ -214,7 +277,8 @@ h1 {
 
 .graph-loading {
   display: grid;
-  min-height: 620px;
+  height: 100%;
+  min-height: 0;
   margin: 0;
   place-items: center;
   color: #68758a;
@@ -366,9 +430,24 @@ h1 {
     gap: 18px;
   }
 
-  .graph-panel,
+  .viewer-layout {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .graph-panel {
+    height: 60vh;
+    min-height: 420px;
+    flex: none;
+  }
+
   .graph-loading {
-    height: 560px;
-    min-height: 560px;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .viewer-sidebar {
+    overflow: visible;
   }
 }

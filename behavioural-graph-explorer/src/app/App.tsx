@@ -360,88 +360,8 @@ function App() {
         <h1>Behavioural graph explorer</h1>
       </header>
 
-      <GraphImport
-        source={graphJsonSource}
-        errorMessage={importError}
-        onSourceChange={setGraphJsonSource}
-        onLoadText={handleLoadText}
-        onChooseFile={handleChooseFile}
-      />
-
-      <section className="exploration-toolbar" aria-label="View actions">
-        <div>
-          <span className="exploration-toolbar__label">Expansion</span>
-          <span className="exploration-toolbar__scope">
-            Current subgraph: {currentScope.label}
-          </span>
-          <span className="exploration-toolbar__status">
-            {visibleCompositeCount} visible composite
-            {visibleCompositeCount === 1 ? '' : 's'} · {expandableDescendantCount}{' '}
-            available below this scope
-          </span>
-          <div className="graph-legend node-type-legend" aria-label="Node type legend">
-            <span className="graph-legend__label">Node type</span>
-            {NODE_KIND_LEGEND.map(({ label, colour }) => (
-              <span className="graph-legend__item" key={label}>
-                <span
-                  className="graph-legend__swatch"
-                  style={{ backgroundColor: colour }}
-                />
-                {label}
-              </span>
-            ))}
-          </div>
-          <div className="graph-legend graph-control-legend" aria-label="Composite control legend">
-            <span className="graph-legend__label">Composite controls</span>
-            <span className="graph-legend__item">
-              <span className="graph-legend__symbol" aria-hidden="true">›</span>
-              Open subgraph
-            </span>
-            <span className="graph-legend__item">
-              <span className="graph-legend__symbol" aria-hidden="true">+</span>
-              Expand one level
-            </span>
-            <span className="graph-legend__item">
-              <span className="graph-legend__symbol" aria-hidden="true">−</span>
-              Collapse one level
-            </span>
-          </div>
-        </div>
-        <div className="exploration-toolbar__actions">
-          <button
-            type="button"
-            onClick={handleUndo}
-            disabled={activeGraph.viewHistory.length === 0}
-          >
-            Undo last view change
-          </button>
-          <button
-            type="button"
-            onClick={handleClearBoldedEdges}
-            disabled={
-              !visibleGraph.edges.some((edge) => boldedEdgeIds.has(edge.id))
-            }
-          >
-            Clear bold arrows
-          </button>
-          <button
-            type="button"
-            onClick={handleExpandVisible}
-            disabled={visibleCompositeCount === 0}
-          >
-            Expand one level
-          </button>
-          <button
-            type="button"
-            onClick={handleExpandAll}
-            disabled={stateAfterExpandAll === explorationState}
-          >
-            Expand all
-          </button>
-        </div>
-      </section>
-
-      <section className="graph-panel" aria-label="Behavioural workflow graph">
+      <div className="viewer-layout">
+        <section className="graph-panel" aria-label="Behavioural workflow graph">
         {flowGraph === null ? (
           <p className="graph-loading">Calculating graph layout…</p>
         ) : (
@@ -465,7 +385,90 @@ function App() {
             <Controls aria-label="Graph controls" />
           </ReactFlow>
         )}
-      </section>
+        </section>
+
+        <aside className="viewer-sidebar" aria-label="Graph controls and input">
+          <section className="exploration-toolbar" aria-label="View actions">
+            <div>
+              <span className="exploration-toolbar__scope">
+                Current subgraph: {currentScope.label}
+              </span>
+              <span className="exploration-toolbar__status">
+                {visibleCompositeCount} visible composite
+                {visibleCompositeCount === 1 ? '' : 's'} · {expandableDescendantCount}{' '}
+                available below this scope
+              </span>
+              <div className="graph-legend node-type-legend" aria-label="Node type legend">
+                <span className="graph-legend__label">Node type</span>
+                {NODE_KIND_LEGEND.map(({ label, colour }) => (
+                  <span className="graph-legend__item" key={label}>
+                    <span
+                      className="graph-legend__swatch"
+                      style={{ backgroundColor: colour }}
+                    />
+                    {label}
+                  </span>
+                ))}
+              </div>
+              <div className="graph-legend graph-control-legend" aria-label="Composite control legend">
+                <span className="graph-legend__label">Composite controls</span>
+                <span className="graph-legend__item">
+                  <span className="graph-legend__symbol" aria-hidden="true">›</span>
+                  Open subgraph
+                </span>
+                <span className="graph-legend__item">
+                  <span className="graph-legend__symbol" aria-hidden="true">+</span>
+                  Expand one level
+                </span>
+                <span className="graph-legend__item">
+                  <span className="graph-legend__symbol" aria-hidden="true">−</span>
+                  Collapse one level
+                </span>
+              </div>
+            </div>
+            <div className="exploration-toolbar__actions">
+              <button
+                type="button"
+                onClick={handleUndo}
+                disabled={activeGraph.viewHistory.length === 0}
+              >
+                Undo last view change
+              </button>
+              <button
+                type="button"
+                onClick={handleClearBoldedEdges}
+                disabled={
+                  !visibleGraph.edges.some((edge) => boldedEdgeIds.has(edge.id))
+                }
+              >
+                Clear bold arrows
+              </button>
+              <button
+                type="button"
+                onClick={handleExpandVisible}
+                disabled={visibleCompositeCount === 0}
+              >
+                Expand one level
+              </button>
+              <button
+                type="button"
+                onClick={handleExpandAll}
+                disabled={stateAfterExpandAll === explorationState}
+              >
+                Expand all
+              </button>
+            </div>
+          </section>
+
+          <GraphImport
+            source={graphJsonSource}
+            errorMessage={importError}
+            onSourceChange={setGraphJsonSource}
+            onLoadText={handleLoadText}
+            onChooseFile={handleChooseFile}
+          />
+        </aside>
+      </div>
     </main>
   )
 }
