@@ -9,6 +9,9 @@ export type ViewSnapshot = {
   currentScopeId: string
   scopePath: readonly string[]
   expandedNodeIds: ReadonlySet<string>
+  boldedEdgeIds: ReadonlySet<string>
+  selectedNodeIds: ReadonlySet<string>
+  selectedEdgeId: string | null
 }
 
 export type ActiveGraph = {
@@ -70,11 +73,7 @@ export function undoLastViewChange(activeGraph: ActiveGraph): ActiveGraph {
 
   return {
     ...activeGraph,
-    exploration: preserveVisibleSelection(
-      activeGraph.document,
-      activeGraph.exploration,
-      restoredExploration,
-    ),
+    exploration: restoredExploration,
     viewHistory: activeGraph.viewHistory.slice(0, -1),
     redoHistory: [
       ...activeGraph.redoHistory,
@@ -97,11 +96,7 @@ export function redoLastViewChange(activeGraph: ActiveGraph): ActiveGraph {
 
   return {
     ...activeGraph,
-    exploration: preserveVisibleSelection(
-      activeGraph.document,
-      activeGraph.exploration,
-      restoredExploration,
-    ),
+    exploration: restoredExploration,
     viewHistory: [
       ...activeGraph.viewHistory,
       captureView(activeGraph.exploration),
@@ -208,6 +203,9 @@ function captureView(exploration: ExplorationState): ViewSnapshot {
     currentScopeId: exploration.currentScopeId,
     scopePath: [...exploration.scopePath],
     expandedNodeIds: new Set(exploration.expandedNodeIds),
+    boldedEdgeIds: new Set(exploration.boldedEdgeIds),
+    selectedNodeIds: new Set(exploration.selectedNodeIds),
+    selectedEdgeId: exploration.selectedEdgeId,
   }
 }
 
@@ -219,9 +217,9 @@ function restoreView(
     currentScopeId: view.currentScopeId,
     scopePath: [...view.scopePath],
     expandedNodeIds: new Set(view.expandedNodeIds),
-    boldedEdgeIds: new Set(),
-    selectedNodeIds: new Set(),
-    selectedEdgeId: null,
+    boldedEdgeIds: new Set(view.boldedEdgeIds),
+    selectedNodeIds: new Set(view.selectedNodeIds),
+    selectedEdgeId: view.selectedEdgeId,
     projectionRevision: exploration.projectionRevision + 1,
   }
 }

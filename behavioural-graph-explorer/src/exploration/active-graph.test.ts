@@ -211,6 +211,36 @@ describe('redoLastViewChange', () => {
 })
 
 describe('selection during view changes', () => {
+  it('restores a selected node when undoing an opened subgraph', () => {
+    const initialGraph = activateGraphDocument(SAMPLE_GRAPH_DOCUMENT)
+    const selectedGraph = applyExplorationTransition(
+      initialGraph,
+      selectNode(
+        initialGraph.exploration,
+        project(initialGraph),
+        SAMPLE_NODE_IDS.preparation,
+      ),
+    )
+    const openedGraph = applyExplorationTransition(
+      selectedGraph,
+      clickIntoComposite(
+        SAMPLE_GRAPH_DOCUMENT,
+        project(selectedGraph),
+        selectedGraph.exploration,
+        SAMPLE_NODE_IDS.preparation,
+      ),
+    )
+    const undoneGraph = undoLastViewChange(openedGraph)
+
+    expect(openedGraph.exploration.selectedNodeIds).toEqual(new Set())
+    expect(undoneGraph.exploration.selectedNodeIds).toEqual(
+      new Set([SAMPLE_NODE_IDS.preparation]),
+    )
+    expect(undoneGraph.exploration.boldedEdgeIds).toEqual(
+      new Set(['execution->preparation', 'preparation->execution']),
+    )
+  })
+
   it('keeps a selected node that remains visible', () => {
     const initialGraph = activateGraphDocument(SAMPLE_GRAPH_DOCUMENT)
     const selectedGraph = applyExplorationTransition(
