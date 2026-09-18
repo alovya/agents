@@ -164,6 +164,28 @@ export function expandVisibleComposites(
   return addExpansionIds(state, visibleCompositeIds)
 }
 
+export function collapseOneVisibleLevel(
+  document: GraphDocument,
+  state: ExplorationState,
+): ExplorationState {
+  const expandedNodeIds = new Set(state.expandedNodeIds)
+
+  for (const node of document.nodes) {
+    if (
+      node.kind === 'composite' &&
+      node.parentId === state.currentScopeId
+    ) {
+      expandedNodeIds.delete(node.id)
+    }
+  }
+
+  if (expandedNodeIds.size === state.expandedNodeIds.size) {
+    return state
+  }
+
+  return acceptExpansionChange(state, expandedNodeIds)
+}
+
 export function expandAllComposites(
   document: GraphDocument,
   state: ExplorationState,
@@ -179,6 +201,30 @@ export function expandAllComposites(
     .map((node) => node.id)
 
   return addExpansionIds(state, compositeDescendantIds)
+}
+
+export function collapseAllComposites(
+  document: GraphDocument,
+  state: ExplorationState,
+): ExplorationState {
+  const nodesById = new Map(document.nodes.map((node) => [node.id, node]))
+  const expandedNodeIds = new Set(state.expandedNodeIds)
+
+  for (const node of document.nodes) {
+    if (
+      node.kind === 'composite' &&
+      node.id !== state.currentScopeId &&
+      isDescendantOfScope(node.id, state.currentScopeId, nodesById)
+    ) {
+      expandedNodeIds.delete(node.id)
+    }
+  }
+
+  if (expandedNodeIds.size === state.expandedNodeIds.size) {
+    return state
+  }
+
+  return acceptExpansionChange(state, expandedNodeIds)
 }
 
 function isVisibleComposite(

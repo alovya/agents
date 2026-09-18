@@ -15,7 +15,9 @@ import {
   canCollapseOneLevel,
   clearSelection,
   clickIntoComposite,
+  collapseAllComposites,
   collapseOneLevel,
+  collapseOneVisibleLevel,
   expandAllComposites,
   expandComposite,
   expandVisibleComposites,
@@ -203,6 +205,22 @@ function App() {
       ),
     )
   }, [activeGraph.document])
+  const handleCollapseVisible = useCallback(() => {
+    setActiveGraph((graph) =>
+      applyExplorationTransition(
+        graph,
+        collapseOneVisibleLevel(activeGraph.document, graph.exploration),
+      ),
+    )
+  }, [activeGraph.document])
+  const handleCollapseAll = useCallback(() => {
+    setActiveGraph((graph) =>
+      applyExplorationTransition(
+        graph,
+        collapseAllComposites(activeGraph.document, graph.exploration),
+      ),
+    )
+  }, [activeGraph.document])
   const handleSelectNode = useCallback(
     (nodeId: string) => {
       const connectedEdgeIds = findConnectedEdgeIds(visibleGraph, nodeId)
@@ -345,6 +363,14 @@ function App() {
     activeGraph.document,
     explorationState,
   )
+  const stateAfterCollapseOneLevel = collapseOneVisibleLevel(
+    activeGraph.document,
+    explorationState,
+  )
+  const stateAfterCollapseAll = collapseAllComposites(
+    activeGraph.document,
+    explorationState,
+  )
   const expandableDescendantCount =
     stateAfterExpandAll.expandedNodeIds.size -
     explorationState.expandedNodeIds.size
@@ -444,6 +470,20 @@ function App() {
                 disabled={stateAfterExpandAll === explorationState}
               >
                 Expand all
+              </button>
+              <button
+                type="button"
+                onClick={handleCollapseVisible}
+                disabled={stateAfterCollapseOneLevel === explorationState}
+              >
+                Collapse one level
+              </button>
+              <button
+                type="button"
+                onClick={handleCollapseAll}
+                disabled={stateAfterCollapseAll === explorationState}
+              >
+                Collapse all
               </button>
               <button
                 type="button"

@@ -3,6 +3,8 @@ import { projectVisibleGraph } from '../graph/project-visible-graph'
 import {
   canCollapseOneLevel,
   clearSelection,
+  collapseAllComposites,
+  collapseOneVisibleLevel,
   clickIntoComposite,
   collapseOneLevel,
   createInitialExplorationState,
@@ -170,6 +172,44 @@ describe('exploration state', () => {
         SAMPLE_NODE_IDS.preparation,
       ),
     ).toBe(state)
+  })
+
+  it('collapses every expanded direct child of the current scope by one level', () => {
+    const initialState = createInitialExplorationState(SAMPLE_GRAPH_DOCUMENT)
+    const expandedState = expandVisibleComposites(
+      project(initialState),
+      initialState,
+    )
+
+    const collapsedState = collapseOneVisibleLevel(
+      SAMPLE_GRAPH_DOCUMENT,
+      expandedState,
+    )
+
+    expect(collapsedState.expandedNodeIds).toEqual(new Set())
+    expect(collapsedState.projectionRevision).toBe(2)
+    expect(collapseOneVisibleLevel(SAMPLE_GRAPH_DOCUMENT, collapsedState)).toBe(
+      collapsedState,
+    )
+  })
+
+  it('collapses every expanded descendant of the current scope', () => {
+    const initialState = createInitialExplorationState(SAMPLE_GRAPH_DOCUMENT)
+    const expandedState = expandAllComposites(
+      SAMPLE_GRAPH_DOCUMENT,
+      initialState,
+    )
+
+    const collapsedState = collapseAllComposites(
+      SAMPLE_GRAPH_DOCUMENT,
+      expandedState,
+    )
+
+    expect(collapsedState.expandedNodeIds).toEqual(new Set())
+    expect(collapsedState.projectionRevision).toBe(2)
+    expect(collapseAllComposites(SAMPLE_GRAPH_DOCUMENT, collapsedState)).toBe(
+      collapsedState,
+    )
   })
 
   it('expands every visible composite for one level only', () => {
