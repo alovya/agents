@@ -2,6 +2,7 @@ import type { GraphDocument, VisibleGraph } from '../graph/graph-document'
 import { projectVisibleGraph } from '../graph/project-visible-graph'
 import {
   createInitialExplorationState,
+  findConnectedEdgeIds,
   type ExplorationState,
 } from './explore-graph'
 
@@ -122,14 +123,35 @@ function preserveVisibleSelection(
   )
   const visibleNodeIds = new Set(visibleGraph.nodes.map((node) => node.id))
   const visibleEdgeIds = new Set(visibleGraph.edges.map((edge) => edge.id))
-  const selectedNodeIds = new Set(
-    [...previousExploration.selectedNodeIds].filter((nodeId) =>
-      visibleNodeIds.has(nodeId),
-    ),
-  )
+  const selectedNodeIds = new Set<string>()
+  const newlySelectedNodeIds = new Set<string>()
+  const expandedSelectedNodeIds = new Set<string>()
+
+  for (const selectedNodeId of previousExploration.selectedNodeIds) {
+    if (visibleNodeIds.has(selectedNodeId)) {
+      selectedNodeIds.add(selectedNodeId)
+      continue
+    }
+
+    if (!nextExploration.expandedNodeIds.has(selectedNodeId)) {
+      continue
+    }
+
+    expandedSelectedNodeIds.add(selectedNodeId)
+
+    for (const node of document.nodes) {
+      if (node.parentId === selectedNodeId && visibleNodeIds.has(node.id)) {
+        selectedNodeIds.add(node.id)
+        newlySelectedNodeIds.add(node.id)
+      }
+    }
+  }
+
   const hiddenSelectedNodeIds = new Set(
     [...previousExploration.selectedNodeIds].filter(
-      (nodeId) => !visibleNodeIds.has(nodeId),
+      (nodeId) =>
+        !visibleNodeIds.has(nodeId) &&
+        !expandedSelectedNodeIds.has(nodeId),
     ),
   )
   const selectedEdgeId =
@@ -154,12 +176,23 @@ function preserveVisibleSelection(
     }
   }
 
-  const boldedEdgeIds = preserveBoldedEdges(
-    previousVisibleGraph,
-    previousExploration.boldedEdgeIds,
-    nextEdgesByUnderlyingId,
-    hiddenSelectedNodeIds,
+  const boldedEdgeIds = new Set(
+    preserveBoldedEdges(
+      previousVisibleGraph,
+      previousExploration.boldedEdgeIds,
+      nextEdgesByUnderlyingId,
+      hiddenSelectedNodeIds,
+    ),
   )
+
+  for (const newlySelectedNodeId of newlySelectedNodeIds) {
+    for (const edgeId of findConnectedEdgeIds(
+      visibleGraph,
+      newlySelectedNodeId,
+    )) {
+      boldedEdgeIds.add(edgeId)
+    }
+  }
 
   return {
     ...nextExploration,

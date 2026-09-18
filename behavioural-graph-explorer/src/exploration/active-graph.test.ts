@@ -269,7 +269,7 @@ describe('selection during view changes', () => {
     )
   })
 
-  it('keeps visible selected nodes and removes hidden selected nodes', () => {
+  it('keeps visible selected nodes and selects expanded children', () => {
     const initialGraph = activateGraphDocument(SAMPLE_GRAPH_DOCUMENT)
     const preparationSelectedGraph = applyExplorationTransition(
       initialGraph,
@@ -298,14 +298,23 @@ describe('selection during view changes', () => {
     )
 
     expect(expandedGraph.exploration.selectedNodeIds).toEqual(
-      new Set([SAMPLE_NODE_IDS.report]),
+      new Set([
+        SAMPLE_NODE_IDS.preparationInput,
+        SAMPLE_NODE_IDS.preparationChecks,
+        SAMPLE_NODE_IDS.report,
+      ]),
     )
     expect(expandedGraph.exploration.boldedEdgeIds).toEqual(
-      new Set(['execution->report']),
+      new Set([
+        'execution->prepare-input',
+        'execution->report',
+        'preparation-checks->execution',
+        'prepare-input->preparation-checks',
+      ]),
     )
   })
 
-  it('clears a selected node that the view change hides', () => {
+  it('selects the visible children of an expanded node', () => {
     const initialGraph = activateGraphDocument(SAMPLE_GRAPH_DOCUMENT)
     const selectedGraph = applyExplorationTransition(
       initialGraph,
@@ -325,8 +334,19 @@ describe('selection during view changes', () => {
       ),
     )
 
-    expect(expandedGraph.exploration.selectedNodeIds).toEqual(new Set())
-    expect(expandedGraph.exploration.boldedEdgeIds).toEqual(new Set())
+    expect(expandedGraph.exploration.selectedNodeIds).toEqual(
+      new Set([
+        SAMPLE_NODE_IDS.preparationInput,
+        SAMPLE_NODE_IDS.preparationChecks,
+      ]),
+    )
+    expect(expandedGraph.exploration.boldedEdgeIds).toEqual(
+      new Set([
+        'execution->prepare-input',
+        'preparation-checks->execution',
+        'prepare-input->preparation-checks',
+      ]),
+    )
   })
 
   it('keeps a selected edge that remains visible', () => {
