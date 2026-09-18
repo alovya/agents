@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { projectVisibleGraph } from '../graph/project-visible-graph'
 import {
+  canCollapseOneLevel,
   clearSelection,
   clickIntoComposite,
+  collapseOneLevel,
   createInitialExplorationState,
   expandAllComposites,
   expandComposite,
@@ -115,6 +117,59 @@ describe('exploration state', () => {
         underlyingEdgeIds: ['validate-preparation'],
       },
     ])
+  })
+
+  it('collapses a visible node and its siblings into their parent composite', () => {
+    const initialState = createInitialExplorationState(SAMPLE_GRAPH_DOCUMENT)
+    const expandedState = expandComposite(
+      SAMPLE_GRAPH_DOCUMENT,
+      project(initialState),
+      initialState,
+      SAMPLE_NODE_IDS.preparation,
+    )
+    const expandedGraph = project(expandedState)
+
+    expect(canCollapseOneLevel(
+      SAMPLE_GRAPH_DOCUMENT,
+      expandedGraph,
+      expandedState,
+      SAMPLE_NODE_IDS.preparationInput,
+    )).toBe(true)
+
+    const collapsedState = collapseOneLevel(
+      SAMPLE_GRAPH_DOCUMENT,
+      expandedGraph,
+      expandedState,
+      SAMPLE_NODE_IDS.preparationInput,
+    )
+
+    expect(collapsedState.expandedNodeIds).toEqual(new Set())
+    expect(nodeIds(collapsedState)).toEqual([
+      SAMPLE_NODE_IDS.preparation,
+      SAMPLE_NODE_IDS.execution,
+      SAMPLE_NODE_IDS.report,
+    ])
+    expect(collapsedState.projectionRevision).toBe(2)
+  })
+
+  it('does not collapse a node whose parent is the current scope', () => {
+    const state = createInitialExplorationState(SAMPLE_GRAPH_DOCUMENT)
+    const graph = project(state)
+
+    expect(canCollapseOneLevel(
+      SAMPLE_GRAPH_DOCUMENT,
+      graph,
+      state,
+      SAMPLE_NODE_IDS.preparation,
+    )).toBe(false)
+    expect(
+      collapseOneLevel(
+        SAMPLE_GRAPH_DOCUMENT,
+        graph,
+        state,
+        SAMPLE_NODE_IDS.preparation,
+      ),
+    ).toBe(state)
   })
 
   it('expands every visible composite for one level only', () => {

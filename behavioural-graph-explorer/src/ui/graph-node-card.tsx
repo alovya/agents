@@ -23,13 +23,13 @@ export function GraphNodeCard({ data }: NodeProps<Node<GraphFlowNodeData>>) {
         />
       ))}
       <strong className="graph-node__label">{data.label}</strong>
-      {isComposite && (
+      {(isComposite || data.canCollapse) && (
         <div className="graph-node__actions">
           {data.canClickInto && (
             <button
               type="button"
-              aria-label="Open scope"
-              title="Open scope"
+              aria-label="Open subgraph"
+              title="Open subgraph"
               onClick={(event) => {
                 event.stopPropagation()
                 data.onClickInto?.()
@@ -53,6 +53,22 @@ export function GraphNodeCard({ data }: NodeProps<Node<GraphFlowNodeData>>) {
             >
               <span
                 className="graph-node__action-symbol graph-node__action-symbol--expand"
+                aria-hidden="true"
+              />
+            </button>
+          )}
+          {data.canCollapse && (
+            <button
+              type="button"
+              aria-label="Collapse one level"
+              title="Collapse one level"
+              onClick={(event) => {
+                event.stopPropagation()
+                data.onCollapse?.()
+              }}
+            >
+              <span
+                className="graph-node__action-symbol graph-node__action-symbol--collapse"
                 aria-hidden="true"
               />
             </button>

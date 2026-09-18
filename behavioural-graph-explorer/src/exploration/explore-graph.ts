@@ -47,6 +47,47 @@ export function selectNode(
   }
 }
 
+export function canCollapseOneLevel(
+  document: GraphDocument,
+  graph: VisibleGraph,
+  state: ExplorationState,
+  nodeId: string,
+): boolean {
+  const node = graph.nodes.find((candidate) => candidate.id === nodeId)
+  const parent = node?.parentId === null || node?.parentId === undefined
+    ? undefined
+    : document.nodes.find((candidate) => candidate.id === node.parentId)
+
+  return (
+    parent?.kind === 'composite' &&
+    parent.id !== state.currentScopeId &&
+    state.expandedNodeIds.has(parent.id)
+  )
+}
+
+export function collapseOneLevel(
+  document: GraphDocument,
+  graph: VisibleGraph,
+  state: ExplorationState,
+  nodeId: string,
+): ExplorationState {
+  if (!canCollapseOneLevel(document, graph, state, nodeId)) {
+    return state
+  }
+
+  const node = graph.nodes.find((candidate) => candidate.id === nodeId)
+  const parentId = node?.parentId
+
+  if (parentId === null || parentId === undefined) {
+    return state
+  }
+
+  const expandedNodeIds = new Set(state.expandedNodeIds)
+  expandedNodeIds.delete(parentId)
+
+  return acceptExpansionChange(state, expandedNodeIds)
+}
+
 export function selectEdge(
   state: ExplorationState,
   graph: VisibleGraph,

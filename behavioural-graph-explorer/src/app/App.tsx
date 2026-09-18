@@ -11,8 +11,10 @@ import {
 } from '../exploration/active-graph'
 import { DagreLayoutEngine } from '../layout/dagre-layout'
 import {
+  canCollapseOneLevel,
   clearSelection,
   clickIntoComposite,
+  collapseOneLevel,
   expandAllComposites,
   expandComposite,
   expandVisibleComposites,
@@ -266,9 +268,43 @@ function App() {
     }
   }, [explorationState.projectionRevision, visibleGraph])
 
+  const handleCollapse = useCallback(
+    (nodeId: string) => {
+      setActiveGraph((graph) =>
+        applyExplorationTransition(
+          graph,
+          collapseOneLevel(
+            activeGraph.document,
+            visibleGraph,
+            graph.exploration,
+            nodeId,
+          ),
+        ),
+      )
+    },
+    [activeGraph.document, visibleGraph],
+  )
   const graphActions = useMemo(
-    () => ({ onClickInto: handleClickInto, onExpand: handleExpand }),
-    [handleClickInto, handleExpand],
+    () => ({
+      onClickInto: handleClickInto,
+      onExpand: handleExpand,
+      canCollapse: (nodeId: string) =>
+        canCollapseOneLevel(
+          activeGraph.document,
+          visibleGraph,
+          explorationState,
+          nodeId,
+        ),
+      onCollapse: handleCollapse,
+    }),
+    [
+      activeGraph.document,
+      explorationState,
+      handleClickInto,
+      handleCollapse,
+      handleExpand,
+      visibleGraph,
+    ],
   )
   const flowGraph = useMemo(() => {
     if (!canRenderLayoutForGraph(laidOutGraph, visibleGraph)) {
@@ -308,6 +344,15 @@ function App() {
   const expandableDescendantCount =
     stateAfterExpandAll.expandedNodeIds.size -
     explorationState.expandedNodeIds.size
+  const currentScope = activeGraph.document.nodes.find(
+    (node) => node.id === explorationState.currentScopeId,
+  )
+
+  if (currentScope === undefined) {
+    throw new Error(
+      `Missing current scope node: ${explorationState.currentScopeId}`,
+    )
+  }
 
   return (
     <main className="app-shell">
@@ -326,6 +371,9 @@ function App() {
       <section className="exploration-toolbar" aria-label="View actions">
         <div>
           <span className="exploration-toolbar__label">Expansion</span>
+          <span className="exploration-toolbar__scope">
+            Current subgraph: {currentScope.label}
+          </span>
           <span className="exploration-toolbar__status">
             {visibleCompositeCount} visible composite
             {visibleCompositeCount === 1 ? '' : 's'} · {expandableDescendantCount}{' '}
@@ -347,11 +395,15 @@ function App() {
             <span className="graph-legend__label">Composite controls</span>
             <span className="graph-legend__item">
               <span className="graph-legend__symbol" aria-hidden="true">›</span>
-              Open scope
+              Open subgraph
             </span>
             <span className="graph-legend__item">
               <span className="graph-legend__symbol" aria-hidden="true">+</span>
-              Expand
+              Expand one level
+            </span>
+            <span className="graph-legend__item">
+              <span className="graph-legend__symbol" aria-hidden="true">−</span>
+              Collapse one level
             </span>
           </div>
         </div>

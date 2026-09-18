@@ -12,13 +12,17 @@ export type GraphFlowNodeData = {
   kind: NodeKind
   canClickInto: boolean
   canExpand: boolean
+  canCollapse: boolean
   onClickInto?: () => void
   onExpand?: () => void
+  onCollapse?: () => void
 }
 
 export type GraphNodeActions = {
   onClickInto?: (nodeId: string) => void
   onExpand?: (nodeId: string) => void
+  canCollapse?: (nodeId: string) => boolean
+  onCollapse?: (nodeId: string) => void
 }
 
 export function convertToReactFlow(
@@ -156,6 +160,7 @@ function createNodeData(
     kind: graphNode.kind,
     canClickInto: graphNode.kind === 'composite',
     canExpand: graphNode.kind === 'composite',
+    canCollapse: actions.canCollapse?.(graphNode.id) ?? false,
   }
 
   if (graphNode.kind === 'composite') {
@@ -169,6 +174,10 @@ function createNodeData(
     if (onExpand) {
       data.onExpand = () => onExpand(graphNode.id)
     }
+  }
+
+  if (data.canCollapse && actions.onCollapse) {
+    data.onCollapse = () => actions.onCollapse?.(graphNode.id)
   }
 
   return data
