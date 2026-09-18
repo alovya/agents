@@ -2,8 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { projectVisibleGraph } from '../graph/project-visible-graph'
 import {
   canCollapseOneLevel,
-  clearSelectedArrows,
-  clearSelectedNodes,
+  clearSelectedNodesAndArrows,
   clearSelection,
   collapseAllComposites,
   collapseOneVisibleLevel,
@@ -503,13 +502,10 @@ describe('exploration state', () => {
       projectionRevision: 0,
     })
     expect(deselected.selectedNodeIds).toEqual(new Set([SAMPLE_NODE_IDS.report]))
-    expect(clearSelectedArrows(multipleNodesSelected, graph)).toMatchObject({
-      selectedNodeIds: multipleNodesSelected.selectedNodeIds,
-      boldedEdgeIds: new Set(),
-    })
-    expect(clearSelectedNodes(multipleNodesSelected)).toMatchObject({
+    expect(clearSelectedNodesAndArrows(multipleNodesSelected)).toMatchObject({
       selectedNodeIds: new Set(),
-      boldedEdgeIds: multipleNodesSelected.boldedEdgeIds,
+      boldedEdgeIds: new Set(),
+      selectedEdgeId: null,
     })
     expect(edgeSelected).toMatchObject({
       selectedNodeIds: new Set(),

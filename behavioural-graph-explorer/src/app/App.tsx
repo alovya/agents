@@ -13,8 +13,7 @@ import {
 import { DagreLayoutEngine } from '../layout/dagre-layout'
 import {
   canCollapseOneLevel,
-  clearSelectedArrows,
-  clearSelectedNodes,
+  clearSelectedNodesAndArrows,
   clickIntoComposite,
   collapseAllComposites,
   collapseOneLevel,
@@ -239,19 +238,11 @@ function App() {
     },
     [visibleGraph],
   )
-  const handleClearBoldedEdges = useCallback(() => {
+  const handleClearSelectedNodesAndArrows = useCallback(() => {
     setActiveGraph((graph) =>
       applyExplorationTransition(
         graph,
-        clearSelectedArrows(graph.exploration, visibleGraph),
-      ),
-    )
-  }, [visibleGraph])
-  const handleClearSelectedNodes = useCallback(() => {
-    setActiveGraph((graph) =>
-      applyExplorationTransition(
-        graph,
-        clearSelectedNodes(graph.exploration),
+        clearSelectedNodesAndArrows(graph.exploration),
       ),
     )
   }, [])
@@ -307,23 +298,16 @@ function App() {
         return
       }
 
-      if (modifierPressed && key === 'b') {
-        event.preventDefault()
-        handleClearBoldedEdges()
-        return
-      }
-
       if (modifierPressed && key === 'v') {
         event.preventDefault()
-        handleClearSelectedNodes()
+        handleClearSelectedNodesAndArrows()
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [
-    handleClearBoldedEdges,
-    handleClearSelectedNodes,
+    handleClearSelectedNodesAndArrows,
     handleCollapseAll,
     handleCollapseVisible,
     handleExpandAll,
@@ -560,23 +544,15 @@ function App() {
               </button>
               <button
                 type="button"
-                title="Clear selected arrows (Ctrl/Cmd+B)"
-                onClick={handleClearBoldedEdges}
+                title="Clear selected nodes and arrows (Ctrl/Cmd+V)"
+                onClick={handleClearSelectedNodesAndArrows}
                 disabled={
-                  !visibleGraph.edges.some((edge) =>
-                    explorationState.boldedEdgeIds.has(edge.id),
-                  )
+                  explorationState.selectedNodeIds.size === 0 &&
+                  explorationState.boldedEdgeIds.size === 0 &&
+                  explorationState.selectedEdgeId === null
                 }
               >
-                Clear selected arrows
-              </button>
-              <button
-                type="button"
-                title="Clear selected nodes (Ctrl/Cmd+V)"
-                onClick={handleClearSelectedNodes}
-                disabled={explorationState.selectedNodeIds.size === 0}
-              >
-                Clear selected nodes
+                Clear selected nodes and arrows
               </button>
             </div>
           </section>

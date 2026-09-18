@@ -45,10 +45,9 @@ In the toolbar:
 1. **Expand one level** expands every composite currently visible.
 2. **Expand all** expands everything below the current scope at once.
 3. **Undo last view change** steps back through expansions and scope changes, including leaving a scope you opened.
-4. **Clear selected arrows** removes the emphasis from every arrow currently visible.
-5. **Clear selected nodes** removes the current node highlighting without changing arrow emphasis.
+4. **Clear selected nodes and arrows** removes all current highlighting.
 
-Click an arrow to bold it, so you can trace one path through a busy diagram; click it again to unbold. Bolding several arrows at once is fine. Click cards to toggle multiple node highlights; empty graph space does not change selection. Use the clear buttons when you want to remove highlighting. Drag to pan, scroll to zoom, and use the on-screen controls to fit the graph to the window. Nothing you do here changes the document.
+Click an arrow to bold it, so you can trace one path through a busy diagram; click it again to unbold. Bolding several arrows at once is fine. Click cards to toggle multiple node highlights; empty graph space does not change selection. Use the clear button when you want to remove highlighting. Drag to pan, scroll to zoom, and use the on-screen controls to fit the graph to the window. Nothing you do here changes the document.
 
 The status line above the graph tells you how many composites are visible and how many more are still hidden below the current scope.
 

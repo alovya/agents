@@ -141,33 +141,22 @@ export function selectEdge(
   }
 }
 
-export function clearSelectedArrows(
+export function clearSelectedNodesAndArrows(
   state: ExplorationState,
-  graph: VisibleGraph,
 ): ExplorationState {
-  const visibleEdgeIds = new Set(graph.edges.map((edge) => edge.id))
-  const boldedEdgeIds = new Set(
-    [...state.boldedEdgeIds].filter((edgeId) => !visibleEdgeIds.has(edgeId)),
-  )
-
-  if (boldedEdgeIds.size === state.boldedEdgeIds.size) {
+  if (
+    state.selectedNodeIds.size === 0 &&
+    state.boldedEdgeIds.size === 0 &&
+    state.selectedEdgeId === null
+  ) {
     return state
   }
 
   return {
     ...state,
-    boldedEdgeIds,
-  }
-}
-
-export function clearSelectedNodes(state: ExplorationState): ExplorationState {
-  if (state.selectedNodeIds.size === 0) {
-    return state
-  }
-
-  return {
-    ...state,
+    boldedEdgeIds: new Set(),
     selectedNodeIds: new Set(),
+    selectedEdgeId: null,
   }
 }
 
