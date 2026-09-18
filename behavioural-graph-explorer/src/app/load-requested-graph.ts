@@ -41,7 +41,9 @@ export function createInitialGraphView(
 export async function fetchGraphFileSource(
   graphFileRoute: string,
 ): Promise<string> {
-  const response = await globalThis.fetch(graphFileRoute)
+  const response = await globalThis.fetch(graphFileRoute, {
+    cache: 'no-store',
+  })
 
   if (!response.ok) {
     throw new Error(`Could not load graph JSON file (${response.status}).`)

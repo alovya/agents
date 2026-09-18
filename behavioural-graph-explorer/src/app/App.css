@@ -83,6 +83,13 @@
   resize: vertical;
 }
 
+.graph-import__source textarea:read-only {
+  border-color: #d8e0ed;
+  color: #68758a;
+  background: #f1f5f9;
+  cursor: default;
+}
+
 .graph-import__actions {
   display: flex;
   align-items: center;
@@ -459,6 +466,12 @@
     border-color: #475569;
     color: #e2e8f0;
     background: #0f172a;
+  }
+
+  .graph-import__source textarea:read-only {
+    border-color: #475569;
+    color: #94a3b8;
+    background: #1e293b;
   }
 
   .graph-import__actions button,

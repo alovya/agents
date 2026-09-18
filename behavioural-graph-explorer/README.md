@@ -22,7 +22,7 @@ npm link
 bgexp /tmp/ralph-loops.json
 ```
 
-This starts a local server and opens the graph in your browser. Stop it with `Ctrl-C`.
+This starts a local server and opens the graph in your browser. Stop it with `Ctrl-C`. When a file path is supplied, `bgexp` polls that file for changes and updates the graph automatically; the JSON area is read-only in this live-file mode. Valid changes preserve the current scope and any selections whose IDs still exist. Invalid intermediate writes leave the last valid graph visible and report the error.
 
 Run `bgexp` with no argument to open the built-in sample graph instead, then load your own document from inside the app in either of two ways:
 

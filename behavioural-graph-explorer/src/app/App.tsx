@@ -8,6 +8,7 @@ import {
   applyExplorationTransition,
   type ActiveGraph,
   redoLastViewChange,
+  replaceGraphDocument,
   undoLastViewChange,
 } from '../exploration/active-graph'
 import { DagreLayoutEngine } from '../layout/dagre-layout'
@@ -57,6 +58,7 @@ const NODE_KIND_LEGEND = [
 
 function App() {
   const [initialGraphView] = useState(() => createInitialGraphView(null))
+  const [graphFileRoute] = useState(() => readGraphFileRouteFromLocation())
   const [activeGraph, setActiveGraph] = useState<ActiveGraph>(
     initialGraphView.activeGraph,
   )
@@ -90,49 +92,86 @@ function App() {
     )
   }
 
-  const loadGraphDocumentSource = useCallback((source: string) => {
-    try {
-      const document = parseGraphDocumentText(source)
-      setActiveGraph(activateGraphDocument(document))
-      setLaidOutGraph(null)
-      setImportError(null)
-    } catch (error) {
-      if (error instanceof GraphDocumentError) {
-        setImportError(error.message)
-        return
+  const loadGraphDocumentSource = useCallback(
+    (source: string, preserveCurrentView = false): boolean => {
+      try {
+        const document = parseGraphDocumentText(source)
+        setActiveGraph((graph) =>
+          preserveCurrentView
+            ? replaceGraphDocument(graph, document)
+            : activateGraphDocument(document),
+        )
+        setLaidOutGraph(null)
+        setImportError(null)
+        return true
+      } catch (error) {
+        if (error instanceof GraphDocumentError) {
+          setImportError(error.message)
+          return false
+        }
+
+        throw error
       }
-
-      throw error
-    }
-  }, [])
+    },
+    [],
+  )
   useEffect(() => {
-    const graphFileRoute = readGraphFileRouteFromLocation()
-
     if (graphFileRoute === null) return
 
     let isCancelled = false
+    let isRequestInFlight = false
+    let hasLoadedSource = false
+    let previousSource: string | null = null
+    let previousSourceWasValid = false
+    let previousRequestFailed = false
 
-    void fetchGraphFileSource(graphFileRoute)
-      .then((source) => {
+    const refreshGraphFile = async () => {
+      if (isRequestInFlight) return
+
+      isRequestInFlight = true
+
+      try {
+        const source = await fetchGraphFileSource(graphFileRoute)
+
         if (isCancelled) return
 
-        setGraphJsonSource(source)
-        loadGraphDocumentSource(source)
-      })
-      .catch((error: unknown) => {
+        if (source !== previousSource) {
+          previousSource = source
+          setGraphJsonSource(source)
+          previousSourceWasValid = loadGraphDocumentSource(
+            source,
+            hasLoadedSource,
+          )
+          hasLoadedSource = true
+        } else if (previousRequestFailed && previousSourceWasValid) {
+          setImportError(null)
+        }
+
+        previousRequestFailed = false
+      } catch (error: unknown) {
         if (isCancelled) return
 
+        previousRequestFailed = true
         setImportError(
           error instanceof Error
             ? error.message
             : 'Could not load graph JSON file.',
         )
-      })
+      } finally {
+        isRequestInFlight = false
+      }
+    }
+
+    void refreshGraphFile()
+    const intervalId = window.setInterval(() => {
+      void refreshGraphFile()
+    }, 1000)
 
     return () => {
       isCancelled = true
+      window.clearInterval(intervalId)
     }
-  }, [loadGraphDocumentSource])
+  }, [graphFileRoute, loadGraphDocumentSource])
   const handleLoadText = useCallback(() => {
     loadGraphDocumentSource(graphJsonSource)
   }, [graphJsonSource, loadGraphDocumentSource])
@@ -560,6 +599,7 @@ function App() {
           <GraphImport
             source={graphJsonSource}
             errorMessage={importError}
+            readOnly={graphFileRoute !== null}
             onSourceChange={setGraphJsonSource}
             onLoadText={handleLoadText}
             onChooseFile={handleChooseFile}

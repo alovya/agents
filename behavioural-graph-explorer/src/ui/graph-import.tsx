@@ -1,6 +1,7 @@
 export type GraphImportProps = {
   source: string
   errorMessage: string | null
+  readOnly?: boolean
   onSourceChange(source: string): void
   onLoadText(): void
   onChooseFile(file: File): void
@@ -9,6 +10,7 @@ export type GraphImportProps = {
 export function GraphImport({
   source,
   errorMessage,
+  readOnly = false,
   onSourceChange,
   onLoadText,
   onChooseFile,
@@ -20,6 +22,7 @@ export function GraphImport({
         <textarea
           id="graph-json-source"
           value={source}
+          readOnly={readOnly}
           onChange={(event) => onSourceChange(event.target.value)}
           rows={8}
         />

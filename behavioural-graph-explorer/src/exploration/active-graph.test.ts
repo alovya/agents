@@ -3,6 +3,7 @@ import {
   activateGraphDocument,
   applyExplorationTransition,
   redoLastViewChange,
+  replaceGraphDocument,
   type ActiveGraph,
   undoLastViewChange,
 } from './active-graph'
@@ -208,6 +209,52 @@ describe('redoLastViewChange', () => {
 
     expect(expandedExecution.redoHistory).toEqual([])
     expect(redoLastViewChange(expandedExecution)).toBe(expandedExecution)
+  })
+})
+
+describe('replaceGraphDocument', () => {
+  it('keeps valid view and selection state while replacing the document', () => {
+    const initialGraph = activateGraphDocument(SAMPLE_GRAPH_DOCUMENT)
+    const expandedGraph = applyExplorationTransition(
+      initialGraph,
+      expandComposite(
+        SAMPLE_GRAPH_DOCUMENT,
+        project(initialGraph),
+        initialGraph.exploration,
+        SAMPLE_NODE_IDS.preparation,
+      ),
+    )
+    const selectedGraph = applyExplorationTransition(
+      expandedGraph,
+      selectNode(
+        expandedGraph.exploration,
+        project(expandedGraph),
+        SAMPLE_NODE_IDS.preparationInput,
+      ),
+    )
+    const replacedDocument = {
+      ...SAMPLE_GRAPH_DOCUMENT,
+      nodes: SAMPLE_GRAPH_DOCUMENT.nodes.map((node) =>
+        node.id === SAMPLE_NODE_IDS.report
+          ? { ...node, label: 'Updated report' }
+          : node,
+      ),
+    }
+
+    const replacedGraph = replaceGraphDocument(selectedGraph, replacedDocument)
+
+    expect(replacedGraph.document).toBe(replacedDocument)
+    expect(replacedGraph.exploration.currentScopeId).toBe(
+      SAMPLE_NODE_IDS.root,
+    )
+    expect(replacedGraph.exploration.expandedNodeIds).toEqual(
+      new Set([SAMPLE_NODE_IDS.preparation]),
+    )
+    expect(replacedGraph.exploration.selectedNodeIds).toEqual(
+      new Set([SAMPLE_NODE_IDS.preparationInput]),
+    )
+    expect(replacedGraph.viewHistory).toEqual([])
+    expect(replacedGraph.redoHistory).toEqual([])
   })
 })
 

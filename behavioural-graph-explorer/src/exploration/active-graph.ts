@@ -31,6 +31,61 @@ export function activateGraphDocument(document: GraphDocument): ActiveGraph {
   }
 }
 
+export function replaceGraphDocument(
+  activeGraph: ActiveGraph,
+  document: GraphDocument,
+): ActiveGraph {
+  const scopePath = restoreScopePath(
+    activeGraph.exploration.scopePath,
+    document,
+  )
+  const currentScopeId = scopePath[scopePath.length - 1]
+  const compositeNodeIds = new Set(
+    document.nodes
+      .filter((node) => node.kind === 'composite')
+      .map((node) => node.id),
+  )
+  const expandedNodeIds = new Set(
+    [...activeGraph.exploration.expandedNodeIds].filter((nodeId) =>
+      compositeNodeIds.has(nodeId),
+    ),
+  )
+  const visibleGraph = projectVisibleGraph(
+    document,
+    currentScopeId,
+    expandedNodeIds,
+  )
+  const visibleNodeIds = new Set(visibleGraph.nodes.map((node) => node.id))
+  const visibleEdgeIds = new Set(visibleGraph.edges.map((edge) => edge.id))
+
+  return {
+    document,
+    exploration: {
+      currentScopeId,
+      scopePath,
+      expandedNodeIds,
+      boldedEdgeIds: new Set(
+        [...activeGraph.exploration.boldedEdgeIds].filter((edgeId) =>
+          visibleEdgeIds.has(edgeId),
+        ),
+      ),
+      selectedNodeIds: new Set(
+        [...activeGraph.exploration.selectedNodeIds].filter((nodeId) =>
+          visibleNodeIds.has(nodeId),
+        ),
+      ),
+      selectedEdgeId:
+        activeGraph.exploration.selectedEdgeId !== null &&
+        visibleEdgeIds.has(activeGraph.exploration.selectedEdgeId)
+          ? activeGraph.exploration.selectedEdgeId
+          : null,
+      projectionRevision: activeGraph.exploration.projectionRevision + 1,
+    },
+    viewHistory: [],
+    redoHistory: [],
+  }
+}
+
 export function applyExplorationTransition(
   activeGraph: ActiveGraph,
   nextExploration: ExplorationState,
@@ -104,6 +159,27 @@ export function redoLastViewChange(activeGraph: ActiveGraph): ActiveGraph {
     ],
     redoHistory: activeGraph.redoHistory.slice(0, -1),
   }
+}
+
+function restoreScopePath(
+  previousScopePath: readonly string[],
+  document: GraphDocument,
+): readonly string[] {
+  const nodesById = new Map(document.nodes.map((node) => [node.id, node]))
+  const scopePath = [document.rootId]
+
+  for (const nodeId of previousScopePath.slice(1)) {
+    const node = nodesById.get(nodeId)
+    const parentId = scopePath[scopePath.length - 1]
+
+    if (node?.kind !== 'composite' || node.parentId !== parentId) {
+      break
+    }
+
+    scopePath.push(nodeId)
+  }
+
+  return scopePath
 }
 
 function preserveVisibleSelection(
