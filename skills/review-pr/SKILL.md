@@ -12,3 +12,9 @@ Use this skill to review a pull request.
 **Code diffs are neigh incomprehensible; behaviours actually make sense.** Code diffs, which also often appear in non-linear, non-execution order, make basically zero sense to human readers without understanding the behaviour they are changing: when reviewing a pull request, focus on the behaviour that is being changed, and how the code diff is effecting it.
 
 **Explain as before-and-after behaviour.** Explain the behaviours of interest using the /write-step-by-step-explanation skill: explain what the behaviour was before, then explain what it is after.
+
+**Accompany explanations with code snippets.** When explaining behaviours, include relevant code snippets in your prose/under your bullets; file:line references should also be included, but in-line code snippets are preferred, since that way the review can be read on the spot without having to constantly refer back to source code.
+
+**Recommend a good reading order.** On sites like GitHub or GitLab, files are shown in something like the alphabetical order of their filenames, which is a truly awful order for reviewing a PR. Instead, suggest a better reading order, e.g. a spine that follows the logical flow of the code or the main execution path(s).
+
+**Call things out only after you have reasoned about the PR.** Only have after you have reasoned about the PR according to the principles above, call things out: bugs, fixes, code quality improvements, better testing, alternative designs, etc; avoid premature judgment.
