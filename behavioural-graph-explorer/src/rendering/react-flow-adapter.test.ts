@@ -85,7 +85,6 @@ describe('convertToReactFlow', () => {
     )!
 
     expect(composite.data).toMatchObject({
-      graphNodeId: SAMPLE_NODE_IDS.preparation,
       kind: 'composite',
       canClickInto: true,
       canExpand: true,
@@ -96,7 +95,6 @@ describe('convertToReactFlow', () => {
     expect(onExpand).toHaveBeenCalledWith(SAMPLE_NODE_IDS.preparation)
 
     expect(leaf.data).toMatchObject({
-      graphNodeId: SAMPLE_NODE_IDS.report,
       kind: 'leaf',
       canClickInto: false,
       canExpand: false,

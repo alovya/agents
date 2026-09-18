@@ -23,7 +23,6 @@ export function GraphNodeCard({ data }: NodeProps<Node<GraphFlowNodeData>>) {
         />
       ))}
       <strong className="graph-node__label">{data.label}</strong>
-      <span className="graph-node__id">{data.graphNodeId}</span>
       {isComposite && (
         <div className="graph-node__actions">
           {data.canClickInto && (

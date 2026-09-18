@@ -8,7 +8,6 @@ export const GRAPH_ARROWHEAD_SIZE = 37.5
 export const GRAPH_EDGE_COLOUR = '#526174'
 
 export type GraphFlowNodeData = {
-  graphNodeId: string
   label: string
   kind: NodeKind
   canClickInto: boolean
@@ -153,7 +152,6 @@ function createNodeData(
   actions: GraphNodeActions,
 ): GraphFlowNodeData {
   const data: GraphFlowNodeData = {
-    graphNodeId: graphNode.id,
     label: graphNode.label,
     kind: graphNode.kind,
     canClickInto: graphNode.kind === 'composite',
