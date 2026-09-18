@@ -48,7 +48,7 @@ In the toolbar:
 4. **Clear selected arrows** removes the emphasis from every arrow currently visible.
 5. **Clear selected nodes** removes the current node highlighting without changing arrow emphasis.
 
-Click an arrow to bold it, so you can trace one path through a busy diagram; click it again to unbold. Bolding several arrows at once is fine. Click cards to toggle multiple node highlights, and click empty space to clear the node and edge selection. Drag to pan, scroll to zoom, and use the on-screen controls to fit the graph to the window. Nothing you do here changes the document.
+Click an arrow to bold it, so you can trace one path through a busy diagram; click it again to unbold. Bolding several arrows at once is fine. Click cards to toggle multiple node highlights; empty graph space does not change selection. Use the clear buttons when you want to remove highlighting. Drag to pan, scroll to zoom, and use the on-screen controls to fit the graph to the window. Nothing you do here changes the document.
 
 The status line above the graph tells you how many composites are visible and how many more are still hidden below the current scope.
 

@@ -15,7 +15,6 @@ import {
   canCollapseOneLevel,
   clearSelectedArrows,
   clearSelectedNodes,
-  clearSelection,
   clickIntoComposite,
   collapseAllComposites,
   collapseOneLevel,
@@ -256,11 +255,6 @@ function App() {
       ),
     )
   }, [])
-  const handleClearSelection = useCallback(() => {
-    setActiveGraph((graph) =>
-      applyExplorationTransition(graph, clearSelection(graph.exploration)),
-    )
-  }, [])
   const handleUndo = useCallback(() => {
     setActiveGraph(undoLastViewChange)
   }, [])
@@ -461,7 +455,6 @@ function App() {
             edgesReconnectable={false}
             onNodeClick={(_, node) => handleSelectNode(node.id)}
             onEdgeClick={(_, edge) => handleSelectEdge(edge.id)}
-            onPaneClick={handleClearSelection}
             fitView
             fitViewOptions={{ padding: 0.2 }}
             minZoom={0.05}
