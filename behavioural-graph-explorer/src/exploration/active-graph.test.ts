@@ -10,6 +10,7 @@ import { projectVisibleGraph } from '../graph/project-visible-graph'
 import type { GraphDocument } from '../graph/graph-document'
 import {
   clickIntoComposite,
+  collapseOneLevel,
   expandComposite,
   selectEdge,
   selectNode,
@@ -237,6 +238,43 @@ describe('selection during view changes', () => {
       new Set([SAMPLE_NODE_IDS.preparation]),
     )
     expect(undoneGraph.exploration.boldedEdgeIds).toEqual(
+      new Set(['execution->preparation', 'preparation->execution']),
+    )
+  })
+
+  it('selects a collapsed parent when a selected child disappears', () => {
+    const initialGraph = activateGraphDocument(SAMPLE_GRAPH_DOCUMENT)
+    const expandedGraph = applyExplorationTransition(
+      initialGraph,
+      expandComposite(
+        SAMPLE_GRAPH_DOCUMENT,
+        project(initialGraph),
+        initialGraph.exploration,
+        SAMPLE_NODE_IDS.preparation,
+      ),
+    )
+    const selectedGraph = applyExplorationTransition(
+      expandedGraph,
+      selectNode(
+        expandedGraph.exploration,
+        project(expandedGraph),
+        SAMPLE_NODE_IDS.preparationInput,
+      ),
+    )
+    const collapsedGraph = applyExplorationTransition(
+      selectedGraph,
+      collapseOneLevel(
+        SAMPLE_GRAPH_DOCUMENT,
+        project(selectedGraph),
+        selectedGraph.exploration,
+        SAMPLE_NODE_IDS.preparationInput,
+      ),
+    )
+
+    expect(collapsedGraph.exploration.selectedNodeIds).toEqual(
+      new Set([SAMPLE_NODE_IDS.preparation]),
+    )
+    expect(collapsedGraph.exploration.boldedEdgeIds).toEqual(
       new Set(['execution->preparation', 'preparation->execution']),
     )
   })

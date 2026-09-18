@@ -121,6 +121,9 @@ function preserveVisibleSelection(
     nextExploration.currentScopeId,
     nextExploration.expandedNodeIds,
   )
+  const previousVisibleNodeIds = new Set(
+    previousVisibleGraph.nodes.map((node) => node.id),
+  )
   const visibleNodeIds = new Set(visibleGraph.nodes.map((node) => node.id))
   const visibleEdgeIds = new Set(visibleGraph.edges.map((edge) => edge.id))
   const selectedNodeIds = new Set<string>()
@@ -133,17 +136,31 @@ function preserveVisibleSelection(
       continue
     }
 
-    if (!nextExploration.expandedNodeIds.has(selectedNodeId)) {
+    if (nextExploration.expandedNodeIds.has(selectedNodeId)) {
+      expandedSelectedNodeIds.add(selectedNodeId)
+
+      for (const node of document.nodes) {
+        if (node.parentId === selectedNodeId && visibleNodeIds.has(node.id)) {
+          selectedNodeIds.add(node.id)
+          newlySelectedNodeIds.add(node.id)
+        }
+      }
+
       continue
     }
 
-    expandedSelectedNodeIds.add(selectedNodeId)
+    const parentId = document.nodes.find(
+      (node) => node.id === selectedNodeId,
+    )?.parentId
 
-    for (const node of document.nodes) {
-      if (node.parentId === selectedNodeId && visibleNodeIds.has(node.id)) {
-        selectedNodeIds.add(node.id)
-        newlySelectedNodeIds.add(node.id)
-      }
+    if (
+      parentId !== null &&
+      parentId !== undefined &&
+      !previousVisibleNodeIds.has(parentId) &&
+      visibleNodeIds.has(parentId)
+    ) {
+      selectedNodeIds.add(parentId)
+      newlySelectedNodeIds.add(parentId)
     }
   }
 
