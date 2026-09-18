@@ -12,7 +12,7 @@
 
 h1 {
   margin: 0;
-  color: #4f46a5;
+  color: #1d4ed8;
   font-size: clamp(1.8rem, 4vw, 2.6rem);
   letter-spacing: -0.04em;
   line-height: 1.1;
@@ -72,8 +72,8 @@ h1 {
 }
 
 .graph-import__actions button:hover {
-  border-color: #635bce;
-  color: #4f46a5;
+  border-color: #1d4ed8;
+  color: #1d4ed8;
 }
 
 .graph-import__status {
@@ -157,8 +157,8 @@ h1 {
 }
 
 .exploration-toolbar__actions button:hover:not(:disabled) {
-  border-color: #635bce;
-  color: #4f46a5;
+  border-color: #1d4ed8;
+  color: #1d4ed8;
 }
 
 .exploration-toolbar__actions button:disabled {
@@ -207,13 +207,13 @@ h1 {
 }
 
 .graph-node--leaf {
-  border-color: #1d9a72;
-  background: #f1fbf7;
+  border-color: #64748b;
+  background: #f8fafc;
 }
 
 .graph-node--composite {
-  border-color: #635bce;
-  background: #f7f6ff;
+  border-color: #1d4ed8;
+  background: #dbeafe;
 }
 
 .node-type-legend {
@@ -262,12 +262,12 @@ h1 {
 }
 
 .graph-node__actions button:hover {
-  border-color: #635bce;
-  color: #4f46a5;
+  border-color: #1d4ed8;
+  color: #1d4ed8;
 }
 
 .react-flow__node.selected .graph-node {
-  box-shadow: 0 0 0 3px rgb(99 91 206 / 25%), 0 8px 18px rgb(44 62 96 / 12%);
+  box-shadow: 0 0 0 3px rgb(29 78 216 / 25%), 0 8px 18px rgb(44 62 96 / 12%);
 }
 
 .react-flow__edge.selected .react-flow__edge-path {
