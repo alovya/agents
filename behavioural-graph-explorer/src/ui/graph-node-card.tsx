@@ -29,23 +29,33 @@ export function GraphNodeCard({ data }: NodeProps<Node<GraphFlowNodeData>>) {
           {data.canClickInto && (
             <button
               type="button"
+              aria-label="Open scope"
+              title="Open scope"
               onClick={(event) => {
                 event.stopPropagation()
                 data.onClickInto?.()
               }}
             >
-              Open scope
+              <span
+                className="graph-node__action-symbol graph-node__action-symbol--open"
+                aria-hidden="true"
+              />
             </button>
           )}
           {data.canExpand && (
             <button
               type="button"
+              aria-label="Expand"
+              title="Expand"
               onClick={(event) => {
                 event.stopPropagation()
                 data.onExpand?.()
               }}
             >
-              Expand
+              <span
+                className="graph-node__action-symbol graph-node__action-symbol--expand"
+                aria-hidden="true"
+              />
             </button>
           )}
         </div>

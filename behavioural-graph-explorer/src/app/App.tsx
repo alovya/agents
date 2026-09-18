@@ -343,6 +343,17 @@ function App() {
               </span>
             ))}
           </div>
+          <div className="graph-legend graph-control-legend" aria-label="Composite control legend">
+            <span className="graph-legend__label">Composite controls</span>
+            <span className="graph-legend__item">
+              <span className="graph-legend__symbol" aria-hidden="true">›</span>
+              Open scope
+            </span>
+            <span className="graph-legend__item">
+              <span className="graph-legend__symbol" aria-hidden="true">+</span>
+              Expand
+            </span>
+          </div>
         </div>
         <div className="exploration-toolbar__actions">
           <button

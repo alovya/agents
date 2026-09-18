@@ -139,6 +139,23 @@ h1 {
   border-radius: 50%;
 }
 
+.graph-control-legend {
+  margin-top: 4px;
+}
+
+.graph-legend__symbol {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border: 1px solid #1d4ed8;
+  border-radius: 3px;
+  color: #1d4ed8;
+  background: #ffffff;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .exploration-toolbar__actions {
   display: flex;
   flex-wrap: wrap;
@@ -243,27 +260,80 @@ h1 {
 
 .graph-node__actions {
   position: absolute;
-  right: 12px;
-  bottom: 7px;
-  left: 12px;
+  bottom: -14px;
+  left: 18px;
+  z-index: 2;
   display: flex;
-  gap: 5px;
+  gap: 4px;
 }
 
 .graph-node__actions button {
-  padding: 3px 6px;
-  border: 1px solid #c8d1e1;
-  border-radius: 5px;
-  color: #38435a;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid #1d4ed8;
+  border-radius: 6px;
+  color: #1d4ed8;
   background: #ffffff;
   cursor: pointer;
-  font-size: 0.65rem;
-  font-weight: 650;
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.graph-node__action-symbol {
+  position: relative;
+  display: block;
+  width: 12px;
+  height: 12px;
+}
+
+.graph-node__action-symbol--expand::before,
+.graph-node__action-symbol--expand::after {
+  position: absolute;
+  content: '';
+  background: currentColor;
+}
+
+.graph-node__action-symbol--expand::before {
+  top: 5px;
+  left: 0;
+  width: 12px;
+  height: 2px;
+}
+
+.graph-node__action-symbol--expand::after {
+  top: 0;
+  left: 5px;
+  width: 2px;
+  height: 12px;
+}
+
+.graph-node__action-symbol--open::before,
+.graph-node__action-symbol--open::after {
+  position: absolute;
+  top: 5px;
+  left: 2px;
+  width: 8px;
+  height: 2px;
+  content: '';
+  background: currentColor;
+  transform-origin: right center;
+}
+
+.graph-node__action-symbol--open::before {
+  transform: rotate(45deg);
+}
+
+.graph-node__action-symbol--open::after {
+  transform: rotate(-45deg);
 }
 
 .graph-node__actions button:hover {
-  border-color: #1d4ed8;
-  color: #1d4ed8;
+  color: #ffffff;
+  background: #1d4ed8;
 }
 
 .react-flow__node.selected .graph-node {
