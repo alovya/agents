@@ -406,6 +406,7 @@ function App() {
             onPaneClick={handleClearSelection}
             fitView
             fitViewOptions={{ padding: 0.2 }}
+            minZoom={0.05}
             aria-label="Current workflow graph"
           >
             <Background gap={24} size={1} />
