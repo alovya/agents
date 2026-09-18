@@ -9,7 +9,7 @@ Use this skill to explain behaviour as a flowchart, i.e. a graph. At heart, this
 
 ## Policies
 
-**Construct a schema-compliant JSON.** Please return your explanation entirely in the JSON format shown below, otherwise it will not pass the graph explorer's validation; it has the following schema:
+**Construct a schema-compliant JSON.** Please write your explanation to a file entirely in the JSON format shown below, otherwise it will not pass the graph explorer's validation; it has the following schema:
 
 ```json
 {
