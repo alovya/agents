@@ -271,7 +271,7 @@ h1 {
 }
 
 .react-flow__edge.selected .react-flow__edge-path {
-  stroke-width: 5px;
+  stroke-width: 3px;
 }
 
 @media (max-width: 720px) {

@@ -16,6 +16,7 @@ import {
   expandAllComposites,
   expandComposite,
   expandVisibleComposites,
+  findConnectedEdgeIds,
   selectEdge,
   selectNode,
 } from '../exploration/explore-graph'
@@ -201,6 +202,9 @@ function App() {
   }, [activeGraph.document])
   const handleSelectNode = useCallback(
     (nodeId: string) => {
+      const connectedEdgeIds = findConnectedEdgeIds(visibleGraph, nodeId)
+
+      setBoldedEdgeIds(new Set(connectedEdgeIds))
       setActiveGraph((graph) =>
         applyExplorationTransition(
           graph,

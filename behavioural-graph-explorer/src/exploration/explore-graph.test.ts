@@ -7,6 +7,7 @@ import {
   expandAllComposites,
   expandComposite,
   expandVisibleComposites,
+  findConnectedEdgeIds,
   selectEdge,
   selectNode,
 } from './explore-graph'
@@ -345,6 +346,20 @@ describe('exploration state', () => {
       fullyExpandedState,
     )
     expect(fullyExpandedState.projectionRevision).toBe(1)
+  })
+
+  it('finds every visible edge connected to a node', () => {
+    const state = createInitialExplorationState(SAMPLE_GRAPH_DOCUMENT)
+    const graph = project(state)
+
+    expect(findConnectedEdgeIds(graph, SAMPLE_NODE_IDS.preparation)).toEqual([
+      'execution->preparation',
+      'preparation->execution',
+    ])
+    expect(findConnectedEdgeIds(graph, SAMPLE_NODE_IDS.report)).toEqual([
+      'execution->report',
+    ])
+    expect(findConnectedEdgeIds(graph, 'missing-node')).toEqual([])
   })
 
   it('keeps node and edge selection mutually exclusive without changing the revision', () => {

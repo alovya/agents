@@ -22,6 +22,15 @@ export function createInitialExplorationState(
   }
 }
 
+export function findConnectedEdgeIds(
+  graph: VisibleGraph,
+  nodeId: string,
+): readonly string[] {
+  return graph.edges
+    .filter((edge) => edge.source === nodeId || edge.target === nodeId)
+    .map((edge) => edge.id)
+}
+
 export function selectNode(
   state: ExplorationState,
   graph: VisibleGraph,
