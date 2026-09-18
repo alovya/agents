@@ -7,19 +7,6 @@
   padding: 20px;
 }
 
-.app-header {
-  width: 100%;
-  margin: 0 0 24px;
-}
-
-h1 {
-  margin: 0;
-  color: #1d4ed8;
-  font-size: clamp(1.8rem, 4vw, 2.6rem);
-  letter-spacing: -0.04em;
-  line-height: 1.1;
-}
-
 .graph-import {
   display: grid;
   gap: 12px;
@@ -270,6 +257,20 @@ h1 {
   box-shadow: 0 14px 40px rgb(44 62 96 / 9%);
 }
 
+.react-flow__panel.graph-panel__title {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  z-index: 3;
+  margin: 0;
+  color: #172033;
+  font-size: clamp(1.2rem, 2.64vw, 1.72rem);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+  pointer-events: none;
+}
+
 .graph-panel > .react-flow {
   flex: 1;
   min-height: 0;
@@ -433,8 +434,8 @@ h1 {
     background: #111827;
   }
 
-  h1 {
-    color: #60a5fa;
+  .react-flow__panel.graph-panel__title {
+    color: #cbd5e1;
   }
 
   .graph-import,
@@ -553,11 +554,6 @@ h1 {
 @media (max-width: 720px) {
   .app-shell {
     padding: 20px;
-  }
-
-  .app-header {
-    flex-direction: column;
-    gap: 18px;
   }
 
   .viewer-layout {

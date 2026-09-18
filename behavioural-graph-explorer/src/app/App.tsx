@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Background, Controls, ReactFlow } from '@xyflow/react'
+import { Background, Controls, Panel, ReactFlow } from '@xyflow/react'
 import type { Node } from '@xyflow/react'
 import { DagreRouteEdge } from '../rendering/dagre-edge'
 import { projectVisibleGraph } from '../graph/project-visible-graph'
@@ -436,10 +436,6 @@ function App() {
 
   return (
     <main className="app-shell">
-      <header className="app-header">
-        <h1>Behavioural graph explorer</h1>
-      </header>
-
       <div className="viewer-layout">
         <section className="graph-panel" aria-label="Behavioural workflow graph">
         {flowGraph === null ? (
@@ -461,6 +457,14 @@ function App() {
             aria-label="Current workflow graph"
           >
             <Background gap={24} size={1} />
+            <Panel
+              position="top-left"
+              className="graph-panel__title"
+              role="heading"
+              aria-level={1}
+            >
+              Behavioural graph explorer
+            </Panel>
             <Controls aria-label="Graph controls" />
           </ReactFlow>
         )}
