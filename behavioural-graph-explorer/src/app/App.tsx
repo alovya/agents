@@ -283,6 +283,69 @@ function App() {
   }, [])
 
   useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isEditableTarget(event.target) || event.altKey) {
+        return
+      }
+
+      const key = event.key.toLowerCase()
+      const modifierPressed = event.ctrlKey || event.metaKey
+
+      if (modifierPressed && key === 'z') {
+        event.preventDefault()
+        if (event.shiftKey) {
+          handleRedo()
+        } else {
+          handleUndo()
+        }
+        return
+      }
+
+      if (modifierPressed && key === 'y') {
+        event.preventDefault()
+        handleRedo()
+        return
+      }
+
+      if (modifierPressed && key === 'e') {
+        event.preventDefault()
+        if (event.shiftKey) {
+          handleExpandAll()
+        } else {
+          handleExpandVisible()
+        }
+        return
+      }
+
+      if (modifierPressed && key === 'c') {
+        event.preventDefault()
+        if (event.shiftKey) {
+          handleCollapseAll()
+        } else {
+          handleCollapseVisible()
+        }
+        return
+      }
+
+      if (modifierPressed && key === 'b') {
+        event.preventDefault()
+        handleClearBoldedEdges()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [
+    handleClearBoldedEdges,
+    handleCollapseAll,
+    handleCollapseVisible,
+    handleExpandAll,
+    handleExpandVisible,
+    handleRedo,
+    handleUndo,
+  ])
+
+  useEffect(() => {
     const layoutRunner = layoutRunnerRef.current
 
     if (layoutRunner) {
@@ -459,6 +522,7 @@ function App() {
             <div className="exploration-toolbar__actions">
               <button
                 type="button"
+                title="Expand one level (Ctrl/Cmd+E)"
                 onClick={handleExpandVisible}
                 disabled={visibleCompositeCount === 0}
               >
@@ -466,6 +530,7 @@ function App() {
               </button>
               <button
                 type="button"
+                title="Expand all (Ctrl/Cmd+Shift+E)"
                 onClick={handleExpandAll}
                 disabled={stateAfterExpandAll === explorationState}
               >
@@ -473,6 +538,7 @@ function App() {
               </button>
               <button
                 type="button"
+                title="Collapse one level (Ctrl/Cmd+C)"
                 onClick={handleCollapseVisible}
                 disabled={stateAfterCollapseOneLevel === explorationState}
               >
@@ -480,6 +546,7 @@ function App() {
               </button>
               <button
                 type="button"
+                title="Collapse all (Ctrl/Cmd+Shift+C)"
                 onClick={handleCollapseAll}
                 disabled={stateAfterCollapseAll === explorationState}
               >
@@ -487,6 +554,7 @@ function App() {
               </button>
               <button
                 type="button"
+                title="Undo last view change (Ctrl/Cmd+Z)"
                 onClick={handleUndo}
                 disabled={activeGraph.viewHistory.length === 0}
               >
@@ -494,6 +562,7 @@ function App() {
               </button>
               <button
                 type="button"
+                title="Redo last view change (Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y)"
                 onClick={handleRedo}
                 disabled={activeGraph.redoHistory.length === 0}
               >
@@ -501,6 +570,7 @@ function App() {
               </button>
               <button
                 type="button"
+                title="Clear bold arrows (Ctrl/Cmd+B)"
                 onClick={handleClearBoldedEdges}
                 disabled={
                   !visibleGraph.edges.some((edge) => boldedEdgeIds.has(edge.id))
@@ -521,6 +591,19 @@ function App() {
         </aside>
       </div>
     </main>
+  )
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false
+  }
+
+  return (
+    target.isContentEditable ||
+    target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.tagName === 'SELECT'
   )
 }
 
