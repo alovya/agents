@@ -4,7 +4,8 @@ export type ExplorationState = {
   currentScopeId: string
   scopePath: readonly string[]
   expandedNodeIds: ReadonlySet<string>
-  selectedNodeId: string | null
+  boldedEdgeIds: ReadonlySet<string>
+  selectedNodeIds: ReadonlySet<string>
   selectedEdgeId: string | null
   projectionRevision: number
 }
@@ -16,7 +17,8 @@ export function createInitialExplorationState(
     currentScopeId: document.rootId,
     scopePath: [document.rootId],
     expandedNodeIds: new Set(),
-    selectedNodeId: null,
+    boldedEdgeIds: new Set(),
+    selectedNodeIds: new Set(),
     selectedEdgeId: null,
     projectionRevision: 0,
   }
@@ -40,9 +42,26 @@ export function selectNode(
     return state
   }
 
+  const selectedNodeIds = new Set(state.selectedNodeIds)
+
+  if (selectedNodeIds.has(nodeId)) {
+    selectedNodeIds.delete(nodeId)
+  } else {
+    selectedNodeIds.add(nodeId)
+  }
+
+  const boldedEdgeIds = new Set<string>()
+
+  for (const selectedNodeId of selectedNodeIds) {
+    for (const edgeId of findConnectedEdgeIds(graph, selectedNodeId)) {
+      boldedEdgeIds.add(edgeId)
+    }
+  }
+
   return {
     ...state,
-    selectedNodeId: nodeId,
+    boldedEdgeIds,
+    selectedNodeIds,
     selectedEdgeId: null,
   }
 }
@@ -97,29 +116,69 @@ export function selectEdge(
     return state
   }
 
+  const boldedEdgeIds = new Set(state.boldedEdgeIds)
+
+  if (boldedEdgeIds.has(edgeId)) {
+    boldedEdgeIds.delete(edgeId)
+  } else {
+    boldedEdgeIds.add(edgeId)
+  }
+
   if (state.selectedEdgeId === edgeId) {
     return {
       ...state,
-      selectedNodeId: null,
+      boldedEdgeIds,
+      selectedNodeIds: new Set(),
       selectedEdgeId: null,
     }
   }
 
   return {
     ...state,
-    selectedNodeId: null,
+    boldedEdgeIds,
+    selectedNodeIds: new Set(),
     selectedEdgeId: edgeId,
   }
 }
 
-export function clearSelection(state: ExplorationState): ExplorationState {
-  if (state.selectedNodeId === null && state.selectedEdgeId === null) {
+export function clearSelectedArrows(
+  state: ExplorationState,
+  graph: VisibleGraph,
+): ExplorationState {
+  const visibleEdgeIds = new Set(graph.edges.map((edge) => edge.id))
+  const boldedEdgeIds = new Set(
+    [...state.boldedEdgeIds].filter((edgeId) => !visibleEdgeIds.has(edgeId)),
+  )
+
+  if (boldedEdgeIds.size === state.boldedEdgeIds.size) {
     return state
   }
 
   return {
     ...state,
-    selectedNodeId: null,
+    boldedEdgeIds,
+  }
+}
+
+export function clearSelectedNodes(state: ExplorationState): ExplorationState {
+  if (state.selectedNodeIds.size === 0) {
+    return state
+  }
+
+  return {
+    ...state,
+    selectedNodeIds: new Set(),
+  }
+}
+
+export function clearSelection(state: ExplorationState): ExplorationState {
+  if (state.selectedNodeIds.size === 0 && state.selectedEdgeId === null) {
+    return state
+  }
+
+  return {
+    ...state,
+    selectedNodeIds: new Set(),
     selectedEdgeId: null,
   }
 }
@@ -249,7 +308,8 @@ function acceptScopeChange(
     ...state,
     currentScopeId,
     scopePath,
-    selectedNodeId: null,
+    boldedEdgeIds: new Set(),
+    selectedNodeIds: new Set(),
     selectedEdgeId: null,
     projectionRevision: state.projectionRevision + 1,
   }
@@ -279,7 +339,8 @@ function acceptExpansionChange(
   return {
     ...state,
     expandedNodeIds,
-    selectedNodeId: null,
+    boldedEdgeIds: new Set(),
+    selectedNodeIds: new Set(),
     selectedEdgeId: null,
     projectionRevision: state.projectionRevision + 1,
   }

@@ -8,7 +8,12 @@ import {
 } from './active-graph'
 import { projectVisibleGraph } from '../graph/project-visible-graph'
 import type { GraphDocument } from '../graph/graph-document'
-import { clickIntoComposite, expandComposite, selectNode } from './explore-graph'
+import {
+  clickIntoComposite,
+  expandComposite,
+  selectEdge,
+  selectNode,
+} from './explore-graph'
 import {
   SAMPLE_GRAPH_DOCUMENT,
   SAMPLE_NODE_IDS,
@@ -60,7 +65,8 @@ describe('activateGraphDocument', () => {
       currentScopeId: 'imported-root',
       scopePath: ['imported-root'],
       expandedNodeIds: new Set(),
-      selectedNodeId: null,
+      boldedEdgeIds: new Set(),
+      selectedNodeIds: new Set(),
       selectedEdgeId: null,
       projectionRevision: 0,
     })
@@ -137,7 +143,7 @@ describe('activateGraphDocument', () => {
     expect(undoneGraph.exploration.currentScopeId).toBe('root')
     expect(undoneGraph.exploration.scopePath).toEqual(['root'])
     expect(undoneGraph.exploration.expandedNodeIds).toEqual(new Set())
-    expect(undoneGraph.exploration.selectedNodeId).toBeNull()
+    expect(undoneGraph.exploration.selectedNodeIds).toEqual(new Set())
     expect(undoneGraph.exploration.selectedEdgeId).toBeNull()
     expect(undoneGraph.exploration.projectionRevision).toBe(2)
     expect(undoneGraph.viewHistory).toEqual([])
@@ -201,6 +207,132 @@ describe('redoLastViewChange', () => {
 
     expect(expandedExecution.redoHistory).toEqual([])
     expect(redoLastViewChange(expandedExecution)).toBe(expandedExecution)
+  })
+})
+
+describe('selection during view changes', () => {
+  it('keeps a selected node that remains visible', () => {
+    const initialGraph = activateGraphDocument(SAMPLE_GRAPH_DOCUMENT)
+    const selectedGraph = applyExplorationTransition(
+      initialGraph,
+      selectNode(
+        initialGraph.exploration,
+        project(initialGraph),
+        SAMPLE_NODE_IDS.report,
+      ),
+    )
+    const expandedGraph = applyExplorationTransition(
+      selectedGraph,
+      expandComposite(
+        SAMPLE_GRAPH_DOCUMENT,
+        project(selectedGraph),
+        selectedGraph.exploration,
+        SAMPLE_NODE_IDS.preparation,
+      ),
+    )
+
+    expect(expandedGraph.exploration.selectedNodeIds).toEqual(
+      new Set([SAMPLE_NODE_IDS.report]),
+    )
+    expect(expandedGraph.exploration.boldedEdgeIds).toEqual(
+      new Set(['execution->report']),
+    )
+  })
+
+  it('keeps visible selected nodes and removes hidden selected nodes', () => {
+    const initialGraph = activateGraphDocument(SAMPLE_GRAPH_DOCUMENT)
+    const preparationSelectedGraph = applyExplorationTransition(
+      initialGraph,
+      selectNode(
+        initialGraph.exploration,
+        project(initialGraph),
+        SAMPLE_NODE_IDS.preparation,
+      ),
+    )
+    const multipleNodesSelected = applyExplorationTransition(
+      preparationSelectedGraph,
+      selectNode(
+        preparationSelectedGraph.exploration,
+        project(preparationSelectedGraph),
+        SAMPLE_NODE_IDS.report,
+      ),
+    )
+    const expandedGraph = applyExplorationTransition(
+      multipleNodesSelected,
+      expandComposite(
+        SAMPLE_GRAPH_DOCUMENT,
+        project(multipleNodesSelected),
+        multipleNodesSelected.exploration,
+        SAMPLE_NODE_IDS.preparation,
+      ),
+    )
+
+    expect(expandedGraph.exploration.selectedNodeIds).toEqual(
+      new Set([SAMPLE_NODE_IDS.report]),
+    )
+    expect(expandedGraph.exploration.boldedEdgeIds).toEqual(
+      new Set(['execution->report']),
+    )
+  })
+
+  it('clears a selected node that the view change hides', () => {
+    const initialGraph = activateGraphDocument(SAMPLE_GRAPH_DOCUMENT)
+    const selectedGraph = applyExplorationTransition(
+      initialGraph,
+      selectNode(
+        initialGraph.exploration,
+        project(initialGraph),
+        SAMPLE_NODE_IDS.preparation,
+      ),
+    )
+    const expandedGraph = applyExplorationTransition(
+      selectedGraph,
+      expandComposite(
+        SAMPLE_GRAPH_DOCUMENT,
+        project(selectedGraph),
+        selectedGraph.exploration,
+        SAMPLE_NODE_IDS.preparation,
+      ),
+    )
+
+    expect(expandedGraph.exploration.selectedNodeIds).toEqual(new Set())
+    expect(expandedGraph.exploration.boldedEdgeIds).toEqual(new Set())
+  })
+
+  it('keeps a selected edge that remains visible', () => {
+    const initialGraph = activateGraphDocument(SAMPLE_GRAPH_DOCUMENT)
+    const stableEdgeId = project(initialGraph).edges.find(
+      (edge) =>
+        edge.source === SAMPLE_NODE_IDS.execution &&
+        edge.target === SAMPLE_NODE_IDS.report,
+    )?.id
+
+    if (!stableEdgeId) {
+      throw new Error('Expected a stable sample edge')
+    }
+
+    const selectedGraph = applyExplorationTransition(
+      initialGraph,
+      selectEdge(
+        initialGraph.exploration,
+        project(initialGraph),
+        stableEdgeId,
+      ),
+    )
+    const expandedGraph = applyExplorationTransition(
+      selectedGraph,
+      expandComposite(
+        SAMPLE_GRAPH_DOCUMENT,
+        project(selectedGraph),
+        selectedGraph.exploration,
+        SAMPLE_NODE_IDS.preparation,
+      ),
+    )
+
+    expect(expandedGraph.exploration.selectedEdgeId).toBe(stableEdgeId)
+    expect(expandedGraph.exploration.boldedEdgeIds).toEqual(
+      new Set([stableEdgeId]),
+    )
   })
 })
 

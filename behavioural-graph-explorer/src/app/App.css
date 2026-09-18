@@ -413,7 +413,12 @@ h1 {
 }
 
 .react-flow__node.selected .graph-node {
-  box-shadow: 0 0 0 3px rgb(29 78 216 / 25%), 0 8px 18px rgb(44 62 96 / 12%);
+  border-color: #123a9f;
+  outline: 3px solid #123a9f;
+  outline-offset: 2px;
+  box-shadow:
+    0 0 0 7px rgb(29 78 216 / 22%),
+    0 14px 30px rgb(29 78 216 / 32%);
 }
 
 .react-flow__edge.selected .react-flow__edge-path {

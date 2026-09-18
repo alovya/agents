@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { projectVisibleGraph } from '../graph/project-visible-graph'
 import {
   canCollapseOneLevel,
+  clearSelectedArrows,
+  clearSelectedNodes,
   clearSelection,
   collapseAllComposites,
   collapseOneVisibleLevel,
@@ -42,7 +44,8 @@ describe('exploration state', () => {
       currentScopeId: SAMPLE_NODE_IDS.root,
       scopePath: [SAMPLE_NODE_IDS.root],
       expandedNodeIds: new Set(),
-      selectedNodeId: null,
+      boldedEdgeIds: new Set(),
+      selectedNodeIds: new Set(),
       selectedEdgeId: null,
       projectionRevision: 0,
     })
@@ -228,7 +231,7 @@ describe('exploration state', () => {
       new Set([SAMPLE_NODE_IDS.preparation, SAMPLE_NODE_IDS.execution]),
     )
     expect(expandedOnce.projectionRevision).toBe(1)
-    expect(expandedOnce.selectedNodeId).toBeNull()
+    expect(expandedOnce.selectedNodeIds).toEqual(new Set())
     expect(expandedOnce.selectedEdgeId).toBeNull()
     expect(nodeIds(expandedOnce)).toEqual([
       SAMPLE_NODE_IDS.preparationInput,
@@ -457,7 +460,7 @@ describe('exploration state', () => {
     expect(findConnectedEdgeIds(graph, 'missing-node')).toEqual([])
   })
 
-  it('keeps node and edge selection mutually exclusive without changing the revision', () => {
+  it('toggles multiple node selections and keeps edge selection mutually exclusive', () => {
     const initialState = createInitialExplorationState(SAMPLE_GRAPH_DOCUMENT)
     const graph = project(initialState)
     const nodeSelected = selectNode(
@@ -465,29 +468,61 @@ describe('exploration state', () => {
       graph,
       SAMPLE_NODE_IDS.preparation,
     )
-    const edgeSelected = selectEdge(
+    const multipleNodesSelected = selectNode(
       nodeSelected,
+      graph,
+      SAMPLE_NODE_IDS.report,
+    )
+    const deselected = selectNode(
+      multipleNodesSelected,
+      graph,
+      SAMPLE_NODE_IDS.preparation,
+    )
+    const edgeSelected = selectEdge(
+      multipleNodesSelected,
       graph,
       'execution->preparation',
     )
 
     expect(nodeSelected).toMatchObject({
-      selectedNodeId: SAMPLE_NODE_IDS.preparation,
+      selectedNodeIds: new Set([SAMPLE_NODE_IDS.preparation]),
       selectedEdgeId: null,
       projectionRevision: 0,
     })
+    expect(multipleNodesSelected).toMatchObject({
+      selectedNodeIds: new Set([
+        SAMPLE_NODE_IDS.preparation,
+        SAMPLE_NODE_IDS.report,
+      ]),
+      boldedEdgeIds: new Set([
+        'execution->preparation',
+        'execution->report',
+        'preparation->execution',
+      ]),
+      selectedEdgeId: null,
+      projectionRevision: 0,
+    })
+    expect(deselected.selectedNodeIds).toEqual(new Set([SAMPLE_NODE_IDS.report]))
+    expect(clearSelectedArrows(multipleNodesSelected, graph)).toMatchObject({
+      selectedNodeIds: multipleNodesSelected.selectedNodeIds,
+      boldedEdgeIds: new Set(),
+    })
+    expect(clearSelectedNodes(multipleNodesSelected)).toMatchObject({
+      selectedNodeIds: new Set(),
+      boldedEdgeIds: multipleNodesSelected.boldedEdgeIds,
+    })
     expect(edgeSelected).toMatchObject({
-      selectedNodeId: null,
+      selectedNodeIds: new Set(),
       selectedEdgeId: 'execution->preparation',
       projectionRevision: 0,
     })
     expect(selectEdge(edgeSelected, graph, 'execution->preparation')).toMatchObject({
-      selectedNodeId: null,
+      selectedNodeIds: new Set(),
       selectedEdgeId: null,
       projectionRevision: 0,
     })
     expect(clearSelection(edgeSelected)).toMatchObject({
-      selectedNodeId: null,
+      selectedNodeIds: new Set(),
       selectedEdgeId: null,
       projectionRevision: 0,
     })

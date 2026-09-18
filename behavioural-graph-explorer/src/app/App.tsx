@@ -13,6 +13,8 @@ import {
 import { DagreLayoutEngine } from '../layout/dagre-layout'
 import {
   canCollapseOneLevel,
+  clearSelectedArrows,
+  clearSelectedNodes,
   clearSelection,
   clickIntoComposite,
   collapseAllComposites,
@@ -21,7 +23,6 @@ import {
   expandAllComposites,
   expandComposite,
   expandVisibleComposites,
-  findConnectedEdgeIds,
   selectEdge,
   selectNode,
 } from '../exploration/explore-graph'
@@ -67,9 +68,6 @@ function App() {
   const [importError, setImportError] = useState<string | null>(
     initialGraphView.importError,
   )
-  const [boldedEdgeIds, setBoldedEdgeIds] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  )
   const visibleGraph = useMemo(
     () =>
       projectVisibleGraph(
@@ -98,7 +96,6 @@ function App() {
     try {
       const document = parseGraphDocumentText(source)
       setActiveGraph(activateGraphDocument(document))
-      setBoldedEdgeIds(new Set())
       setLaidOutGraph(null)
       setImportError(null)
     } catch (error) {
@@ -223,9 +220,6 @@ function App() {
   }, [activeGraph.document])
   const handleSelectNode = useCallback(
     (nodeId: string) => {
-      const connectedEdgeIds = findConnectedEdgeIds(visibleGraph, nodeId)
-
-      setBoldedEdgeIds(new Set(connectedEdgeIds))
       setActiveGraph((graph) =>
         applyExplorationTransition(
           graph,
@@ -237,17 +231,6 @@ function App() {
   )
   const handleSelectEdge = useCallback(
     (edgeId: string) => {
-      setBoldedEdgeIds((edgeIds) => {
-        const nextEdgeIds = new Set(edgeIds)
-
-        if (nextEdgeIds.has(edgeId)) {
-          nextEdgeIds.delete(edgeId)
-        } else {
-          nextEdgeIds.add(edgeId)
-        }
-
-        return nextEdgeIds
-      })
       setActiveGraph((graph) =>
         applyExplorationTransition(
           graph,
@@ -258,18 +241,21 @@ function App() {
     [visibleGraph],
   )
   const handleClearBoldedEdges = useCallback(() => {
-    const visibleEdgeIds = new Set(
-      visibleGraph.edges.map((edge) => edge.id),
+    setActiveGraph((graph) =>
+      applyExplorationTransition(
+        graph,
+        clearSelectedArrows(graph.exploration, visibleGraph),
+      ),
     )
-
-    setBoldedEdgeIds((edgeIds) => {
-      const remainingEdgeIds = new Set(
-        [...edgeIds].filter((edgeId) => !visibleEdgeIds.has(edgeId)),
-      )
-
-      return remainingEdgeIds.size === edgeIds.size ? edgeIds : remainingEdgeIds
-    })
   }, [visibleGraph])
+  const handleClearSelectedNodes = useCallback(() => {
+    setActiveGraph((graph) =>
+      applyExplorationTransition(
+        graph,
+        clearSelectedNodes(graph.exploration),
+      ),
+    )
+  }, [])
   const handleClearSelection = useCallback(() => {
     setActiveGraph((graph) =>
       applyExplorationTransition(graph, clearSelection(graph.exploration)),
@@ -330,6 +316,12 @@ function App() {
       if (modifierPressed && key === 'b') {
         event.preventDefault()
         handleClearBoldedEdges()
+        return
+      }
+
+      if (modifierPressed && key === 'v') {
+        event.preventDefault()
+        handleClearSelectedNodes()
       }
     }
 
@@ -337,6 +329,7 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [
     handleClearBoldedEdges,
+    handleClearSelectedNodes,
     handleCollapseAll,
     handleCollapseVisible,
     handleExpandAll,
@@ -405,16 +398,16 @@ function App() {
     return {
       nodes: convertedGraph.nodes.map((node) => ({
         ...node,
-        selected: node.id === explorationState.selectedNodeId,
+        selected: explorationState.selectedNodeIds.has(node.id),
       })),
       edges: convertedGraph.edges.map((edge) => ({
         ...edge,
-        selected: boldedEdgeIds.has(edge.id),
+        selected: explorationState.boldedEdgeIds.has(edge.id),
       })),
     }
   }, [
-    explorationState.selectedNodeId,
-    boldedEdgeIds,
+    explorationState.selectedNodeIds,
+    explorationState.boldedEdgeIds,
     graphActions,
     laidOutGraph,
     visibleGraph,
@@ -570,13 +563,23 @@ function App() {
               </button>
               <button
                 type="button"
-                title="Clear bold arrows (Ctrl/Cmd+B)"
+                title="Clear selected arrows (Ctrl/Cmd+B)"
                 onClick={handleClearBoldedEdges}
                 disabled={
-                  !visibleGraph.edges.some((edge) => boldedEdgeIds.has(edge.id))
+                  !visibleGraph.edges.some((edge) =>
+                    explorationState.boldedEdgeIds.has(edge.id),
+                  )
                 }
               >
-                Clear bold arrows
+                Clear selected arrows
+              </button>
+              <button
+                type="button"
+                title="Clear selected nodes (Ctrl/Cmd+V)"
+                onClick={handleClearSelectedNodes}
+                disabled={explorationState.selectedNodeIds.size === 0}
+              >
+                Clear selected nodes
               </button>
             </div>
           </section>
