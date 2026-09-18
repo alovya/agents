@@ -52,8 +52,8 @@ const graphEdgeTypes = {
 }
 
 const NODE_KIND_LEGEND = [
-  { label: 'Composite', colour: '#1d4ed8' },
-  { label: 'Leaf', colour: '#64748b' },
+  { label: 'Composite', colour: 'var(--graph-composite-colour)' },
+  { label: 'Leaf', colour: 'var(--graph-leaf-colour)' },
 ] as const
 
 function App() {

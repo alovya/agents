@@ -5,7 +5,7 @@ import type { LayoutResult } from '../layout/dagre-layout'
 import type { DagreRouteEdgeData } from './dagre-edge'
 
 export const GRAPH_ARROWHEAD_SIZE = 37.5
-export const GRAPH_EDGE_COLOUR = '#526174'
+export const GRAPH_EDGE_COLOUR = 'var(--graph-edge-colour)'
 
 export type GraphFlowNodeData = {
   label: string

@@ -425,6 +425,131 @@ h1 {
   stroke-width: 3px;
 }
 
+@media (prefers-color-scheme: dark) {
+  .app-shell,
+  .graph-panel,
+  .graph-import,
+  .exploration-toolbar {
+    background: #111827;
+  }
+
+  h1 {
+    color: #60a5fa;
+  }
+
+  .graph-import,
+  .exploration-toolbar,
+  .graph-panel {
+    border-color: #334155;
+  }
+
+  .graph-import__source label,
+  .exploration-toolbar__scope {
+    color: #e2e8f0;
+  }
+
+  .exploration-toolbar__status,
+  .graph-legend,
+  .graph-loading {
+    color: #94a3b8;
+  }
+
+  .graph-import__source textarea {
+    border-color: #475569;
+    color: #e2e8f0;
+    background: #0f172a;
+  }
+
+  .graph-import__actions button,
+  .graph-import__file-button,
+  .exploration-toolbar__actions button {
+    border-color: #475569;
+    color: #cbd5e1;
+    background: #1e293b;
+  }
+
+  .graph-import__actions button:hover,
+  .graph-import__file-button:hover,
+  .exploration-toolbar__actions button:hover:not(:disabled) {
+    border-color: #60a5fa;
+    color: #bfdbfe;
+    background: #334155;
+  }
+
+  .graph-import__status {
+    color: #fca5a5;
+  }
+
+  .graph-legend__symbol {
+    border-color: #60a5fa;
+    color: #93c5fd;
+    background: #1e293b;
+  }
+
+  .graph-node {
+    background: #1e293b;
+    box-shadow: 0 8px 18px rgb(2 6 23 / 35%);
+  }
+
+  .graph-node--leaf {
+    border-color: #94a3b8;
+    background: #1e293b;
+  }
+
+  .graph-node--composite {
+    border-color: #60a5fa;
+    background: #1e3a8a;
+  }
+
+  .graph-node__label {
+    color: #f1f5f9;
+  }
+
+  .graph-node__actions button {
+    border-color: #60a5fa;
+    color: #93c5fd;
+    background: #0f172a;
+  }
+
+  .graph-node__actions button:hover {
+    color: #ffffff;
+    background: #2563eb;
+  }
+
+  .react-flow {
+    --xy-background-color: #0f172a;
+    --xy-background-pattern-color: #334155;
+  }
+
+  .react-flow__controls {
+    box-shadow: 0 8px 18px rgb(2 6 23 / 35%);
+  }
+
+  .react-flow__controls-button {
+    border-color: #475569;
+    color: #cbd5e1;
+    background: #1e293b;
+    fill: currentColor;
+  }
+
+  .react-flow__controls-button:hover {
+    background: #334155;
+  }
+
+  .react-flow__handle {
+    border-color: #0f172a;
+    background: #94a3b8;
+  }
+
+  .react-flow__node.selected .graph-node {
+    border-color: #bfdbfe;
+    outline-color: #60a5fa;
+    box-shadow:
+      0 0 0 7px rgb(96 165 250 / 25%),
+      0 14px 30px rgb(2 6 23 / 60%);
+  }
+}
+
 @media (max-width: 720px) {
   .app-shell {
     padding: 20px;
