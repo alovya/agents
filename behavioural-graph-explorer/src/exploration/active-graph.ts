@@ -14,6 +14,7 @@ export type ActiveGraph = {
   document: GraphDocument
   exploration: ExplorationState
   viewHistory: readonly ViewSnapshot[]
+  redoHistory: readonly ViewSnapshot[]
 }
 
 export function activateGraphDocument(document: GraphDocument): ActiveGraph {
@@ -21,6 +22,7 @@ export function activateGraphDocument(document: GraphDocument): ActiveGraph {
     document,
     exploration: createInitialExplorationState(document),
     viewHistory: [],
+    redoHistory: [],
   }
 }
 
@@ -42,6 +44,7 @@ export function applyExplorationTransition(
     viewHistory: changedProjection
       ? [...activeGraph.viewHistory, captureView(activeGraph.exploration)]
       : activeGraph.viewHistory,
+    redoHistory: changedProjection ? [] : activeGraph.redoHistory,
   }
 }
 
@@ -56,6 +59,28 @@ export function undoLastViewChange(activeGraph: ActiveGraph): ActiveGraph {
     ...activeGraph,
     exploration: restoreView(activeGraph.exploration, previousView),
     viewHistory: activeGraph.viewHistory.slice(0, -1),
+    redoHistory: [
+      ...activeGraph.redoHistory,
+      captureView(activeGraph.exploration),
+    ],
+  }
+}
+
+export function redoLastViewChange(activeGraph: ActiveGraph): ActiveGraph {
+  const nextView = activeGraph.redoHistory.at(-1)
+
+  if (!nextView) {
+    return activeGraph
+  }
+
+  return {
+    ...activeGraph,
+    exploration: restoreView(activeGraph.exploration, nextView),
+    viewHistory: [
+      ...activeGraph.viewHistory,
+      captureView(activeGraph.exploration),
+    ],
+    redoHistory: activeGraph.redoHistory.slice(0, -1),
   }
 }
 

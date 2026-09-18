@@ -7,6 +7,7 @@ import {
   activateGraphDocument,
   applyExplorationTransition,
   type ActiveGraph,
+  redoLastViewChange,
   undoLastViewChange,
 } from '../exploration/active-graph'
 import { DagreLayoutEngine } from '../layout/dagre-layout'
@@ -259,6 +260,9 @@ function App() {
   const handleUndo = useCallback(() => {
     setActiveGraph(undoLastViewChange)
   }, [])
+  const handleRedo = useCallback(() => {
+    setActiveGraph(redoLastViewChange)
+  }, [])
 
   useEffect(() => {
     const layoutRunner = layoutRunnerRef.current
@@ -429,22 +433,6 @@ function App() {
             <div className="exploration-toolbar__actions">
               <button
                 type="button"
-                onClick={handleUndo}
-                disabled={activeGraph.viewHistory.length === 0}
-              >
-                Undo last view change
-              </button>
-              <button
-                type="button"
-                onClick={handleClearBoldedEdges}
-                disabled={
-                  !visibleGraph.edges.some((edge) => boldedEdgeIds.has(edge.id))
-                }
-              >
-                Clear bold arrows
-              </button>
-              <button
-                type="button"
                 onClick={handleExpandVisible}
                 disabled={visibleCompositeCount === 0}
               >
@@ -456,6 +444,29 @@ function App() {
                 disabled={stateAfterExpandAll === explorationState}
               >
                 Expand all
+              </button>
+              <button
+                type="button"
+                onClick={handleUndo}
+                disabled={activeGraph.viewHistory.length === 0}
+              >
+                Undo last view change
+              </button>
+              <button
+                type="button"
+                onClick={handleRedo}
+                disabled={activeGraph.redoHistory.length === 0}
+              >
+                Redo last view change
+              </button>
+              <button
+                type="button"
+                onClick={handleClearBoldedEdges}
+                disabled={
+                  !visibleGraph.edges.some((edge) => boldedEdgeIds.has(edge.id))
+                }
+              >
+                Clear bold arrows
               </button>
             </div>
           </section>

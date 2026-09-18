@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   activateGraphDocument,
   applyExplorationTransition,
+  redoLastViewChange,
   type ActiveGraph,
   undoLastViewChange,
 } from './active-graph'
@@ -64,6 +65,7 @@ describe('activateGraphDocument', () => {
       projectionRevision: 0,
     })
     expect(activeGraph.viewHistory).toEqual([])
+    expect(activeGraph.redoHistory).toEqual([])
   })
 
   it('undoes projection-changing view transitions without recording selection', () => {
@@ -139,6 +141,7 @@ describe('activateGraphDocument', () => {
     expect(undoneGraph.exploration.selectedEdgeId).toBeNull()
     expect(undoneGraph.exploration.projectionRevision).toBe(2)
     expect(undoneGraph.viewHistory).toEqual([])
+    expect(undoneGraph.redoHistory).toHaveLength(1)
     expect(
       projectVisibleGraph(
         document,
@@ -147,6 +150,57 @@ describe('activateGraphDocument', () => {
       ).nodes.map((node) => node.id),
     ).toEqual(['scope'])
     expect(undoLastViewChange(undoneGraph)).toBe(undoneGraph)
+  })
+})
+
+describe('redoLastViewChange', () => {
+  it('restores the view that was undone', () => {
+    const initialGraph = activateGraphDocument(SAMPLE_GRAPH_DOCUMENT)
+    const expandedGraph = applyExplorationTransition(
+      initialGraph,
+      expandComposite(
+        SAMPLE_GRAPH_DOCUMENT,
+        project(initialGraph),
+        initialGraph.exploration,
+        SAMPLE_NODE_IDS.preparation,
+      ),
+    )
+    const undoneGraph = undoLastViewChange(expandedGraph)
+    const redoneGraph = redoLastViewChange(undoneGraph)
+
+    expect(nodeIds(redoneGraph)).toEqual(nodeIds(expandedGraph))
+    expect(redoneGraph.exploration.expandedNodeIds).toEqual(
+      expandedGraph.exploration.expandedNodeIds,
+    )
+    expect(redoneGraph.viewHistory).toHaveLength(1)
+    expect(redoneGraph.redoHistory).toEqual([])
+    expect(redoLastViewChange(redoneGraph)).toBe(redoneGraph)
+  })
+
+  it('clears redo history when a new view change is made', () => {
+    const initialGraph = activateGraphDocument(SAMPLE_GRAPH_DOCUMENT)
+    const expandedPreparation = applyExplorationTransition(
+      initialGraph,
+      expandComposite(
+        SAMPLE_GRAPH_DOCUMENT,
+        project(initialGraph),
+        initialGraph.exploration,
+        SAMPLE_NODE_IDS.preparation,
+      ),
+    )
+    const undoneGraph = undoLastViewChange(expandedPreparation)
+    const expandedExecution = applyExplorationTransition(
+      undoneGraph,
+      expandComposite(
+        SAMPLE_GRAPH_DOCUMENT,
+        project(undoneGraph),
+        undoneGraph.exploration,
+        SAMPLE_NODE_IDS.execution,
+      ),
+    )
+
+    expect(expandedExecution.redoHistory).toEqual([])
+    expect(redoLastViewChange(expandedExecution)).toBe(expandedExecution)
   })
 })
 
