@@ -65,6 +65,29 @@ describe('convertToReactFlow', () => {
     ])
   })
 
+  it('passes selection colours to visible node data', () => {
+    const graph = projectVisibleGraph(
+      SAMPLE_GRAPH_DOCUMENT,
+      SAMPLE_GRAPH_DOCUMENT.rootId,
+      new Set(),
+    )
+    const flowGraph = convertToReactFlow(
+      graph,
+      layoutFor(graph),
+      {},
+      new Map([[SAMPLE_NODE_IDS.preparation, [2, 5]]]),
+    )
+
+    expect(
+      flowGraph.nodes.find((node) => node.id === SAMPLE_NODE_IDS.preparation)
+        ?.data.selectionColourIds,
+    ).toEqual([2, 5])
+    expect(
+      flowGraph.nodes.find((node) => node.id === SAMPLE_NODE_IDS.report)
+        ?.data.selectionColourIds,
+    ).toEqual([])
+  })
+
   it('distinguishes composite and leaf affordances and binds composite callbacks', () => {
     const graph = projectVisibleGraph(
       SAMPLE_GRAPH_DOCUMENT,

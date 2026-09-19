@@ -1,11 +1,15 @@
 import type { GraphDocument, VisibleGraph } from '../graph/graph-document'
 
+export type SelectionColourId = number
+
 export type ExplorationState = {
   currentScopeId: string
   scopePath: readonly string[]
   expandedNodeIds: ReadonlySet<string>
   boldedEdgeIds: ReadonlySet<string>
   selectedNodeIds: ReadonlySet<string>
+  selectionColourByNodeId: ReadonlyMap<string, SelectionColourId>
+  nextSelectionColourId: number
   selectedEdgeId: string | null
   projectionRevision: number
 }
@@ -19,6 +23,8 @@ export function createInitialExplorationState(
     expandedNodeIds: new Set(),
     boldedEdgeIds: new Set(),
     selectedNodeIds: new Set(),
+    selectionColourByNodeId: new Map(),
+    nextSelectionColourId: 0,
     selectedEdgeId: null,
     projectionRevision: 0,
   }
@@ -37,17 +43,33 @@ export function selectNode(
   state: ExplorationState,
   graph: VisibleGraph,
   nodeId: string,
+  document?: GraphDocument,
 ): ExplorationState {
   if (!graph.nodes.some((node) => node.id === nodeId)) {
     return state
   }
 
   const selectedNodeIds = new Set(state.selectedNodeIds)
+  const selectionColourByNodeId = new Map(state.selectionColourByNodeId)
+  let nextSelectionColourId = state.nextSelectionColourId
 
   if (selectedNodeIds.has(nodeId)) {
     selectedNodeIds.delete(nodeId)
+    selectionColourByNodeId.delete(nodeId)
+
+    if (document) {
+      const nodesById = new Map(document.nodes.map((node) => [node.id, node]))
+
+      for (const selectedNodeId of selectionColourByNodeId.keys()) {
+        if (isDescendantOf(selectedNodeId, nodeId, nodesById)) {
+          selectionColourByNodeId.delete(selectedNodeId)
+        }
+      }
+    }
   } else {
     selectedNodeIds.add(nodeId)
+    selectionColourByNodeId.set(nodeId, nextSelectionColourId)
+    nextSelectionColourId += 1
   }
 
   const boldedEdgeIds = new Set<string>()
@@ -62,6 +84,8 @@ export function selectNode(
     ...state,
     boldedEdgeIds,
     selectedNodeIds,
+    selectionColourByNodeId,
+    nextSelectionColourId,
     selectedEdgeId: null,
   }
 }
@@ -107,6 +131,39 @@ export function collapseOneLevel(
   return acceptExpansionChange(state, expandedNodeIds)
 }
 
+export function selectionColourIdsForNode(
+  document: GraphDocument,
+  state: ExplorationState,
+  nodeId: string,
+): readonly SelectionColourId[] {
+  if (!state.selectedNodeIds.has(nodeId)) {
+    return []
+  }
+
+  const nodesById = new Map(document.nodes.map((node) => [node.id, node]))
+  const selectionColourIds: SelectionColourId[] = []
+  const ancestorSelection = findNearestSelectedAncestorColour(
+    nodesById,
+    state.selectionColourByNodeId,
+    nodeId,
+  )
+
+  if (ancestorSelection !== undefined) {
+    selectionColourIds.push(ancestorSelection)
+  }
+
+  for (const [selectedNodeId, selectionColourId] of state.selectionColourByNodeId) {
+    if (
+      selectedNodeId !== nodeId &&
+      isDescendantOf(selectedNodeId, nodeId, nodesById)
+    ) {
+      addUniqueColour(selectionColourIds, selectionColourId)
+    }
+  }
+
+  return selectionColourIds
+}
+
 export function selectEdge(
   state: ExplorationState,
   graph: VisibleGraph,
@@ -129,6 +186,8 @@ export function selectEdge(
       ...state,
       boldedEdgeIds,
       selectedNodeIds: new Set(),
+      selectionColourByNodeId: new Map(),
+      nextSelectionColourId: 0,
       selectedEdgeId: null,
     }
   }
@@ -137,6 +196,8 @@ export function selectEdge(
     ...state,
     boldedEdgeIds,
     selectedNodeIds: new Set(),
+    selectionColourByNodeId: new Map(),
+    nextSelectionColourId: 0,
     selectedEdgeId: edgeId,
   }
 }
@@ -146,6 +207,7 @@ export function clearSelectedNodesAndArrows(
 ): ExplorationState {
   if (
     state.selectedNodeIds.size === 0 &&
+    state.selectionColourByNodeId.size === 0 &&
     state.boldedEdgeIds.size === 0 &&
     state.selectedEdgeId === null
   ) {
@@ -156,18 +218,26 @@ export function clearSelectedNodesAndArrows(
     ...state,
     boldedEdgeIds: new Set(),
     selectedNodeIds: new Set(),
+    selectionColourByNodeId: new Map(),
+    nextSelectionColourId: 0,
     selectedEdgeId: null,
   }
 }
 
 export function clearSelection(state: ExplorationState): ExplorationState {
-  if (state.selectedNodeIds.size === 0 && state.selectedEdgeId === null) {
+  if (
+    state.selectedNodeIds.size === 0 &&
+    state.selectionColourByNodeId.size === 0 &&
+    state.selectedEdgeId === null
+  ) {
     return state
   }
 
   return {
     ...state,
     selectedNodeIds: new Set(),
+    selectionColourByNodeId: new Map(),
+    nextSelectionColourId: 0,
     selectedEdgeId: null,
   }
 }
@@ -299,6 +369,8 @@ function acceptScopeChange(
     scopePath,
     boldedEdgeIds: new Set(),
     selectedNodeIds: new Set(),
+    selectionColourByNodeId: new Map(),
+    nextSelectionColourId: 0,
     selectedEdgeId: null,
     projectionRevision: state.projectionRevision + 1,
   }
@@ -332,6 +404,53 @@ function acceptExpansionChange(
     selectedNodeIds: new Set(),
     selectedEdgeId: null,
     projectionRevision: state.projectionRevision + 1,
+  }
+}
+
+function findNearestSelectedAncestorColour(
+  nodesById: ReadonlyMap<string, GraphDocument['nodes'][number]>,
+  selectionColourByNodeId: ReadonlyMap<string, SelectionColourId>,
+  nodeId: string,
+): SelectionColourId | undefined {
+  let currentId: string | null = nodeId
+
+  while (currentId !== null) {
+    const selectionColourId = selectionColourByNodeId.get(currentId)
+
+    if (selectionColourId !== undefined) {
+      return selectionColourId
+    }
+
+    currentId = nodesById.get(currentId)?.parentId ?? null
+  }
+
+  return undefined
+}
+
+function isDescendantOf(
+  nodeId: string,
+  ancestorId: string,
+  nodesById: ReadonlyMap<string, GraphDocument['nodes'][number]>,
+): boolean {
+  let parentId = nodesById.get(nodeId)?.parentId ?? null
+
+  while (parentId !== null) {
+    if (parentId === ancestorId) {
+      return true
+    }
+
+    parentId = nodesById.get(parentId)?.parentId ?? null
+  }
+
+  return false
+}
+
+function addUniqueColour(
+  selectionColourIds: SelectionColourId[],
+  selectionColourId: SelectionColourId,
+): void {
+  if (!selectionColourIds.includes(selectionColourId)) {
+    selectionColourIds.push(selectionColourId)
   }
 }
 

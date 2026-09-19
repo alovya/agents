@@ -1,6 +1,9 @@
 import { Handle, Position } from '@xyflow/react'
 import type { Node, NodeProps } from '@xyflow/react'
-import type { GraphFlowNodeData } from '../rendering/react-flow-adapter'
+import {
+  SELECTION_COLOUR_PALETTE_SIZE,
+  type GraphFlowNodeData,
+} from '../rendering/react-flow-adapter'
 
 const NODE_HANDLE_POSITIONS = [
   { side: 'top', position: Position.Top },
@@ -11,9 +14,19 @@ const NODE_HANDLE_POSITIONS = [
 
 export function GraphNodeCard({ data }: NodeProps<Node<GraphFlowNodeData>>) {
   const isComposite = data.kind === 'composite'
+  const selectionColourClasses = data.selectionColourIds.map(
+    (selectionColourId) =>
+      `graph-node--selection-${selectionColourId % SELECTION_COLOUR_PALETTE_SIZE}`,
+  )
 
   return (
-    <div className={`graph-node graph-node--${data.kind}`}>
+    <div
+      className={[
+        'graph-node',
+        `graph-node--${data.kind}`,
+        ...selectionColourClasses,
+      ].join(' ')}
+    >
       {NODE_HANDLE_POSITIONS.map(({ side, position }) => (
         <Handle
           key={`target-${side}`}
@@ -23,6 +36,16 @@ export function GraphNodeCard({ data }: NodeProps<Node<GraphFlowNodeData>>) {
         />
       ))}
       <strong className="graph-node__label">{data.label}</strong>
+      {data.selectionColourIds.length > 1 && (
+        <span className="graph-node__selection-markers" aria-hidden="true">
+          {data.selectionColourIds.map((selectionColourId) => (
+            <span
+              className={`graph-node__selection-marker graph-node--selection-${selectionColourId % SELECTION_COLOUR_PALETTE_SIZE}`}
+              key={selectionColourId}
+            />
+          ))}
+        </span>
+      )}
       {(isComposite || data.canCollapse) && (
         <div className="graph-node__actions">
           {data.canClickInto && (

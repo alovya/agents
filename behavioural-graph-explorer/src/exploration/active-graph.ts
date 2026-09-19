@@ -12,6 +12,8 @@ export type ViewSnapshot = {
   expandedNodeIds: ReadonlySet<string>
   boldedEdgeIds: ReadonlySet<string>
   selectedNodeIds: ReadonlySet<string>
+  selectionColourByNodeId: ReadonlyMap<string, number>
+  nextSelectionColourId: number
   selectedEdgeId: string | null
 }
 
@@ -40,6 +42,7 @@ export function replaceGraphDocument(
     document,
   )
   const currentScopeId = scopePath[scopePath.length - 1]
+  const nodeIds = new Set(document.nodes.map((node) => node.id))
   const compositeNodeIds = new Set(
     document.nodes
       .filter((node) => node.kind === 'composite')
@@ -74,6 +77,12 @@ export function replaceGraphDocument(
           visibleNodeIds.has(nodeId),
         ),
       ),
+      selectionColourByNodeId: new Map(
+        [...activeGraph.exploration.selectionColourByNodeId].filter(
+          ([nodeId]) => nodeIds.has(nodeId),
+        ),
+      ),
+      nextSelectionColourId: activeGraph.exploration.nextSelectionColourId,
       selectedEdgeId:
         activeGraph.exploration.selectedEdgeId !== null &&
         visibleEdgeIds.has(activeGraph.exploration.selectedEdgeId)
@@ -252,6 +261,9 @@ function preserveVisibleSelection(
     visibleEdgeIds.has(previousExploration.selectedEdgeId)
       ? previousExploration.selectedEdgeId
       : null
+  const selectionColourByNodeId = new Map(
+    nextExploration.selectionColourByNodeId,
+  )
   const nextEdgesByUnderlyingId = new Map<string, Set<string>>()
 
   for (const edge of visibleGraph.edges) {
@@ -291,6 +303,8 @@ function preserveVisibleSelection(
     ...nextExploration,
     boldedEdgeIds,
     selectedNodeIds,
+    selectionColourByNodeId,
+    nextSelectionColourId: nextExploration.nextSelectionColourId,
     selectedEdgeId,
   }
 }
@@ -331,6 +345,8 @@ function captureView(exploration: ExplorationState): ViewSnapshot {
     expandedNodeIds: new Set(exploration.expandedNodeIds),
     boldedEdgeIds: new Set(exploration.boldedEdgeIds),
     selectedNodeIds: new Set(exploration.selectedNodeIds),
+    selectionColourByNodeId: new Map(exploration.selectionColourByNodeId),
+    nextSelectionColourId: exploration.nextSelectionColourId,
     selectedEdgeId: exploration.selectedEdgeId,
   }
 }
@@ -345,6 +361,8 @@ function restoreView(
     expandedNodeIds: new Set(view.expandedNodeIds),
     boldedEdgeIds: new Set(view.boldedEdgeIds),
     selectedNodeIds: new Set(view.selectedNodeIds),
+    selectionColourByNodeId: new Map(view.selectionColourByNodeId),
+    nextSelectionColourId: view.nextSelectionColourId,
     selectedEdgeId: view.selectedEdgeId,
     projectionRevision: exploration.projectionRevision + 1,
   }

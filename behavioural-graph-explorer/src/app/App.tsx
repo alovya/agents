@@ -24,6 +24,7 @@ import {
   expandVisibleComposites,
   selectEdge,
   selectNode,
+  selectionColourIdsForNode,
 } from '../exploration/explore-graph'
 import { convertToReactFlow, type GraphFlowNodeData } from '../rendering/react-flow-adapter'
 import {
@@ -82,6 +83,20 @@ function App() {
     ],
   )
   const explorationState = activeGraph.exploration
+  const selectionColourIdsByNodeId = useMemo(
+    () =>
+      new Map(
+        visibleGraph.nodes.map((node) => [
+          node.id,
+          selectionColourIdsForNode(
+            activeGraph.document,
+            explorationState,
+            node.id,
+          ),
+        ]),
+      ),
+    [activeGraph.document, explorationState, visibleGraph],
+  )
   const [laidOutGraph, setLaidOutGraph] = useState<LaidOutGraph | null>(null)
   const layoutRunnerRef = useRef<ApplyLatestLayout | null>(null)
 
@@ -260,11 +275,16 @@ function App() {
       setActiveGraph((graph) =>
         applyExplorationTransition(
           graph,
-          selectNode(graph.exploration, visibleGraph, nodeId),
+          selectNode(
+            graph.exploration,
+            visibleGraph,
+            nodeId,
+            activeGraph.document,
+          ),
         ),
       )
     },
-    [visibleGraph],
+    [activeGraph.document, visibleGraph],
   )
   const handleSelectEdge = useCallback(
     (edgeId: string) => {
@@ -410,6 +430,7 @@ function App() {
       visibleGraph,
       laidOutGraph.layout,
       graphActions,
+      selectionColourIdsByNodeId,
     )
 
     return {
@@ -427,6 +448,7 @@ function App() {
     explorationState.boldedEdgeIds,
     graphActions,
     laidOutGraph,
+    selectionColourIdsByNodeId,
     visibleGraph,
   ])
   const visibleCompositeCount = visibleGraph.nodes.filter(

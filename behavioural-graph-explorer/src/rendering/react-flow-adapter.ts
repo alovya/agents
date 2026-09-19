@@ -6,6 +6,7 @@ import type { DagreRouteEdgeData } from './dagre-edge'
 
 export const GRAPH_ARROWHEAD_SIZE = 37.5
 export const GRAPH_EDGE_COLOUR = 'var(--graph-edge-colour)'
+export const SELECTION_COLOUR_PALETTE_SIZE = 13
 
 export type GraphFlowNodeData = {
   label: string
@@ -13,6 +14,7 @@ export type GraphFlowNodeData = {
   canClickInto: boolean
   canExpand: boolean
   canCollapse: boolean
+  selectionColourIds: readonly number[]
   onClickInto?: () => void
   onExpand?: () => void
   onCollapse?: () => void
@@ -29,6 +31,7 @@ export function convertToReactFlow(
   graph: VisibleGraph,
   layout: LayoutResult,
   actions: GraphNodeActions,
+  selectionColourIdsByNodeId: ReadonlyMap<string, readonly number[]> = new Map(),
 ): { nodes: Node<GraphFlowNodeData>[]; edges: Edge<DagreRouteEdgeData>[] } {
   const nodes = graph.nodes.map((graphNode) => {
     const position = layout.nodePositions[graphNode.id]
@@ -43,7 +46,11 @@ export function convertToReactFlow(
       id: graphNode.id,
       type: 'graph',
       position: { x: position.x, y: position.y },
-      data: createNodeData(graphNode, actions),
+      data: createNodeData(
+        graphNode,
+        actions,
+        selectionColourIdsByNodeId.get(graphNode.id) ?? [],
+      ),
     }
   })
 
@@ -154,6 +161,7 @@ function oppositeHandleSide(side: HandleSide): HandleSide {
 function createNodeData(
   graphNode: GraphNode,
   actions: GraphNodeActions,
+  selectionColourIds: readonly number[],
 ): GraphFlowNodeData {
   const data: GraphFlowNodeData = {
     label: graphNode.label,
@@ -161,6 +169,7 @@ function createNodeData(
     canClickInto: graphNode.kind === 'composite',
     canExpand: graphNode.kind === 'composite',
     canCollapse: actions.canCollapse?.(graphNode.id) ?? false,
+    selectionColourIds,
   }
 
   if (graphNode.kind === 'composite') {

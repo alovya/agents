@@ -15,6 +15,7 @@ import {
   expandComposite,
   selectEdge,
   selectNode,
+  selectionColourIdsForNode,
 } from './explore-graph'
 import {
   SAMPLE_GRAPH_DOCUMENT,
@@ -69,6 +70,8 @@ describe('activateGraphDocument', () => {
       expandedNodeIds: new Set(),
       boldedEdgeIds: new Set(),
       selectedNodeIds: new Set(),
+      selectionColourByNodeId: new Map(),
+      nextSelectionColourId: 0,
       selectedEdgeId: null,
       projectionRevision: 0,
     })
@@ -253,8 +256,191 @@ describe('replaceGraphDocument', () => {
     expect(replacedGraph.exploration.selectedNodeIds).toEqual(
       new Set([SAMPLE_NODE_IDS.preparationInput]),
     )
+    expect(replacedGraph.exploration.selectionColourByNodeId).toEqual(
+      new Map([[SAMPLE_NODE_IDS.preparationInput, 0]]),
+    )
     expect(replacedGraph.viewHistory).toEqual([])
     expect(replacedGraph.redoHistory).toEqual([])
+  })
+})
+
+describe('selection colours during view changes', () => {
+  it('inherits a selected parent colour through expansion and collapse', () => {
+    const initialGraph = activateGraphDocument(SAMPLE_GRAPH_DOCUMENT)
+    const selectedGraph = applyExplorationTransition(
+      initialGraph,
+      selectNode(
+        initialGraph.exploration,
+        project(initialGraph),
+        SAMPLE_NODE_IDS.preparation,
+      ),
+    )
+
+    expect(
+      selectionColourIdsForNode(
+        SAMPLE_GRAPH_DOCUMENT,
+        selectedGraph.exploration,
+        SAMPLE_NODE_IDS.preparation,
+      ),
+    ).toEqual([0])
+
+    const expandedGraph = applyExplorationTransition(
+      selectedGraph,
+      expandComposite(
+        SAMPLE_GRAPH_DOCUMENT,
+        project(selectedGraph),
+        selectedGraph.exploration,
+        SAMPLE_NODE_IDS.preparation,
+      ),
+    )
+
+    expect(
+      selectionColourIdsForNode(
+        SAMPLE_GRAPH_DOCUMENT,
+        expandedGraph.exploration,
+        SAMPLE_NODE_IDS.preparationInput,
+      ),
+    ).toEqual([0])
+    expect(
+      selectionColourIdsForNode(
+        SAMPLE_GRAPH_DOCUMENT,
+        expandedGraph.exploration,
+        SAMPLE_NODE_IDS.preparationChecks,
+      ),
+    ).toEqual([0])
+
+    const collapsedGraph = applyExplorationTransition(
+      expandedGraph,
+      collapseOneLevel(
+        SAMPLE_GRAPH_DOCUMENT,
+        project(expandedGraph),
+        expandedGraph.exploration,
+        SAMPLE_NODE_IDS.preparationInput,
+      ),
+    )
+
+    expect(
+      selectionColourIdsForNode(
+        SAMPLE_GRAPH_DOCUMENT,
+        collapsedGraph.exploration,
+        SAMPLE_NODE_IDS.preparation,
+      ),
+    ).toEqual([0])
+  })
+
+  it('keeps distinct parent colours when both subgraphs expand', () => {
+    const initialGraph = activateGraphDocument(SAMPLE_GRAPH_DOCUMENT)
+    const selectedPreparation = applyExplorationTransition(
+      initialGraph,
+      selectNode(
+        initialGraph.exploration,
+        project(initialGraph),
+        SAMPLE_NODE_IDS.preparation,
+      ),
+    )
+    const selectedExecution = applyExplorationTransition(
+      selectedPreparation,
+      selectNode(
+        selectedPreparation.exploration,
+        project(selectedPreparation),
+        SAMPLE_NODE_IDS.execution,
+      ),
+    )
+    const expandedPreparation = applyExplorationTransition(
+      selectedExecution,
+      expandComposite(
+        SAMPLE_GRAPH_DOCUMENT,
+        project(selectedExecution),
+        selectedExecution.exploration,
+        SAMPLE_NODE_IDS.preparation,
+      ),
+    )
+    const expandedBoth = applyExplorationTransition(
+      expandedPreparation,
+      expandComposite(
+        SAMPLE_GRAPH_DOCUMENT,
+        project(expandedPreparation),
+        expandedPreparation.exploration,
+        SAMPLE_NODE_IDS.execution,
+      ),
+    )
+
+    expect(
+      selectionColourIdsForNode(
+        SAMPLE_GRAPH_DOCUMENT,
+        expandedBoth.exploration,
+        SAMPLE_NODE_IDS.preparationInput,
+      ),
+    ).toEqual([0])
+    expect(
+      selectionColourIdsForNode(
+        SAMPLE_GRAPH_DOCUMENT,
+        expandedBoth.exploration,
+        SAMPLE_NODE_IDS.runTask,
+      ),
+    ).toEqual([1])
+  })
+
+  it('retains multiple hidden colours on a collapsed parent', () => {
+    const initialGraph = activateGraphDocument(SAMPLE_GRAPH_DOCUMENT)
+    const selectedParent = applyExplorationTransition(
+      initialGraph,
+      selectNode(
+        initialGraph.exploration,
+        project(initialGraph),
+        SAMPLE_NODE_IDS.preparation,
+      ),
+    )
+    const expandedGraph = applyExplorationTransition(
+      selectedParent,
+      expandComposite(
+        SAMPLE_GRAPH_DOCUMENT,
+        project(selectedParent),
+        selectedParent.exploration,
+        SAMPLE_NODE_IDS.preparation,
+      ),
+    )
+    const deselectedChild = applyExplorationTransition(
+      expandedGraph,
+      selectNode(
+        expandedGraph.exploration,
+        project(expandedGraph),
+        SAMPLE_NODE_IDS.preparationInput,
+      ),
+    )
+    const reselectedChild = applyExplorationTransition(
+      deselectedChild,
+      selectNode(
+        deselectedChild.exploration,
+        project(deselectedChild),
+        SAMPLE_NODE_IDS.preparationInput,
+      ),
+    )
+    expect(
+      selectionColourIdsForNode(
+        SAMPLE_GRAPH_DOCUMENT,
+        reselectedChild.exploration,
+        SAMPLE_NODE_IDS.preparationInput,
+      ),
+    ).toEqual([1])
+
+    const collapsedGraph = applyExplorationTransition(
+      reselectedChild,
+      collapseOneLevel(
+        SAMPLE_GRAPH_DOCUMENT,
+        project(reselectedChild),
+        reselectedChild.exploration,
+        SAMPLE_NODE_IDS.preparationInput,
+      ),
+    )
+
+    expect(
+      selectionColourIdsForNode(
+        SAMPLE_GRAPH_DOCUMENT,
+        collapsedGraph.exploration,
+        SAMPLE_NODE_IDS.preparation,
+      ),
+    ).toEqual([0, 1])
   })
 })
 

@@ -45,6 +45,8 @@ describe('exploration state', () => {
       expandedNodeIds: new Set(),
       boldedEdgeIds: new Set(),
       selectedNodeIds: new Set(),
+      selectionColourByNodeId: new Map(),
+      nextSelectionColourId: 0,
       selectedEdgeId: null,
       projectionRevision: 0,
     })

@@ -316,8 +316,133 @@
   background: #dbeafe;
 }
 
+.graph-node--selection-0 {
+  --graph-selection-background: #dbeafe;
+  --graph-selection-border: #2563eb;
+  --graph-selection-outline: #1d4ed8;
+  --graph-selection-glow: rgb(37 99 235 / 24%);
+}
+
+.graph-node--selection-1 {
+  --graph-selection-background: #fee2e2;
+  --graph-selection-border: #dc2626;
+  --graph-selection-outline: #b91c1c;
+  --graph-selection-glow: rgb(220 38 38 / 24%);
+}
+
+.graph-node--selection-2 {
+  --graph-selection-background: #dcfce7;
+  --graph-selection-border: #16a34a;
+  --graph-selection-outline: #15803d;
+  --graph-selection-glow: rgb(22 163 74 / 24%);
+}
+
+.graph-node--selection-3 {
+  --graph-selection-background: #f3e8ff;
+  --graph-selection-border: #9333ea;
+  --graph-selection-outline: #7e22ce;
+  --graph-selection-glow: rgb(147 51 234 / 24%);
+}
+
+.graph-node--selection-4 {
+  --graph-selection-background: #ffedd5;
+  --graph-selection-border: #ea580c;
+  --graph-selection-outline: #c2410c;
+  --graph-selection-glow: rgb(234 88 12 / 24%);
+}
+
+.graph-node--selection-5 {
+  --graph-selection-background: #ccfbf1;
+  --graph-selection-border: #0d9488;
+  --graph-selection-outline: #0f766e;
+  --graph-selection-glow: rgb(13 148 136 / 24%);
+}
+
+.graph-node--selection-6 {
+  --graph-selection-background: #fce7f3;
+  --graph-selection-border: #db2777;
+  --graph-selection-outline: #be185d;
+  --graph-selection-glow: rgb(219 39 119 / 24%);
+}
+
+.graph-node--selection-7 {
+  --graph-selection-background: #fef3c7;
+  --graph-selection-border: #d97706;
+  --graph-selection-outline: #b45309;
+  --graph-selection-glow: rgb(217 119 6 / 24%);
+}
+
+.graph-node--selection-8 {
+  --graph-selection-background: #cffafe;
+  --graph-selection-border: #0891b2;
+  --graph-selection-outline: #0e7490;
+  --graph-selection-glow: rgb(8 145 178 / 24%);
+}
+
+.graph-node--selection-9 {
+  --graph-selection-background: #ecfccb;
+  --graph-selection-border: #65a30d;
+  --graph-selection-outline: #4d7c0f;
+  --graph-selection-glow: rgb(101 163 13 / 24%);
+}
+
+.graph-node--selection-10 {
+  --graph-selection-background: #e0e7ff;
+  --graph-selection-border: #4f46e5;
+  --graph-selection-outline: #4338ca;
+  --graph-selection-glow: rgb(79 70 229 / 24%);
+}
+
+.graph-node--selection-11 {
+  --graph-selection-background: #ffe4e6;
+  --graph-selection-border: #e11d48;
+  --graph-selection-outline: #be123c;
+  --graph-selection-glow: rgb(225 29 72 / 24%);
+}
+
+.graph-node--selection-12 {
+  --graph-selection-background: #f1f5f9;
+  --graph-selection-border: #475569;
+  --graph-selection-outline: #334155;
+  --graph-selection-glow: rgb(71 85 105 / 24%);
+}
+
+.graph-node--selection-0,
+.graph-node--selection-1,
+.graph-node--selection-2,
+.graph-node--selection-3,
+.graph-node--selection-4,
+.graph-node--selection-5,
+.graph-node--selection-6,
+.graph-node--selection-7,
+.graph-node--selection-8,
+.graph-node--selection-9,
+.graph-node--selection-10,
+.graph-node--selection-11,
+.graph-node--selection-12 {
+  border-color: var(--graph-selection-border);
+  background: var(--graph-selection-background);
+}
+
 .node-type-legend {
   margin-top: 4px;
+}
+
+.graph-node__selection-markers {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 2px;
+}
+
+.graph-node__selection-marker {
+  display: block;
+  width: 18px;
+  height: 4px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--graph-selection-border);
 }
 
 .graph-node__label {
@@ -421,12 +546,12 @@
 }
 
 .react-flow__node.selected .graph-node {
-  border-color: #123a9f;
-  outline: 3px solid #123a9f;
+  border-color: var(--graph-selection-border, #123a9f);
+  outline: 3px solid var(--graph-selection-outline, #123a9f);
   outline-offset: 2px;
   box-shadow:
-    0 0 0 7px rgb(29 78 216 / 22%),
-    0 14px 30px rgb(29 78 216 / 32%);
+    0 0 0 7px var(--graph-selection-glow, rgb(29 78 216 / 22%)),
+    0 14px 30px var(--graph-selection-glow, rgb(29 78 216 / 32%));
 }
 
 .react-flow__edge.selected .react-flow__edge-path {
@@ -515,6 +640,97 @@
     background: #1e3a8a;
   }
 
+  .graph-node--selection-0 {
+    --graph-selection-background: #1e3a8a;
+    --graph-selection-border: #60a5fa;
+    --graph-selection-outline: #93c5fd;
+    --graph-selection-glow: rgb(96 165 250 / 30%);
+  }
+
+  .graph-node--selection-1 {
+    --graph-selection-background: #7f1d1d;
+    --graph-selection-border: #f87171;
+    --graph-selection-outline: #fca5a5;
+    --graph-selection-glow: rgb(248 113 113 / 30%);
+  }
+
+  .graph-node--selection-2 {
+    --graph-selection-background: #14532d;
+    --graph-selection-border: #4ade80;
+    --graph-selection-outline: #86efac;
+    --graph-selection-glow: rgb(74 222 128 / 30%);
+  }
+
+  .graph-node--selection-3 {
+    --graph-selection-background: #581c87;
+    --graph-selection-border: #c084fc;
+    --graph-selection-outline: #d8b4fe;
+    --graph-selection-glow: rgb(192 132 252 / 30%);
+  }
+
+  .graph-node--selection-4 {
+    --graph-selection-background: #7c2d12;
+    --graph-selection-border: #fb923c;
+    --graph-selection-outline: #fdba74;
+    --graph-selection-glow: rgb(251 146 60 / 30%);
+  }
+
+  .graph-node--selection-5 {
+    --graph-selection-background: #134e4a;
+    --graph-selection-border: #2dd4bf;
+    --graph-selection-outline: #5eead4;
+    --graph-selection-glow: rgb(45 212 191 / 30%);
+  }
+
+  .graph-node--selection-6 {
+    --graph-selection-background: #831843;
+    --graph-selection-border: #f472b6;
+    --graph-selection-outline: #f9a8d4;
+    --graph-selection-glow: rgb(244 114 182 / 30%);
+  }
+
+  .graph-node--selection-7 {
+    --graph-selection-background: #78350f;
+    --graph-selection-border: #fbbf24;
+    --graph-selection-outline: #fcd34d;
+    --graph-selection-glow: rgb(251 191 36 / 30%);
+  }
+
+  .graph-node--selection-8 {
+    --graph-selection-background: #164e63;
+    --graph-selection-border: #22d3ee;
+    --graph-selection-outline: #67e8f9;
+    --graph-selection-glow: rgb(34 211 238 / 30%);
+  }
+
+  .graph-node--selection-9 {
+    --graph-selection-background: #365314;
+    --graph-selection-border: #a3e635;
+    --graph-selection-outline: #bef264;
+    --graph-selection-glow: rgb(163 230 53 / 30%);
+  }
+
+  .graph-node--selection-10 {
+    --graph-selection-background: #312e81;
+    --graph-selection-border: #818cf8;
+    --graph-selection-outline: #a5b4fc;
+    --graph-selection-glow: rgb(129 140 248 / 30%);
+  }
+
+  .graph-node--selection-11 {
+    --graph-selection-background: #881337;
+    --graph-selection-border: #fb7185;
+    --graph-selection-outline: #fda4af;
+    --graph-selection-glow: rgb(251 113 133 / 30%);
+  }
+
+  .graph-node--selection-12 {
+    --graph-selection-background: #334155;
+    --graph-selection-border: #cbd5e1;
+    --graph-selection-outline: #e2e8f0;
+    --graph-selection-glow: rgb(203 213 225 / 30%);
+  }
+
   .graph-node__label {
     color: #f1f5f9;
   }
@@ -556,10 +772,10 @@
   }
 
   .react-flow__node.selected .graph-node {
-    border-color: #bfdbfe;
-    outline-color: #60a5fa;
+    border-color: var(--graph-selection-border, #bfdbfe);
+    outline-color: var(--graph-selection-outline, #60a5fa);
     box-shadow:
-      0 0 0 7px rgb(96 165 250 / 25%),
+      0 0 0 7px var(--graph-selection-glow, rgb(96 165 250 / 25%)),
       0 14px 30px rgb(2 6 23 / 60%);
   }
 }
