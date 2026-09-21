@@ -179,6 +179,7 @@ def _build_agent_aliases_block(owner_name: str) -> str:
 alias cor='codex resume'
 alias clr='claude --resume'
 alias cur='agent resume'
+alias pir='pi --resume'
 # <<< {owner_name}'s agent aliases <<<"""
 
 
