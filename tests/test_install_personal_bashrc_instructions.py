@@ -72,14 +72,15 @@ def test_custom_content_uses_root_dir_for_generated_paths():
         owner_name="tester",
     )
 
-    assert 'alias cd_agents=\'cd /src/agents\'' in custom_content
+    assert "alias cd_agents='cd /src/agents'" in custom_content
+    assert "alias open_agents='code /src/agents'" in custom_content
     assert 'export CODEX_HOME="/opt/workspace/.codex"' in custom_content
     assert 'export PI_CODING_AGENT_DIR="/opt/workspace/.pi/agent"' in custom_content
     assert "required for CODEX_HOME, CLAUDE_CONFIG_DIR, CURSOR_CONFIG_DIR, and PI_CODING_AGENT_DIR" in custom_content
     assert 'export AGENTS_REPO_ROOT="/src/agents"' in custom_content
 
 
-def test_custom_content_defines_wayvecode_directory_and_open_aliases():
+def test_custom_content_defines_wayvecode_paths_and_open_aliases():
     custom_content = bashrc_module._build_custom_content(
         root_dir=Path("/opt/workspace"),
         agents_repo_dir=Path("/src/agents"),
@@ -89,13 +90,15 @@ def test_custom_content_defines_wayvecode_directory_and_open_aliases():
     assert "alias cd_wayvecode='cd /opt/workspace/WayveCode'" in custom_content
     assert "alias cd_wayvecode2='cd /opt/workspace/worktrees/WayveCode_2'" in custom_content
     assert "alias cd_wayvecode3='cd /opt/workspace/worktrees/WayveCode_3'" in custom_content
-    assert "alias open_wayvecode='cd_wayvecode && code . && cd -'" in custom_content
-    assert "alias open_wayvecode2='cd_wayvecode2 && code . && cd -'" in custom_content
-    assert "alias open_wayvecode3='cd_wayvecode3 && code . && cd -'" in custom_content
+    assert "alias open_wayvecode='code /opt/workspace/WayveCode'" in custom_content
+    assert "alias open_wayvecode2='code /opt/workspace/worktrees/WayveCode_2'" in custom_content
+    assert "alias open_wayvecode3='code /opt/workspace/worktrees/WayveCode_3'" in custom_content
+    assert "root_path=" not in custom_content
+    assert "wayvecode_path=" not in custom_content
     assert "alias cdwayve" not in custom_content
 
 
-def test_custom_content_defines_tmux_workbench_directory_and_open_aliases():
+def test_custom_content_defines_tmux_workbench_path_and_open_aliases():
     custom_content = bashrc_module._build_custom_content(
         root_dir=Path("/opt/workspace"),
         agents_repo_dir=Path("/src/agents"),
@@ -103,10 +106,10 @@ def test_custom_content_defines_tmux_workbench_directory_and_open_aliases():
     )
 
     assert "alias cd_tmux_workbench='cd /opt/workspace/tmux_workbench'" in custom_content
-    assert "alias open_tmux_workbench='cd_tmux_workbench && code . && cd -'" in custom_content
+    assert "alias open_tmux_workbench='code /opt/workspace/tmux_workbench'" in custom_content
 
 
-def test_custom_content_defines_underscore_directory_aliases_for_other_projects():
+def test_custom_content_defines_other_project_paths_and_open_aliases():
     custom_content = bashrc_module._build_custom_content(
         root_dir=Path("/opt/workspace"),
         agents_repo_dir=Path("/src/agents"),
@@ -116,9 +119,9 @@ def test_custom_content_defines_underscore_directory_aliases_for_other_projects(
     assert "alias cd_agents='cd /src/agents'" in custom_content
     assert "alias cd_ntt='cd /opt/workspace/notion_task_tracker'" in custom_content
     assert "alias cd_ralph='cd /opt/workspace/ralph_loops'" in custom_content
-    assert "alias open_agents='cd_agents && code . && cd -'" in custom_content
-    assert "alias open_ntt='cd_ntt && code . && cd -'" in custom_content
-    assert "alias open_ralph='cd_ralph && code . && cd -'" in custom_content
+    assert "alias open_agents='code /src/agents'" in custom_content
+    assert "alias open_ntt='code /opt/workspace/notion_task_tracker'" in custom_content
+    assert "alias open_ralph='code /opt/workspace/ralph_loops'" in custom_content
     assert "alias cdagents" not in custom_content
     assert "alias cdntt" not in custom_content
     assert "alias cdralph" not in custom_content
@@ -144,8 +147,7 @@ def test_custom_content_defines_switch_to_branch_from_remote_function():
     )
 
     assert '''switch_to_branch_from_remote() {
-    git fetch origin "$1" &&
-        git switch --track -c "$1" "origin/$1"
+    git fetch origin "$1" && git switch --track -c "$1" "origin/$1"
 }''' in custom_content
 
 

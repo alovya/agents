@@ -93,6 +93,19 @@ def _build_bashrc_marker_end(owner_name: str) -> str:
 
 
 def _build_bash_convenience_block(root_dir: Path, agents_repo_dir: Path, owner_name: str) -> str:
+    project_paths = (
+        ("wayvecode", root_dir / "WayveCode"),
+        ("wayvecode2", root_dir / "worktrees" / "WayveCode_2"),
+        ("wayvecode3", root_dir / "worktrees" / "WayveCode_3"),
+        ("tmux_workbench", root_dir / "tmux_workbench"),
+        ("ntt", root_dir / "notion_task_tracker"),
+        ("ralph", root_dir / "ralph_loops"),
+        ("agents", agents_repo_dir),
+    )
+    project_navigation_aliases = "\n".join(
+        _build_project_navigation_aliases(project_name, project_path)
+        for project_name, project_path in project_paths
+    )
     return f"""\
 # >>> {owner_name}'s bash convenience functionality >>>
 alias src_bashrc='source $HOME/.bashrc'
@@ -101,22 +114,14 @@ search_history() {{
     history | grep "$1"
 }}
 
-alias cd_wayvecode='cd {root_dir / "WayveCode"}'
-alias cd_wayvecode2='cd {root_dir / "worktrees" / "WayveCode_2"}'
-alias cd_wayvecode3='cd {root_dir / "worktrees" / "WayveCode_3"}'
-alias cd_tmux_workbench='cd {root_dir / "tmux_workbench"}'
-alias cd_agents='cd {agents_repo_dir}'
-alias cd_ntt='cd {root_dir / "notion_task_tracker"}'
-alias cd_ralph='cd {root_dir / "ralph_loops"}'
-
-alias open_wayvecode='cd_wayvecode && code . && cd -'
-alias open_wayvecode2='cd_wayvecode2 && code . && cd -'
-alias open_wayvecode3='cd_wayvecode3 && code . && cd -'
-alias open_tmux_workbench='cd_tmux_workbench && code . && cd -'
-alias open_agents='cd_agents && code . && cd -'
-alias open_ntt='cd_ntt && code . && cd -'
-alias open_ralph='cd_ralph && code . && cd -'
+{project_navigation_aliases}
 # <<< {owner_name}'s bash convenience functionality <<<"""
+
+
+def _build_project_navigation_aliases(project_name: str, project_path: Path) -> str:
+    return f"""\
+alias cd_{project_name}='cd {project_path}'
+alias open_{project_name}='code {project_path}'"""
 
 
 def _build_python_block(root_dir: Path, owner_name: str) -> str:
@@ -140,8 +145,7 @@ rebase_on_main() {{
     git fetch origin main && git rebase origin/main
 }}
 switch_to_branch_from_remote() {{
-    git fetch origin "$1" &&
-        git switch --track -c "$1" "origin/$1"
+    git fetch origin "$1" && git switch --track -c "$1" "origin/$1"
 }}
 create_new_branch_from_main() {{
     git switch main && git pull && git switch -c "$1"
