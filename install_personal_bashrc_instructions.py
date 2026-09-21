@@ -135,10 +135,16 @@ fi
 alias gadd='git add'
 alias gcommit='git commit -m'
 alias gstatus='git status'
-alias current_branch='git branch --show'
-alias rebase_on_main='git fetch origin main && git rebase origin/main'
-new_branch_from_main() {{
-    git switch main && git pull && git checkout -b "$1"
+alias show_current_branch='git branch --show'
+rebase_on_main() {{
+    git fetch origin main && git rebase origin/main
+}}
+switch_to_branch_from_remote() {{
+    git fetch origin "$1" &&
+        git switch --track -c "$1" "origin/$1"
+}}
+create_new_branch_from_main() {{
+    git switch main && git pull && git switch -c "$1"
 }}
 # <<< {owner_name}'s git <<<"""
 

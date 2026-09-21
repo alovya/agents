@@ -136,6 +136,54 @@ def test_custom_content_uses_owner_name_for_block_labels():
     assert "# >>> tester's agent aliases >>>" in custom_content
 
 
+def test_custom_content_defines_switch_to_branch_from_remote_function():
+    custom_content = bashrc_module._build_custom_content(
+        root_dir=Path("/workspace"),
+        agents_repo_dir=Path("/workspace/agents"),
+        owner_name="tester",
+    )
+
+    assert '''switch_to_branch_from_remote() {
+    git fetch origin "$1" &&
+        git switch --track -c "$1" "origin/$1"
+}''' in custom_content
+
+
+def test_custom_content_defines_create_new_branch_from_main_function():
+    custom_content = bashrc_module._build_custom_content(
+        root_dir=Path("/workspace"),
+        agents_repo_dir=Path("/workspace/agents"),
+        owner_name="tester",
+    )
+
+    assert '''create_new_branch_from_main() {
+    git switch main && git pull && git switch -c "$1"
+}''' in custom_content
+
+
+def test_custom_content_defines_rebase_on_main_function():
+    custom_content = bashrc_module._build_custom_content(
+        root_dir=Path("/workspace"),
+        agents_repo_dir=Path("/workspace/agents"),
+        owner_name="tester",
+    )
+
+    assert '''rebase_on_main() {
+    git fetch origin main && git rebase origin/main
+}''' in custom_content
+
+
+def test_custom_content_renames_current_branch_alias():
+    custom_content = bashrc_module._build_custom_content(
+        root_dir=Path("/workspace"),
+        agents_repo_dir=Path("/workspace/agents"),
+        owner_name="tester",
+    )
+
+    assert "alias show_current_branch='git branch --show'" in custom_content
+    assert "alias current_branch=" not in custom_content
+
+
 def test_resolve_owner_name_uses_user_environment(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("USER", "shell-user")
 
