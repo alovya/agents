@@ -110,6 +110,7 @@ def _build_bash_convenience_block(root_dir: Path, agents_repo_dir: Path, owner_n
 # >>> {owner_name}'s bash convenience functionality >>>
 alias src_bashrc='source $HOME/.bashrc'
 alias ll='ls -l'
+alias llt='ls -lt'
 search_history() {{
     history | grep "$1"
 }}
