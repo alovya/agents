@@ -9,7 +9,7 @@ Use this skill to review a pull request.
 
 ## Principles
 
-**Be friendly, but ultimately adversarial (to the code).** We are friendly with our colleagues; we always speak respectfully and in good faith, but when reviewing a PR, we are adversarial to the code: we are actively and pedantically trying to find problems, regressions and improvements.
+**Be friendly, but ultimately adversarial (to the code).** We are friendly with our colleagues, we always speak respectfully and in good faith, but when reviewing a PR, we are adversarial to the code: we are actively and pedantically trying to find problems, regressions and improvements.
 
 **Code diffs are incomprehensible; behaviours actually make sense.** Code diffs, which also often appear in non-linear, non-execution order, make basically zero sense to human readers without understanding the behaviour they are changing: when reviewing a pull request, focus on the behaviour that is being changed, and how the code diff is effecting it.
 
