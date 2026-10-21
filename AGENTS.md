@@ -1,77 +1,64 @@
-# User-specific instructions
+# User-level instructions
 
-These instructions override any repo- or subdirectory-specific instructions. If a system or developer instruction conflicts, state the conflict explicitly instead of silently ignoring the user instruction.
+These instructions contain the principles with which you should write code; please follow them closely: you are capable of generating anything these days, but your code frequently fails to look actually good to humans unless you follow principles such as below. Said another way: your code must not just be correct, it must be of high quality, and easily understandable by a human.
 
 ## Principles
 
-Two commitments sit above the rest: please think carefully about how you work and reason, and please write code that a human can read as easily as reading a story. The rules split into how you should work and what the code should read like; within each, they run from the most general habit to the most specific choice.
+**1. Read before you write; read to be aware.** Do not write a single line of code until you read every single producer and consumer of a piece of functionality of interest within a codebase. Furthermore, read not because existing code in the codebase is correct or high-quality - it often isn't - but to be aware: what is the verified-not-guessed behaviour, what might break if you change something without considering knock-on effects, what functionality already exists that you can reuse, what patterns are already in place?
 
-### How you should work and reason
+**2. Anything you write should be self-documenting and as easy to read as a cookbook recipe.** Code is just logic executed in steps, and the sequence of steps should be as easily understandable as reading a cookbook recipe in linear order: any function you write should be comprised of subfunctions written at exactly the right abstraction levels in the right order using verb-led names (i.e. `do_something()`, not `something()`) such that the high-level logic can be understood just by reading the sequence of subfunctions. The outcome must be that (a) the reader **never, ever** has to read the internals of a subfunction to understand what the function is doing and (b) they **never, ever** have to jump around and (re)read in the codebase to understand a function; if either of (a) or (b) happen, it means you have failed to follow this principle. Please refactor the code if so.
 
-1. **Read before you write.** The biggest source of bad code is writing before reading. Read the files you are about to touch — read, not skim — copy the patterns that already exist, and check the imports to see what the project actually depends on, so you do not reach for a new library where the project already has one. When you cannot find a pattern, ask instead of guessing.
+**3. Modularity is unreasonably effective; so is the single-responsbility principle.** Any function, class or module you create should be modular and responsible for a single conceptual behaviour. This makes it easy to reason about, easy to test, and easy to change without breaking something else. As soon as something does multiple things, it is hard to reason about, it is hard to test, and it is hard to change without inadvertently breaking something else.
 
-2. **Think before you code.** State your assumptions explicitly ("add authentication" is five different things, so name the one you picked) and name the tradeoffs. If something is genuinely confusing, stop and ask rather than filling the gap with plausible-looking code — that is exactly the code that passes a casual review and fails when it matters.
+**4. Follow DRY (don't repeat yourself).** Always reuse functionality. This boils down to: (a) never writing code until you read around in the codebase to see if there's something you can reuse - either outright or by adapting it - and (b) strongly dispreferring repeating large chunks of code: if you find yourself doing so, extract the chunk into a reusable helper. Failing to meet (a) and (b) usually means you have failed to follow principles 1 and 2. Change your approach to satisfy them if so.
 
-3. **Define the goal before coding.** Every task needs a success criterion first. "Add validation" becomes "reject a missing or malformed email, return 400 with a clear message, and test both cases." For anything multi-step, state the plan first so I can catch a wrong approach before you spend an hour building it.
+**5. YAGNI (you ain't gonna need it) and KISS (keep it simple, stupid) go hand-in-hand.** Only write the smallest piece of code that induces the smallest diff that produces the desired behaviour(s). **Never** write code to handle speculative scenarios: do not write compatibility shims - breaking backwards compatibility is fine and preferred unless explicitly requested otherwise; do not try to handle impossible or "might-happen" errors, or add fallback behaviour - fail fast on any (edge) cases not explicitly discussed.
 
-4. **Keep it simple.** Write the minimum code that solves the problem in front of you now, not the minimum that could solve every future version of it. Resist premature abstraction, skip error handling for errors that cannot occur, and hardcode values until there is a real reason to configure them. If the only reason something is abstracted is "in case we need to", it is over-built. Do not add fallback behaviour, backwards-compatibility shims, or speculative input formats without a proven caller; fail fast with a clear error and let the default stack trace surface, rather than catching and repackaging, unless recovery is genuinely required.
+**6. Test logically meaningful behaviour, not implementation internals.** Prefer writing few end-to-end-like tests of logically meaningful behaviours, not numerous quasi-tautological tests of small helper functions. It is easy - and annoying during code review - to waste many lines of code writing tests of small helper functions that are often "obviously right" or which essentially reimplement internals. **Do not** do this: write the smallest suite of tests that test the behaviour(s) we care about. Furthermore, prefer editing existing end-to-end-like tests when testing behavioural changes instead of adding several new ones that test purely the before-versus-after behavioural delta instead of the holistic behaviour. You should always be able to make an exact and one-to-one mapping of behaviours to individual functions or classes and thereby test them as per this principle; if you are struggling to do so, it means you have failed to follow principle 2: refactor the source and/or tests if so.
 
-5. **Make changes surgical.** Your diff should be as small as the task allows. Do not touch what you were not asked to touch, match the existing style, and do not reformat — a formatter pass buries the three lines that matter inside three hundred that do not. If a line is there because "while I was in there", revert it.
+**7. Strongly prefer AAA-style (arrange-act-assert) tests, possibly with fixtures; mocks, fakes or stubs are absolute last resorts, and with strong caveats.** AAA-style tests - with fixtures when needed - are very readable and understandable in terms of what behaviour they are testing without the reader having to know about internals (as per principle 2): given some arrangement on which I perform some action, I assert some expected result. Conversely, mocks, fakes or stubs force us to reason about internals which is a gross violation of principle 2, and therefore should be avoided as much as possible. If you are struggling to test a behaviour via an AAA-style test, it means you have failed to follow principle 3; refactor if so.
 
-6. **Verify by testing.** The gap between code that works and code you think works is testing. When fixing a bug, write the failing test first, watch it fail, then fix it — that is the only proof you fixed the cause and not the symptom. Test behaviour that can actually break, not that a constructor sets a field. If something is hard to test, that is information about the design, not permission to skip it.
+*Caveat:* mocks, fakes or stubs are nonetheless often the best way to test functionality containing heavy or hard-to-access boundaries (e.g. databases, dev kits, networks, artefacts, etc) - in this case it is fine to use them with the following caveat: in the test docstring, include the function call order so that we know exactly what is being mocked out where and why; follow this template:
 
-7. **Debug by investigation, not guessing.** Read the whole error and the stack trace, reproduce the problem before you change anything, and change one thing at a time. Do not paper over an unexpected null with a null check; find out why it is null, or the bug just moves somewhere quieter.
+```python
+def test_deploy_migrates_pre_regime_saved_config_before_loading_wrapper(
+    mocker,
+    nano_config: DictConfig,
+    deploy_input_session: Session,
+    tmp_path: Path,
+) -> None:
+    """Migrate a pre-v10 saved config before passing it to the deployment wrapper.
 
-8. **Add dependencies deliberately.** Every dependency is permanent code you do not control. Before adding one, ask whether the project or the standard library can already do it. When you do add one, say why, so the choice is visible rather than smuggled into the manifest.
+    Relevant call order:
+    deploy
+    -> resolve_session_details (mocked: avoid catalogue/session lookup)
+    -> load_hydra_config (mocked: provide the legacy config)
+    -> migrate_rl_config_to_latest (real: behaviour under test)
+    -> load_deployment_config (mocked: isolate config migration)
+    -> apply_deployment_config_overrides (mocked: preserve the fixture config)
+    -> load_rl_driving_wrapper (mocked: capture the migrated config before model,
+       checkpoint, and GPU work)
+    -> save_artifacts_and_maybe_upload (mocked: avoid artefact writes and uploads).
 
-9. **Communicate what you did and why.** Say more than a block of code. Flag concerns even when you did exactly what was asked, and be precise about uncertainty: "I am not sure this library supports streaming" tells me what to verify; "I think this should work" does not.
+    The test therefore checks deploy's ordering while keeping unrelated external
+    boundaries out of the regression test.
+    """
+```
 
-10. **Catch yourself in the recurring failure modes.** A few patterns recur often enough to name: the *kitchen sink* (restructuring half the codebase while you are at it), the *wrong abstraction* (abstracting before you have copy-pasted twice), the *optimistic path* (happy path handled, the 500 ignored), and the *runaway refactor* (a fix that cascades across files). In any of these, the right move is to stop, not to push through.
+**8. Verify behaviour, don't guess, infer or predict it; use TDD (test-driven development).** When writing code, always prefer physically running commands which let you verify behaviour instead of inferring it. Feel free to generate throwaway scripts when doing this. A specific case of this principle is using TDD: first write failing test(s) that encapsulate the behaviour(s) of interest, watch them fail, then write code until the the test passes. Avoid guessing, inferring or predicting the behaviour of code.
 
-The ten rules above adapt Andrej Karpathy's "Field notes on getting a language model to write code you will not rewrite".
+**9. Use docstrings for context, not compensation.** Never use a docstring to explain a vague name — rename to something more meaningful instead. Reserve docstrings for what a name cannot carry: footguns, invariants, edge cases, non-obvious tradeoffs, why a tempting alternative is wrong. Keep them plain prose with no markup, and short unless it is a top-of-file overview.
 
-### What the code and docs should read like
+**10. Avoid historical context by default.** State current behaviour directly; skip old behaviour, past mistakes, and migration history unless it prevents a real footgun or explains why a tempting alternative is wrong.
 
-1. **Write code a human can read like a story.** Reading code for the first time is far harder than rereading it, and over a codebase's lifetime first reads dominate. So optimise for the first-time reader: a higher-level function should explain the whole workflow without the reader ever opening a helper, and each line should read like a deliberate step.
-
-2. **Match detail to level.** The story rule bites hardest on orchestrators, workflows, transformations, test setup, and non-obvious control flow. For tiny leaf helpers, numerical kernels, hot paths, and standard protocol code, concise mechanical names and local detail are fine when they match the abstraction level.
-
-3. **Name after intent, not mechanics.** The name should say why the caller does this, not the primitive inside. `enable_fast_inference(config)`, not `update_value(config, key, value)`.
-
-4. **Prefer verb-led names for behaviour; reserve nouns for real domain objects.** If a function, file, class, or result represents something that happens, name it with the action: `apply_tracker_change(...)`, `execute_writes(...)`, `TrackerChangeResult` — not `manager`, `processor`, `handler`, `state`, `data`, `context`. Nouns are for stable objects like `Task` or `DependencyGraph`. If a noun needs a paragraph to say what happens next, rename it.
-
-5. **Make orchestrators read like a story.** A high-level function should be a short list of meaningful steps, understandable before any implementation detail. If a function alternates between searching, parsing, mutating, validating, and logging in one long block, split it.
-
-6. **One function, one job.** If a name needs multiple verbs (`load_validate_rewrite_and_save`), it does too much. Split into `load`, `validate`, `rewrite`, `save`.
-
-7. **Order files entrypoint-first.** Arrange each file so a reader goes top to bottom without jumping: public entrypoints and orchestrators first, primitive parsing/formatting/validation/persistence helpers later. In tests, put the behaviour under test before local fixtures unless a strong local convention says otherwise.
-
-8. **Pass explicit arguments, not bags of state.** A call should show what the helper depends on. Pass the two fields it needs, not the whole object it lives in.
-
-9. **Use docstrings for context, not compensation.** Never use a docstring to explain a vague name — rename instead. Reserve docstrings for what a name cannot carry: footguns, invariants, edge cases, non-obvious tradeoffs, why a tempting alternative is wrong. Keep them plain prose with no markup, and short unless it is a top-of-file overview.
-
-10. **Explain code as a story.** When explaining, use rendered Markdown with nested numbered lists (ordinary 1, 2, 3 at every level so indentation renders). Map each step to the function that owns it, and flag any function that mixes levels of abstraction as a problem.
-
-11. **Lead documentation with behaviour before software.** In docs, READMEs, and handovers, put concrete examples, expected behaviour, workflows, and data shapes before modules and classes. Readers need anchor points before architecture is meaningful.
-
-12. **Avoid historical context by default.** State current behaviour directly; skip old behaviour, past mistakes, and migration history unless it prevents a real footgun or explains why a tempting alternative is wrong.
-
-## Behaviours to always avoid
+## Things to always avoid
 
 - Never use American spelling; always use British spelling.
 - Never use Capital Case for headings; use Sentence case.
 - Never write redundant comments; comment only what the code cannot explain itself.
 - Never use section-divider comments to group code; use the language's own structuring features instead.
-- Never use abbreviations except obvious ones (`i`/`j`, `err`, `ctx`, `config`).
+- Never use abbreviations except obvious ones ( e.g. `i`/`j`, `err`, `ctx`, `config`, etc).
 - Never name a path variable or flag without a `_path` suffix (`_dir` is the exception for directories).
-- Follow the language's own convention for marking private members; do not invent your own.
-
-## Tests
-
-- Mirror source layout and the language's test conventions: one test file per source file, named per the ecosystem's standard.
-- Group tests so it is obvious which unit and method each covers.
-- Do not mock or fake the behaviour under test if that forces the reader to reason about private execution order or helper boundaries. Prefer realistic inputs through real behaviour; extract a small input-taking worker if needed, so a test reads as input, behaviour, output.
-- Mocking is acceptable only for thin orchestrators whose call wiring is the behaviour under test. Assert boundary calls directly, name mocks `<original_name>_mock`, and use fakes only as small readable domain objects.
 
 ## Machine and environment facts
 
