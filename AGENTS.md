@@ -8,9 +8,9 @@ These instructions contain the principles with which you should write code; plea
 
 **2. Anything you write should be self-documenting and as easy to read as a cookbook recipe.** Code is just logic executed in steps, and the sequence of steps should be as easily understandable as reading a cookbook recipe in linear order: any function you write should be comprised of subfunctions written at exactly the right abstraction levels in the right order using verb-led names (i.e. `do_something()`, not `something()`) such that the high-level logic can be understood just by reading the sequence of subfunctions. The outcome must be that (a) the reader **never, ever** has to read the internals of a subfunction to understand what the function is doing and (b) they **never, ever** have to jump around and (re)read in the codebase to understand a function; if either of (a) or (b) happen, it means you have failed to follow this principle. Please refactor the code if so.
 
-**3. Modularity, orthogonality and the single-responsbility principle are unreasonably effective.** Any function, class or module you create should be modular, orthogonal to others, and responsible for a single conceptual behaviour: this makes it easy to reason about, easy to test, and easy to change without breaking something else. As soon as something does multiple things, it is hard to reason about, it is hard to test, and it is hard to change without inadvertently breaking something else.
+**3. Modularity, orthogonality and the single-responsibility principle are unreasonably effective.** Any function, class or module you create should be modular, orthogonal to others, and responsible for a single conceptual behaviour: this makes it easy to reason about, easy to test, and easy to change without breaking something else. As soon as something does multiple things, it is hard to reason about, it is hard to test, and it is hard to change without inadvertently breaking something else.
 
-**4. Follow DRY (don't repeat yourself).** Always reuse functionality. This boils down to: (a) never writing code until you read around in the codebase to see if there's something you can reuse - either outright or by adapting it - and (b) strongly dispreferring repeating large chunks of code: if you find yourself doing so, extract the chunk into a reusable helper. Failing to meet (a) and (b) usually means you have failed to follow principles 1 and 2. Change your approach to satisfy them if so.
+**4. Follow DRY (don't repeat yourself).** Always reuse functionality. This boils down to: (a) never writing code until you read around in the codebase to see if there's something you can reuse - either outright or by adapting it - and (b) strongly dispreferring repeating large chunks of code that encode the same conceptual behaviour: if you find yourself doing so, extract the chunk into a reusable helper. Failing to meet (a) and (b) usually means you have failed to follow principles 1 and 2. Change your approach to satisfy them if so.
 
 **5. YAGNI (you ain't gonna need it) and KISS (keep it simple, stupid) go hand-in-hand.** Only write the smallest piece of code that induces the smallest diff that produces the desired behaviour(s). **Never** write code to handle speculative scenarios: do not write compatibility shims - breaking backwards compatibility is fine and preferred unless explicitly requested otherwise; do not try to handle impossible or "might-happen" errors, or add fallback behaviour - fail fast on any (edge) cases not explicitly discussed.
 
@@ -39,13 +39,10 @@ def test_deploy_migrates_pre_regime_saved_config_before_loading_wrapper(
     -> load_rl_driving_wrapper (mocked: capture the migrated config before model,
        checkpoint, and GPU work)
     -> save_artifacts_and_maybe_upload (mocked: avoid artefact writes and uploads).
-
-    The test therefore checks deploy's ordering while keeping unrelated external
-    boundaries out of the regression test.
     """
 ```
 
-**8. Verify behaviour, don't guess, infer or predict it; use TDD (test-driven development).** When writing code, always prefer physically running commands which let you verify behaviour instead of inferring it. Feel free to generate throwaway scripts to help you achieve this. A specific case of this principle is using TDD: first write failing test(s) that encapsulate the behaviour(s) of interest, watch them fail, then write code until the the test(s) pass. Avoid guessing, inferring or predicting the behaviour of code.
+**8. Verify behaviour, don't guess, infer or predict it; use TDD (test-driven development).** When writing code, always prefer physically running commands which let you verify behaviour instead of inferring it. Feel free to generate throwaway scripts to help you achieve this. A specific case of this principle is using TDD: first write failing test(s) that encapsulate the behaviour(s) of interest, watch them fail, then write code until the test(s) pass. Avoid guessing, inferring or predicting the behaviour of code.
 
 **9. Ownership, naming and structure matter; they should scream the architecture.** Consider very carefully which file a piece of functionality should be owned by and therefore belongs in; the files should be named and grouped into folders in a way that make their roles obvious; and the folder structure should then scream the architecture.
 
@@ -59,7 +56,7 @@ def test_deploy_migrates_pre_regime_saved_config_before_loading_wrapper(
 - Never use Capital Case for headings; use Sentence case.
 - Never write redundant comments; comment only what the code cannot explain itself.
 - Never use section-divider comments to group code; use the language's own structuring features instead.
-- Never use abbreviations except obvious ones ( e.g. `i`/`j`, `err`, `ctx`, `config`, etc).
+- Never use abbreviations except obvious ones (e.g. `i`/`j`, `err`, `ctx`, `config`, etc).
 - Never name a path variable or flag without a `_path` suffix (`_dir` is the exception for directories).
 
 ## Machine and environment facts
