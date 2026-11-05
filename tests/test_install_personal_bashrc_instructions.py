@@ -159,7 +159,7 @@ def test_custom_content_defines_create_new_branch_from_main_function():
     )
 
     assert '''create_new_branch_from_main() {
-    git switch main && git pull && git switch -c "$1"
+    git fetch origin main && git switch -c "$1" origin/main
 }''' in custom_content
 
 

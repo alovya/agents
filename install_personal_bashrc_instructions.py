@@ -149,7 +149,7 @@ switch_to_branch_from_remote() {{
     git fetch origin "$1" && git switch --track -c "$1" "origin/$1"
 }}
 create_new_branch_from_main() {{
-    git switch main && git pull && git switch -c "$1"
+    git fetch origin main && git switch -c "$1" origin/main
 }}
 # <<< {owner_name}'s git <<<"""
 
