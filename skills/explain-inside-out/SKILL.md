@@ -7,6 +7,8 @@ description: Explain a system from the inside out.
 
 Use this skill to explain a system from the inside out.
 
+This skill pairs well with the /give-literal-example skill.
+
 ## Principles
 
 **Start at the innermost layer.** Describe the smallest, most frequently exercised unit first, such as a single step, call or object, and what it assumes already exists. This is the part the whole system exists to serve, so the reader learns the purpose before any machinery.
